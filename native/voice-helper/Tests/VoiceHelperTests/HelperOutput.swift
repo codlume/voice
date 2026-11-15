@@ -47,10 +47,7 @@ final class EmittedLines: @unchecked Sendable {
 
     func wait(for type: String, timeout: Duration = .seconds(5)) async throws -> [[String: Any]] {
         let deadline = ContinuousClock.now + timeout
-        // Look before checking the clock. Parallel tests can hold this task past its deadline, and
-        // an event that arrived meanwhile must still count.
         while true {
-            // Electron drops a line it cannot parse, events included.
             if let line = firstUnparseable() { throw ProtocolError("unparseable helper line: \(line)") }
             let current = snapshot()
             if current.contains(where: { $0["type"] as? String == type }) { return current }
@@ -64,7 +61,6 @@ func writeAudio(to url: URL, seconds: Double, silent: Bool) throws {
     try writeAudio(to: url, segments: [(seconds, silent)])
 }
 
-/// A 440 Hz tone for each non-silent segment, silence for the rest, in order.
 func writeAudio(to url: URL, segments: [(seconds: Double, silent: Bool)]) throws {
     let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
     let frames = AVAudioFrameCount(segments.reduce(0) { $0 + $1.seconds } * 16_000)
@@ -90,8 +86,6 @@ func sessionEvents(_ events: [[String: Any]]) -> [[String: Any]] {
     }
 }
 
-/// `text` as words spread over the loud part of `samples`, timed in ms into them, as a fake
-/// speech model's answer.
 func spokenWords(_ text: String, in samples: [Float]) -> [TimedWord] {
     let first = samples.firstIndex { abs($0) > 0.01 } ?? 0
     let last = samples.lastIndex { abs($0) > 0.01 } ?? samples.count
@@ -103,13 +97,9 @@ func spokenWords(_ text: String, in samples: [Float]) -> [TimedWord] {
     }
 }
 
-/// A voice detector that calls a chunk a voice when it overlaps `voiced`, sample ranges of the
-/// audio it has heard since it was new. Like the real one, it is right about a stretch of the
-/// mic only after hearing all of the mic before it, once.
 struct ScriptedDetector: VoiceDetector {
     let voiced: [Range<Int>]
     var heard = 0
-    /// How many times any detector made from this one was asked.
     let asked = OSAllocatedUnfairLock(initialState: 0)
 
     func hear(_ samples: [Float]) async -> (probabilities: [Float], next: any VoiceDetector)? {

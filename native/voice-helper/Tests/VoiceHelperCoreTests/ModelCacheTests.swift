@@ -21,7 +21,6 @@ private func flipByte(_ url: URL, at offset: Int = 0) throws {
     try data.write(to: url)
 }
 
-/// A one-byte edit in place that keeps size, inode and mtime, so only reading the bytes shows it.
 private func editKeepingStat(_ url: URL) {
     var before = stat()
     precondition(lstat(url.path, &before) == 0)
@@ -362,7 +361,6 @@ struct ModelCacheTests {
         StubHub.script(fixture.url(for: "z.bin"), [.status(500), .ok(small)])
         let target = fixture.folder(in: dir).appendingPathComponent("a.bin")
         let cache = fixture.cache(in: dir)
-        // a.bin is installed first. The backoff before z.bin's retry is the edit's window.
         let fetcher = ModelFetcher(configuration: StubHub.configuration()) { _ in editKeepingStat(target) }
         await expectKind(.damaged(count: 1)) { try await cache.prepare(download: true, fetcher: fetcher) }
         let stamp = fixture.folder(in: dir).appendingPathComponent(ModelCache.stampName)

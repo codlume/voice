@@ -4,7 +4,6 @@ import VoiceHelperCore
 enum CopyOutcome: Equatable {
     case text(String)
     case concealed
-    /// The keystroke was not posted, because it would not have reached the app that was read.
     case notPosted
     /// Monaco answered with the caret's line because nothing was selected.
     case lineOfEmptySelection
@@ -20,11 +19,9 @@ final class Pasteboard {
     /// keystroke, and nothing can observe that read.
     static let pasteRestoreDelay: TimeInterval = 1.0
 
-    /// A synthetic Cmd+C whose answer, if it still comes, has to be taken off the clipboard.
     private final class PendingCopy {
         var wait: CopyWait
         let saved: Saved
-        /// The press counters when the wait timed out. Nil while the answer is still awaited.
         var deadlineStamp: PressStamp?
 
         init(wait: CopyWait, saved: Saved) {
@@ -39,7 +36,6 @@ final class Pasteboard {
     private let pressStamp: () -> PressStamp
     private var tracker = ClipboardRestore<Saved>()
     private var copy: PendingCopy?
-    /// When the last paste restore or late copy check asked for so far will have run.
     private var quietAt = DispatchTime.now()
     private var exiting = false
 
@@ -100,9 +96,7 @@ final class Pasteboard {
 
     @MainActor
     func copyFromFocusedApp(unless targetMoved: () -> Bool = { false }) async -> CopyOutcome {
-        // An exiting helper would leave before it could take the answer off the clipboard.
         guard !exiting else { return .nothing }
-        // Asked here, with nothing awaited before the keystroke, so the answer cannot go stale.
         guard !targetMoved() else { return .notPosted }
         resolveCopy()
         let pending = PendingCopy(wait: CopyWait(startChangeCount: pasteboard.changeCount), saved: save())
@@ -138,22 +132,17 @@ final class Pasteboard {
                     return emptySelection ? .lineOfEmptySelection : .text(text)
                 }
             }
-            // The helper is exiting or a newer copy began, and that took over the restore.
             return .nothing
         }
         return await watchThatOutlivesCancellation.value
     }
 
-    /// For a helper that is exiting. Runs `done` once the clipboard is the user's again. A paste
-    /// restore or late copy check that is not yet due is waited for, because until then the
-    /// target may still read the transcript or answer the copy.
     func settle(then done: @escaping () -> Void) {
         exiting = true
         guard tracker.hasPending || copy != nil, quietAt > .now() else {
             flush()
             return done()
         }
-        // Checked again when due: a paste that was already on its way in can ask for more time.
         DispatchQueue.main.asyncAfter(deadline: quietAt) { [self] in settle(then: done) }
     }
 
@@ -162,8 +151,6 @@ final class Pasteboard {
         resolveCopy()
     }
 
-    /// Ends a copy nobody waits on any more, and puts the user's clipboard back if the
-    /// target's answer is on it.
     private func resolveCopy() {
         guard let pending = copy else { return }
         copy = nil
@@ -185,8 +172,6 @@ final class Pasteboard {
             }
             if !items.isEmpty { pasteboard.writeObjects(items) }
         }
-        // The transcript went back with its concealed marker, so the next save needs this
-        // record to tell it from a password.
         if case .keptTranscript = saved { tracker.kept(pasteboard.changeCount, contents: saved) }
         copy?.wait.absorb(ownChange: pasteboard.changeCount)
     }

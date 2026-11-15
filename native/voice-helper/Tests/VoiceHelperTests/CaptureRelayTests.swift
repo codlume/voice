@@ -19,8 +19,6 @@ struct CaptureRelayTests {
             output: output, transcriber: Transcriber(modelsDir: dir.appendingPathComponent("no-models"), output: output),
             devices: devices, outputLowering: OutputLowering(output: output, stateDir: dir), source: .fixture(file.path))
 
-        // The relay is exactly the gap the test chose, so it is checked against that gap. A loaded
-        // runner can stretch the sleep past any fixed upper bound.
         let pressedAt = DispatchTime.now().uptimeMs
         try await Task.sleep(for: .milliseconds(30))
         let startReceivedAt = DispatchTime.now()
@@ -43,7 +41,6 @@ struct CaptureRelayTests {
         #expect(abs(releaseRelayMs - (stopReceivedAt.uptimeMs - releasedAt)) < 0.001)
     }
 
-    /// A command without a hotkey echo, and one echoing a time after the command arrived.
     @Test(arguments: [Double?.none, DispatchTime.now().uptimeMs + 60_000])
     @MainActor func reportsNoRelayWithoutAPressThatStartedTheSession(hotkeyUptimeMs: Double?) async throws {
         let lines = EmittedLines()

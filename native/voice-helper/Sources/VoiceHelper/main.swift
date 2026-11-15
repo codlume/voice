@@ -70,7 +70,6 @@ final class Helper {
 
     @MainActor
     func handle(line: String, receivedAt: DispatchTime) {
-        // After SIGTERM stdin is still open while the clipboard settles, and nothing may start then.
         guard !shuttingDown else { return }
         switch HelperCommand.decode(line: line) {
         case .failure(let error):
@@ -119,8 +118,6 @@ final class Helper {
             permissions.request(kind)
         case .asrPrepare(let download):
             transcriber.prepare(download: download)
-            // The voice detector comes with the speech model, also to a user who has had the
-            // speech model since before there was a detector.
             if transcriber.sessionState != .missing { voiceDetection.prepare() }
         case .asrRemove:
             transcriber.remove()
@@ -150,8 +147,6 @@ final class Helper {
         }
     }
 
-    /// Stops capture at once, then runs `done` when the clipboard is the user's again. That can
-    /// be up to a second later, so that a paste just posted is not restored under a slow target.
     @MainActor
     func shutdown(then done: @escaping () -> Void) {
         guard !shuttingDown else { return }
@@ -205,7 +200,6 @@ let reader = Thread {
 reader.name = "stdin"
 reader.start()
 
-// SIGTERM ends the helper the way stdin EOF does, so a pending clipboard restore still runs.
 signal(SIGTERM, SIG_IGN)
 let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sigterm.setEventHandler {

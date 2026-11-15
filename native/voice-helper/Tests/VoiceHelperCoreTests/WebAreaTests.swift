@@ -3,7 +3,6 @@ import Testing
 
 private func never() -> Bool { false }
 
-/// Gives up after `after` checks, the way a deadline passes between two accessibility requests.
 private func expiring(after checks: Int) -> () -> Bool {
     var remaining = checks
     return {
@@ -80,7 +79,6 @@ private final class Materialized {
     var count = 0
 }
 
-/// A window tree as Chromium exposes it: toolbars without URLs, one view that carries the page URL.
 private final class Tree: AccessibilityNode, Equatable {
     let name: String
     let url: String?

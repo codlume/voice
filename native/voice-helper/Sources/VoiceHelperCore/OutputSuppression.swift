@@ -25,7 +25,6 @@ public enum OutputControl: Equatable, Sendable, Codable {
         }
     }
 
-    /// `scale` is the fraction of the level to keep; a mute control can only mute.
     func scaled(by scale: Float) -> OutputControl {
         switch self {
         case .mute(let element, _): return .mute(element: element, value: 1)
@@ -149,16 +148,10 @@ public final class OutputSuppression {
         persist()
     }
 
-    /// What to hold as `originals` for one output and what to write to lower it to `scale`.
-    /// Partial lowering needs volume controls and muting prefers mute controls; an output that has
-    /// only the other kind still gets lowered with what it has.
     static func plan(current: [OutputControl], held: [OutputControl], scale: Float) -> (originals: [OutputControl], writes: [OutputControl]) {
         let mutes = current.filter { $0.id.kind == .mute }
         let volumes = current.filter { $0.id.kind == .volume }
         let (preferred, fallback) = scale == 0 ? (mutes, volumes) : (volumes, mutes)
-        // An original the output is still below was never restored, as when a device drops out
-        // mid-session and returns. Lowering from it again keeps the target fixed instead of
-        // compounding, and recording the lowered level instead would lose the original.
         var originals = held.filter { original in
             current.first { $0.id == original.id }?.isQuieter(than: original) ?? true
         }
@@ -192,8 +185,6 @@ public final class OutputSuppression {
             // A device reports only the group of controls that is settable right now, so a missing
             // control may come back; keep its original for the next device change or session.
             guard let now = current.first(where: { $0.id == original.id }) else { return true }
-            // Restore only while the output is still below its original; a level the user raised
-            // back is theirs.
             guard now.isQuieter(than: original) else { return false }
             do {
                 try controls.write(uid: uid, control: original)

@@ -1,5 +1,3 @@
-// The parts of bench.mjs that touch nothing outside their arguments: argument parsing, the
-// statistics, the parsers for what the helper and the system tools print, and the report's shape.
 import { parseArgs as parseFlags } from "node:util";
 
 export const USAGE =
@@ -59,7 +57,6 @@ export function parseArgs(argv) {
   };
 }
 
-/** `samples[run]` is null where that run failed; the statistics cover the rest. */
 export function summarize(samples) {
   const values = samples.filter((value) => value !== null).toSorted((a, b) => a - b);
   if (values.length === 0) {
@@ -71,8 +68,6 @@ export function summarize(samples) {
   return { samples, n: values.length, median: round(median), min, max, range: round(max - min) };
 }
 
-// How often two samples of one distribution have disjoint ranges, either way round:
-// 2 * n! * m! / (n + m)!.
 function disjointByChance(n, m) {
   let rate = 2;
   for (let i = 1; i <= m; i += 1) rate *= i / (n + i);
@@ -107,7 +102,6 @@ export function compare(baseline, candidate) {
   };
 }
 
-/** `samplesBySide` is `{ baseline?: (number | null)[], candidate: (number | null)[] }`. */
 export function measurement({ unit, source, ...rest }, samplesBySide) {
   const sides = Object.fromEntries(
     Object.entries(samplesBySide).map(([side, samples]) => [side, summarize(samples)]),
@@ -127,7 +121,6 @@ export function missingAnchors(text, words) {
   return words.filter((word) => !text.toLowerCase().includes(word.toLowerCase()));
 }
 
-/** A run passes only when both sides produced a transcript and the two are the same string. */
 export function compareTranscripts(baseline, candidate) {
   const differences = [];
   for (let run = 0; run < Math.max(baseline.length, candidate.length); run += 1) {
@@ -139,7 +132,6 @@ export function compareTranscripts(baseline, candidate) {
   return { matchesBaseline: differences.length === 0, differences };
 }
 
-/** The helper logs which way a session's text was produced; no line means a full decode. */
 export function finalizationPath(logMessages) {
   const logged = (start) => logMessages.some((message) => message.startsWith(start));
   if (logged("streaming ASR finalized ")) return "streamed";

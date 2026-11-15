@@ -99,7 +99,6 @@ final class SystemAudioSource: MeetingTap {
     /// The tap delivers frames through silence, so a long gap means it stalled.
     var msSinceAudio: Double { lastAudio.millisecondsToNow() }
 
-    /// Delivers the tail and releases the tap; the source cannot start again.
     func stop() {
         pump?.cancel()
         pump = nil
@@ -149,8 +148,6 @@ final class SystemAudioSource: MeetingTap {
     }
 }
 
-/// Core Audio process objects that belong to Voice: the helper, the app that launched it, and the
-/// app's own child processes.
 private func voiceProcessObjects() -> [AudioObjectID] {
     let app = getppid()
     return readObjects(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyProcessObjectList).filter { object in

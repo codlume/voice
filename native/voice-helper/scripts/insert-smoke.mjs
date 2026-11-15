@@ -29,7 +29,6 @@ async function settle(read, expected, timeoutMs = 3_000) {
   return value;
 }
 
-// The helper must hand back whatever the developer already had, so the smoke never writes it.
 const clipboardBefore = clipboardSha256();
 const textEdit = textEditTarget(`insert-${mode}`);
 try {

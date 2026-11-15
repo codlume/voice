@@ -77,7 +77,6 @@ private func silence(seconds: Double) -> [Float] {
     }
 
     @Test func aShortReplyEndsItsWindowOnceASecondOfSilenceFollows() {
-        // "Yes." right after a cut: its pause starts before the two-second minimum.
         let reply = tone(seconds: 0.8) + silence(seconds: 1)
         #expect(MeetingChunker.cut(reply, final: false) == Int(1.3 * 16_000))
         #expect(MeetingChunker.cut(reply + silence(seconds: 5), final: false) == Int(1.3 * 16_000), "a pause that keeps growing still cuts")
@@ -151,13 +150,11 @@ private func silence(seconds: Double) -> [Float] {
 
 @Suite struct TapRestartsTests {
     @Test func aTapThatRecordsBetweenItsRestartsNeverEndsTheLeg() {
-        // Headphones that change their profile once a minute, each time followed by audio.
         var restarts = TapRestarts()
         #expect((1...6).map { restarts.allows(restartAtMs: Double($0) * 60_000) } == [true, true, true, true, true, true])
     }
 
     @Test func aTapThatKeepsStallingEndsTheLegOnItsFourthRestartInARow() {
-        // A stall is noticed and the tap recreated about every five seconds.
         var restarts = TapRestarts()
         #expect((1...4).map { restarts.allows(restartAtMs: Double($0) * 5000) } == [true, true, true, false])
     }
@@ -232,9 +229,6 @@ private func silence(seconds: Double) -> [Float] {
     }
 }
 
-/// A voice detector that scores each chunk by where the chunk lies in the audio it has heard
-/// since it was new: the highest score of the stretches it overlaps, else 0. Like the real
-/// one, it is right about a stretch only after hearing everything before it, once.
 private struct ScriptedDetector: VoiceDetector {
     var scores: [(samples: Range<Int>, probability: Float)] = []
     var cannotTell = false
@@ -264,7 +258,6 @@ private struct ScriptedDetector: VoiceDetector {
         try writer.close()
     }
 
-    /// A sound at 1 s and another at 5 s, half a second each.
     private let twoSounds = silence(seconds: 1) + tone(seconds: 0.5) + silence(seconds: 3.5) + tone(seconds: 0.5) + silence(seconds: 1)
     private let first = 16_000..<24_000
     private let second = 80_000..<88_000
@@ -279,8 +272,6 @@ private struct ScriptedDetector: VoiceDetector {
         #expect(heard.samples.count == 104_000, "the audio itself is whole")
     }
 
-    /// The sound starts at 102 400 samples, where the detector's 25th chunk ends, and lasts
-    /// 8000: it lies in the 26th chunk and the 27th.
     @Test(arguments: [(chunk: 24, kept: false), (chunk: 25, kept: true), (chunk: 26, kept: true), (chunk: 27, kept: false)])
     func aSoundIsKeptWholeWhenAVoicedChunkOverlapsItAndDroppedWhenOneOnlyTouchesIt(chunk: Int, kept: Bool) async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -293,8 +284,6 @@ private struct ScriptedDetector: VoiceDetector {
     @Test func theDetectorItReturnsHasHeardTheStretchAndTheOneItWasGivenHasNot() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
         try write(twoSounds)
-        // Only the first sound is a voice. A detector that took the second stretch for the
-        // start of the mic would hear the second sound where the first one is.
         let new = ScriptedDetector(scores: [(first, 1)])
         let start = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 64_000, detector: new)
         #expect(start.runs == [first])

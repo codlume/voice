@@ -1,7 +1,5 @@
 /// Reports each pause that follows speech as audio arrives, so a decode of everything so far can
-/// start before the user releases. Speech is anything within 40 dB of the loudest chunk so far
-/// (SpeechSpan uses 30 dB; the wider band errs toward treating a soft trailing word as speech, so
-/// a decode that ran before it is not reused).
+/// start before the user releases.
 public struct PauseDetector: Sendable {
     private static let speechWithinPeak: Float = 0.01
     private static let speechFloor: Float = 0.00178

@@ -2,7 +2,6 @@ import Testing
 @testable import VoiceHelperCore
 
 private let longestLabel = String(repeating: "a", count: 63)
-/// Four 61-character labels, four dots, and a 5-character label: 253 characters exactly.
 private let longestHost = ([String](repeating: String(repeating: "a", count: 61), count: 4) + ["abcde"]).joined(separator: ".")
 
 @Suite struct PageHostTests {

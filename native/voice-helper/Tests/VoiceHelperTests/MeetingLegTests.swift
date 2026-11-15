@@ -50,7 +50,6 @@ private final class FakeTap: MeetingTap {
 
 private final class FakeWriter: MeetingAudioWriter {
     private(set) var samples: [Float] = []
-    /// The frames a power loss would leave.
     private(set) var flushedFrames = 0
     var diskIsFull = false
 
@@ -78,7 +77,6 @@ private extension [Float] {
     static var marked: [Float] { [Float](repeating: 0.5, count: 1600) }
 }
 
-/// A live leg on fakes: no microphone, no process tap, no TCC, no files.
 @MainActor
 private final class Leg {
     let mic = FakeMic()
@@ -134,7 +132,6 @@ private final class Leg {
         defer { leg.end() }
         #expect(try leg.capture.start().system == .active)
 
-        // The disk fills, then the tap's sample rate changes: the old tap's tail cannot be saved.
         leg.writers["system.pcm"]?.diskIsFull = true
         leg.taps[0].formatChanged()
 
@@ -198,7 +195,6 @@ private final class Leg {
         let leg = Leg()
         _ = try leg.capture.start()
         let t0 = leg.capture.startedAt
-        // The tap's pump comes round a little slower than the mic's, so its chunks are longer.
         let pump = (mic: 1600, tap: 1700)
         var next = (mic: 0, tap: 0)
         var apart = 0
@@ -279,7 +275,6 @@ private final class Leg {
         let askedOnMain = OSAllocatedUnfairLock(initialState: false)
         let mainRan = DispatchSemaphore(value: 0)
         let leg = Leg(micAllowed: {
-            // Starting a leg asks once; from then on only the watch does.
             guard watching.withLock({ $0 }) else { return true }
             let firstTick = events.withLock { ticks in
                 defer { ticks.append("the watch asked") }
@@ -290,8 +285,6 @@ private final class Leg {
                 events.withLock { $0.append("main ran other work") }
                 mainRan.signal()
             }
-            // TCC is slow to answer. Off main the answer waits for main's other work; on main it
-            // cannot, so there it takes the 200 ms that work would have waited.
             if Thread.isMainThread {
                 askedOnMain.withLock { $0 = true }
                 Thread.sleep(forTimeInterval: 0.2)
@@ -308,8 +301,6 @@ private final class Leg {
         _ = try leg.capture.start()
         watching.withLock { $0 = true }
 
-        // The watch ticks every two seconds at utility QoS, and other tests keep main busy; the
-        // order of the events is what this test asserts, not how soon they come.
         let deadline = ContinuousClock.now + .seconds(120)
         while leg.losses.isEmpty, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
 

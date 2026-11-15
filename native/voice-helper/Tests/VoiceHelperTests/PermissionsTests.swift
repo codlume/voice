@@ -16,7 +16,6 @@ struct PermissionsTests {
         let permissions = Permissions(
             output: Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor),
             read: { _ in
-                // A check that held its caller would leave this to time out.
                 let returned = callerReturned.wait(timeout: .now() + .seconds(2)) == .success
                 readFinishedAfterTheCaller.withLock { $0 = returned }
                 return Self.answer(microphone: .granted)
@@ -49,7 +48,6 @@ struct PermissionsTests {
 
         permissions.check()
         permissions.check()
-        // The first read is still running. The second answer gets this long to overtake it.
         _ = try? await lines.wait(for: "permissions", timeout: .milliseconds(200))
         firstMayAnswer.signal()
 

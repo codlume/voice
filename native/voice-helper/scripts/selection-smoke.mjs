@@ -64,7 +64,6 @@ function pressRightArrow() {
 async function createTarget() {
   if (target === "textedit") return textEditTarget("selection-smoke");
   const userData = mkdtempSync(join(tmpdir(), "voice-selection-smoke-"));
-  // On a signal stopChildrenOnSignal exits without unwinding to finally, so cleanup runs on exit.
   process.once("exit", () => rmSync(userData, { recursive: true, force: true }));
   return electronTarget(userData);
 }

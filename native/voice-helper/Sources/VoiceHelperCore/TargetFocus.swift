@@ -1,6 +1,5 @@
 /// What a session's insert must still find: the focused element, or when the app exposes none,
-/// as Chromium does, the page URL below the window. A swipe back changes that URL with no press,
-/// and an unread count leaves it alone. A page that rewrites its own URL also refuses.
+/// as Chromium does, the page URL below the window.
 public enum FocusAnchor<Element: Equatable>: Equatable {
     case element(Element)
     case windowOnly(pageURL: String?)
@@ -13,9 +12,7 @@ public enum FocusAnchor<Element: Equatable>: Equatable {
 
 /// AX elements can be reused by chat composers, so the window and its title are compared too.
 /// Live titles tick on their own (an unread count), so the title is compared only when a press
-/// could have switched the composer. A target with a selection origin has its own guard against
-/// a composer switch (the selected text and range, or the press stamp, move), so it never
-/// compares the title.
+/// could have switched the composer.
 public struct TargetFocus<Element: Equatable>: Equatable {
     public let anchor: FocusAnchor<Element>
     public let window: Element
@@ -27,13 +24,8 @@ public struct TargetFocus<Element: Equatable>: Equatable {
         self.title = title
     }
 
-    /// What separates `now` from this target, or nil when it is still the same one. Chromium
-    /// starts answering with an element once an assistive client switches its web accessibility
-    /// on, which can happen mid-session. A window-only target never named an element, so there
-    /// the page URL it saw still decides. A target that saw no URL refuses the element. A lookup
-    /// that gave up reads the same as an app with no URL (Electron), and nothing else ties the
-    /// element to the page the session began on. `pageURL` is asked only when a URL decides,
-    /// because the search costs the insert up to 100 ms on main.
+    /// Chromium starts answering with an element once an assistive client switches its web
+    /// accessibility on, which can happen mid-session. `pageURL` is called only when a URL decides.
     func change(to now: Self, comparingTitle: Bool, pageURL: (Element) -> String?) -> FocusChange? {
         guard window == now.window else { return .window }
         if comparingTitle, title != now.title { return .title }
@@ -72,10 +64,7 @@ public enum FocusLoss: String, Equatable, Sendable {
     case noApp, untrusted, inputMoved, notFrontmost, noAnswer, nothingFocused, readsDisagree, focusMoved, cancelled
 
     /// A busy app, or two reads on either side of Chromium switching its accessibility tree on,
-    /// can pass without the user doing anything, so the snapshot is worth taking again. The
-    /// others describe the user or the app, and another read would say the same. `focusMoved`
-    /// ends a retry whose snapshot no longer shows the first read's target, and `cancelled` one
-    /// whose session was abandoned first.
+    /// can pass without the user doing anything, so the snapshot is worth taking again.
     public var isTransient: Bool { self == .noAnswer || self == .readsDisagree }
 }
 
@@ -95,8 +84,7 @@ public enum CapturedFocus<Element: Equatable>: Equatable {
     case captured(TargetFocus<Element>)
 
     /// `movedSinceFirstRead` says the agreeing reads describe another target than the session's
-    /// first read. Focus can move with no press (a swipe back, a page focusing another field), and
-    /// a retry must not adopt that target as the user's.
+    /// first read.
     public mutating func resolve(
         first: FocusReread<Element>, second: FocusReread<Element>, inputUnchanged: Bool, frontmost: Bool,
         movedSinceFirstRead: Bool = false

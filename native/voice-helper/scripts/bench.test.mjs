@@ -48,7 +48,6 @@ test("arguments: one side, both sides, and the defaults", () => {
     baseline: "old",
     candidate: "new",
     runs: 7,
-    // Selected metrics run in the script's own order, whatever order --only names them in.
     metrics: ["load-warm", "paste"],
     out: "report.json",
     fnpost: "poster",
@@ -212,7 +211,6 @@ test("accuracy: the candidate must repeat the baseline's text run for run", () =
     matchesBaseline: false,
     differences: [{ run: 1, baseline: "Hi Anna.", candidate: "Hi Anna" }],
   });
-  // The same texts in another order are a difference: the comparison is per run.
   assert.equal(compareTranscripts(["a", "b"], ["b", "a"]).differences.length, 2);
 });
 

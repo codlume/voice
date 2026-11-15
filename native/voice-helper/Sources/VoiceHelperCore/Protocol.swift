@@ -560,8 +560,6 @@ extension KeyCombo: Decodable {
     }
 }
 
-// The event tap swallows a matching press system-wide, so a shortcut Shift alone (or nothing)
-// modifies would eat plain typing in every app.
 private func decodeShortcutModifiers(_ c: KeyedDecodingContainer<Key>) throws -> [Modifier] {
     let modifiers = try c.decode([Modifier].self, forKey: .modifiers)
     guard modifiers.contains(where: { $0 != .shift }) else {

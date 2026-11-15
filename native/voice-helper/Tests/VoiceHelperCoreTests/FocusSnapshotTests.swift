@@ -4,7 +4,6 @@ import Testing
 private let composer = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Conversation A")
 private let otherComposer = TargetFocus(anchor: .element("composer-b"), window: "window-a", title: "Conversation A")
 
-/// A target app that answers each focus read from a script and counts what the snapshot asked.
 private final class ScriptedApp {
     private var answers: [FocusReread<String>]
     private let pageURL: String?

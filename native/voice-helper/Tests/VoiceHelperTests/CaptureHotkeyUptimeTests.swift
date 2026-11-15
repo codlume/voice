@@ -5,8 +5,6 @@ import VoiceHelperCore
 
 @Suite(.serialized)
 struct CaptureHotkeyUptimeTests {
-    /// Main echoes the helper's own clock, which is never negative. A command that carries
-    /// anything else is a session without a press, not a reason to stop the helper.
     @Test(arguments: [-1e300, -1])
     @MainActor func aHotkeyUptimeNoPressCouldProduceStartsASessionWithoutARelay(hotkeyUptimeMs: Double) async throws {
         let lines = EmittedLines()

@@ -270,9 +270,7 @@ private func rightOptionUp(pointerPresses: UInt32) -> KeyEvent {
     var hotkey = Hotkeys(key: .fn, toggleKey: nil, initialFlags: 0)
     _ = hotkey.handle(fnDown(), activity: .idle)
     #expect(hotkey.handle(escapeDown, activity: .capturing) == escapeCancel)
-    // Capture is already idle again when the first repeat arrives.
     #expect(hotkey.handle(escapeRepeat, activity: .idle) == consumed)
-    // The backstop poll runs while fn is still down.
     #expect(hotkey.reconcile(flags: fnMask) == nil)
     #expect(hotkey.handle(escapeRepeat, activity: .idle) == consumed)
     #expect(hotkey.handle(escapeUp, activity: .idle) == consumed)
@@ -338,7 +336,6 @@ private func release(_ keycode: Int64, flags: UInt64) -> KeyEvent {
     #expect(hotkey.handle(release(18, flags: leftOptionBits), activity: .idle) == consumed)
     #expect(hotkey.handle(KeyEvent(kind: .flagsChanged, keycode: 58, flags: 0), activity: .idle) == .none)
     #expect(hotkey.handle(rightOptionDown, activity: .idle) == emits(.down))
-    // Still idle: capture.started has not come back yet, so the hold state alone must refuse.
     #expect(hotkey.handle(press(18, flags: rightOptionBits), activity: .idle) == emits(.chord))
     #expect(hotkey.handle(release(18, flags: rightOptionBits), activity: .capturing) == .none)
 }

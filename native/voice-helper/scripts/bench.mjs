@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// One repeatable before/after benchmark for the native helper:
-//   node native/voice-helper/scripts/bench.mjs --baseline <voice-helper> --candidate <voice-helper>
-//     [--runs N] [--only a,b] [--out file.json] [--fnpost <fnpost>] [--verbose]
-// Sides alternate (baseline, candidate, baseline, ...) inside every metric, so load on the machine
-// lands on both, and the side that goes first changes every run. The JSON report goes to stdout
-// and a short table to stderr. Every measurement names the clock and the event pair it came from.
-// Work that failed is counted in `errors` and never becomes a sample.
 import { execFile, execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -57,20 +50,16 @@ const DEFAULT_RUNS = 5;
 // A cold load compiles the model for the Neural Engine, which takes one to two minutes on a busy
 // machine, so it gets fewer samples unless --runs asks for more.
 const DEFAULT_COLD_RUNS = 3;
-// The anchor words are the ones finalization-latency.mjs asserts for the same fixtures.
 const FIXTURES = [
   { name: "short", words: ["Anna", "Thursday"] },
   { name: "pauses", words: ["Friday", "onboarding"] },
   { name: "boundary", words: ["Maria", "billing", "2026"] },
   { name: "url", words: ["github"] },
-  // The decode its pause started is stale at release, so this one always pays a full decode.
   { name: "pause-then-speech", words: ["Friday", "Thanks"] },
   { name: "long", words: ["migration", "15", "42,000", "2019", "tomorrow", "think"] },
 ];
 const EXCLUSIVE_WAIT_MS = 5 * 60_000;
 const EXCLUSIVE_POLL_MS = 5_000;
-// The helper prepares its audio engine again after each session and reports no event when it
-// has, so a press follows the last one after the pause a person leaves, as in start-latency.mjs.
 const MIC_IDLE_GAP_MS = 1_500;
 const IDLE_SETTLE_MS = 10_000;
 const IDLE_SAMPLE_MS = 20_000;
@@ -95,12 +84,10 @@ const execFileAsync = promisify(execFile);
 const megabytes = (bytes) => bytes / 1024 / 1024;
 const note = (message) => console.error(`[bench] ${message}`);
 
-/** A metric that cannot run here. It is left out with the reason; it is not a failure. */
 class Skip extends Error {}
 
 const cleanups = [];
 
-/** Registers an undo that runs once: from the caller's `finally`, or on a signal. */
 function guard(cleanup) {
   const run = async () => {
     const index = cleanups.indexOf(run);
@@ -129,8 +116,6 @@ function openHelper(side, { home = BENCH_HOME, env = {}, ...options } = {}) {
     ...options,
   });
   ownHelpers.add(helper);
-  // A command written to a helper that has died must not end the whole run: the event it
-  // waited for never comes, and that sample is counted as failed.
   helper.child.stdin.on("error", () => {});
   const close = guard(async () => {
     const exit = await helper.close();
@@ -150,7 +135,6 @@ async function withSide(side, options, body) {
   }
 }
 
-/** One loaded helper per side, alive together, for metrics whose sessions take turns. */
 async function withEverySide(sides, options, body) {
   const helpers = new Map();
   const open = [];
@@ -168,10 +152,6 @@ async function withEverySide(sides, options, body) {
   }
 }
 
-/**
- * The order the sides take one run in. With a fixed order the second side decoded a short fixture
- * about 35 ms faster than the first, whichever binary it was.
- */
 const taking = (sides, run) => (run % 2 === 0 ? sides : sides.toReversed());
 
 function* eachRun(metric, runs) {
@@ -189,7 +169,6 @@ function arrival(helper, predicate) {
 
 const asrStatus = (state) => (event) => event.type === "asr.status" && event.state === state;
 
-/** The grant belongs to the app that launched this script; this script never requests one. */
 async function requirePermission(side, kind, env, consequence) {
   const state = await withSide(side, { env }, async (helper) => {
     helper.send({ type: "permissions.check" });
@@ -209,7 +188,6 @@ function otherVoiceProcesses() {
     .filter((pid) => !own.has(pid));
 }
 
-/** For a metric that posts keys or moves focus: another Voice's hotkey tap would hear it. */
 async function waitForExclusiveDesktop(metric) {
   const deadline = performance.now() + EXCLUSIVE_WAIT_MS;
   for (let waiting = false; ; waiting = true) {
@@ -244,7 +222,6 @@ function recorder(sides, runs) {
         (values[key] ??= empty())[side.name][run] = value === null ? null : round(value);
       }
     },
-    /** Runs one sample; a throw becomes a counted error and the sample stays null. */
     async attempt(side, run, context, body) {
       try {
         await body();
@@ -266,7 +243,6 @@ function recorder(sides, runs) {
 
 const bySide = (sides, make) => Object.fromEntries(sides.map(({ name }) => [name, make()]));
 
-/** Every compiled model in a home's CoreML cache with its modification time. */
 function compiledModels(home) {
   const root = join(home, E5RT_CACHE);
   if (!existsSync(root)) return "";
@@ -276,7 +252,6 @@ function compiledModels(home) {
     .join("\n");
 }
 
-/** A sample that assumes a warm CoreML cache fails when CoreML had to compile during it. */
 async function warmly(body) {
   const compiled = compiledModels(BENCH_HOME);
   const result = await body();
@@ -291,7 +266,6 @@ async function timedLoad(side, options = {}) {
   return withSide(side, options, async (helper, spawnedAt) => {
     const readyAt = arrival(helper, (event) => event.type === "ready");
     const sentAt = performance.now();
-    // download: true only lengthens the wait; priming already put every file in place.
     const prepareMs = await prepareAsr(helper, { download: true });
     assert(!helper.events.some(asrStatus("downloading")), "the load turned into a download");
     const audit = helper.events
@@ -349,15 +323,12 @@ async function loadWarm({ sides, runs }) {
   return {
     conditions:
       "Integrity stamp and CoreML on-device cache warm: each binary loaded the model once before the first sample, and a load during which CoreML compiled anything is an error, not a sample.",
-    // With the stamp in place the check hashes only the small files, a few megabytes.
     integrityCheckHashedBytes: hashedBytes,
     measurements: rec.measurements(LOAD_SOURCES),
     errors: rec.errors,
   };
 }
 
-// What main sends when a helper comes up (`configure` in apps/desktop/src/main/index.ts), in its
-// order. `hotkey.configure` is left out: a configured tap would report keys other sessions post.
 const LAUNCH_COMMANDS = [
   { type: "microphone.configure", microphone: null },
   { type: "permissions.check" },
@@ -485,7 +456,6 @@ async function fixtureSession(helper, { name, words }, id) {
       targetBundleId: transcript.target?.bundleId ?? null,
     };
   } catch (error) {
-    // A session that died half-way would leave the helper busy for every later one.
     helper.send({ type: "capture.cancel", id });
     throw error;
   }
@@ -575,7 +545,6 @@ async function finalization({ sides, runs }) {
   };
 }
 
-/** Starts a capture and cancels it at its first audio, so nothing is kept or transcribed. */
 async function startThenCancel(helper, id, hotkeyUptimeMs = null) {
   helper.send({
     type: "capture.start",
@@ -611,8 +580,6 @@ async function hotkey({ sides, runs, fnpost }) {
     const release = guard(() => post("up"));
     let started;
     try {
-      // Awaiting fnpost here would hold the reply back by its 50 ms sleep after the event, so
-      // its exit is awaited below; until then a failure must not count as unhandled.
       const posted = post("down");
       posted.catch(() => {});
       const down = await helper.waitFor(
@@ -745,7 +712,6 @@ const PASTE_ROUTES = [
 async function paste({ sides, runs }) {
   await requirePermission(sides[0], "accessibility", {}, "so the helper cannot insert");
   await waitForExclusiveDesktop("paste");
-  // Loaded here because it pulls in the app harness, which the other metrics do not need.
   const { clipboardKept, restoreClipboard, saveClipboard, textEditTarget } =
     await import("../../../scripts/targets.mjs");
   const rec = recorder(sides, runs);
@@ -755,7 +721,6 @@ async function paste({ sides, runs }) {
   const original = saveClipboard();
   let seeded;
   let clipboard = "untouched";
-  // The user may copy something while this runs, so only this script's own strings are replaced.
   const giveClipboardBack = guard(() => {
     if (saveClipboard().digest === original.digest) return;
     const now = execFileSync("pbpaste", { encoding: "utf8" });
@@ -767,7 +732,6 @@ async function paste({ sides, runs }) {
   const closeTextEdit = guard(() => textEdit.close());
 
   let document;
-  // targets.mjs gives its own read one second, which a loaded machine does not meet.
   const landed = (text) => () =>
     execFileAsync(
       "osascript",
@@ -1030,7 +994,6 @@ function environment(sides, fnpost) {
   };
 }
 
-/** Downloads the models on a machine that lacks them and warms the stamp and CoreML's cache. */
 async function prime(side) {
   return withSide(side, {}, async (helper) => {
     const { version } = helper.events.find((event) => event.type === "ready");

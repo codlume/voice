@@ -172,7 +172,6 @@ struct ModelIntegrityTests {
         #expect(message.hasPrefix("The speaker detection model cannot be used while plda-parameters.json"), Comment(rawValue: message))
     }
 
-    /// Every file at its manifest size, all zeros: passes a stat check, fails every hash.
     private func writeSparse(_ release: ModelRelease, in dir: URL) throws {
         let folder = dir.appendingPathComponent(release.folderName)
         for file in release.files {

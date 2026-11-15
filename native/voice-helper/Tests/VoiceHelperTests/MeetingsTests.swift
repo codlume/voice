@@ -5,15 +5,10 @@ import VoiceHelperCore
 @testable import VoiceHelper
 
 private typealias Tone = (hz: Float, amplitude: Float)
-/// The user's voice: louder than the other side's, so a fake decoder can tell the sources apart,
-/// and at another pitch, as two voices are.
 private let mine: Tone = (660, 0.3)
 private let theirs: Tone = (440, 0.1)
-/// The other side as the laptop's mic hears it through the speakers.
 private let theirEcho: Tone = (440, 0.025)
 
-/// Each span's tone, or silence for nil. A tone fades in and out over 10 ms, as a voice does,
-/// rather than with a click.
 private func writeTone(to url: URL, segments: [(seconds: Double, tone: Tone?)]) throws {
     let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
     let frames = AVAudioFrameCount(segments.reduce(0) { $0 + $1.seconds } * 16_000)
@@ -44,7 +39,6 @@ private final class Harness {
     var decodes = 0
     var meetings: Meetings!
 
-    /// `micHearsTheSpeakers`: the user is quiet while the other side talks, and the mic hears them.
     init(system: Bool = true, speed: Double = 16, micHearsTheSpeakers: Bool = false,
          newDetector: @escaping MeetingTranscription.NewDetector = { nil }) throws {
         output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
@@ -77,7 +71,6 @@ private final class Harness {
         lines.snapshot().filter { $0["type"] as? String == type }
     }
 
-    /// Segments in meeting order as source@start-end.
     func segments() -> [String] {
         events("meeting.segment").map { segment in
             let ms = { (key: String) in Int(segment[key] as? Double ?? -1) }
@@ -179,7 +172,6 @@ struct MeetingsTests {
     }
 
     @Test func whatTheVoiceDetectorHearsNoVoiceInNeverShowsAsTheUser() async throws {
-        // The detector hears a voice in the user's first turn and none in the second.
         let h = try Harness(newDetector: { ScriptedDetector(voiced: [0..<40_000]) })
         defer { h.meetings.shutdown(); h.devices.shutdown() }
         h.start()

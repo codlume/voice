@@ -66,7 +66,6 @@ try {
       result.method === "none" && result.reason === "focusChanged",
       `insert.result method ${result.method} reason ${result.reason ?? ""}`,
     );
-    // The helper logs the branch right after it emits insert.result.
     const branch = await helper.waitFor(
       (event) => event.type === "log" && event.message.startsWith(`insert ${id}: `),
       { timeoutMs: 2_000, label: "insert branch log line" },
