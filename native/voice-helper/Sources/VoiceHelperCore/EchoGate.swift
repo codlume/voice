@@ -16,8 +16,10 @@ public enum EchoGate {
     /// Audio before a block that the gate reads to learn the echo path.
     public static let contextSamples = 8 * PcmFile.sampleRate
     /// Audio after a block that the gate reads when both files hold it. A lag that moves just
-    /// before the block ends shows only in what follows.
-    static let lookaheadSamples = correlationBlock
+    /// before the block ends shows only in what follows. Of 960 simulated windows that end 0.1
+    /// to 4 s after a move of a MacBook Air's or a laptop's echo, 13 kept echo with 2 s after
+    /// them, 7 with 2.5 s, and none with 3 s.
+    static let lookaheadSamples = 3 * PcmFile.sampleRate
     /// A long stretch is gated one live window at a time, so a clock that drifts never carries
     /// the lag far within one.
     static let blockSamples = MeetingChunker.windowSamples
