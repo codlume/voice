@@ -5,7 +5,6 @@ import { BUILT_IN_TRANSFORMS, POLISH_ID } from "../shared/transforms.ts";
 
 vi.mock("react-dom/client", () => ({ createRoot: () => ({ render: () => {} }) }));
 
-// The harness picks its scene from the URL and installs its fake API on window at import.
 async function openPreview(search: string): Promise<HubApi & PillApi> {
   const window: { voice?: HubApi & PillApi } = {};
   vi.stubGlobal("window", window);
@@ -21,7 +20,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// The first import transforms the whole renderer, which outlasts 5 s on a loaded CI runner.
 describe("preview harness", { timeout: 30_000 }, () => {
   test("applies a transforms patch", async () => {
     const voice = await openPreview("?hub=transforms");

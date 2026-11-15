@@ -87,14 +87,11 @@ const accessibleLabels: Record<MicrophoneTestAction["kind"], string> = {
   stop: "Stop microphone test",
 };
 
-// Null while no test is listening. Each episode is one audio source, so a restart (microphone
-// change, device reset) re-runs the effect and forgets what the previous source was heard.
 function useLevel(episode: number | null) {
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState(false);
   const [quiet, setQuiet] = useState(false);
 
-  // Only a listening test subscribes, so an idle Settings page runs no timers and repaints nothing.
   useEffect(() => {
     if (episode === null) return;
     let smoothed = 0;

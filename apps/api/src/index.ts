@@ -96,8 +96,6 @@ app.onError(async (error, c) => {
       error: error.name,
     }),
   );
-  // While the security-header middleware runs first, every error response already
-  // passes through it. This keeps error responses covered if that order changes.
   await securityHeaders(c, async () => {
     c.res = c.json({ error: "Internal Server Error" }, 500, { "X-Request-Id": id });
   });

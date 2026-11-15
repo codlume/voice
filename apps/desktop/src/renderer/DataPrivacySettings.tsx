@@ -147,8 +147,6 @@ export function DataPrivacySettings({
   );
 }
 
-// A change that would lose saved entries asks first. The dialog keeps what it asked while it
-// fades out, so it stays mounted with `open: false` rather than losing its content.
 type Asking = { open: boolean; to: HistoryRetention } & ReturnType<typeof lossQuestion>;
 
 function HistorySection({ history: { entries, retention } }: { history: HistoryState }) {

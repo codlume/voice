@@ -80,7 +80,6 @@ export function SystemSettings({
             title="Open at login"
             detail={loginItemDetails[loginItem]}
             disabled={loginItem === "unavailable"}
-            // Mirrors macOS Login Items rather than a stored setting, so it has no default.
             onReset={undefined}
           >
             <Switch

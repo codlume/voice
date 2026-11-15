@@ -21,8 +21,6 @@ export type Read<T> =
 
 type HeldMeetings = MeetingsState | "reading" | "failed";
 
-// As in useHistory: changes and the answer arrive in order, so the answer never replaces a list a
-// change built.
 function askForMeetings(setState: Dispatch<SetStateAction<HeldMeetings>>) {
   void hubApi()
     .getMeetings()
@@ -32,8 +30,6 @@ function askForMeetings(setState: Dispatch<SetStateAction<HeldMeetings>>) {
     );
 }
 
-// Main sends the folders and settings whole with every change. Keeping the held ones while they
-// read the same lets the memoized rows skip a change to one meeting.
 const unlessEqual = <T>(held: T, next: T) =>
   JSON.stringify(held) === JSON.stringify(next) ? held : next;
 
@@ -101,7 +97,6 @@ export function useMeetingTranscript(
   }
   useEffect(() => {
     let current = true;
-    // Lines pushed after this read was asked for; the lines pushed before it belong to the last one.
     let pending: MeetingTranscriptChange[] | null = [];
     const unsubscribe = api.onMeetingTranscript((change) => {
       if (change.id !== id) return;

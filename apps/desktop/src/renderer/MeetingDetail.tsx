@@ -46,7 +46,6 @@ import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.lg },
-  // The page column is wide for the list and its panel; a note reads better at the usual width.
   readable: { maxWidth: 800, marginInline: "auto" },
   back: { alignSelf: "flex-start" },
   header: { display: "flex", alignItems: "flex-start", gap: space.md },
@@ -130,11 +129,6 @@ const tabs = [
   { value: "transcript", label: "Transcript" },
 ] as const satisfies readonly { value: DetailTab; label: string }[];
 
-/**
- * A field that saves on Enter or on leaving it and goes back to `saved` on Escape. The draft stays
- * while it has focus, so a name main writes meanwhile does not replace what the user types, and
- * until its save succeeds, so a failed one can be saved again.
- */
 function DraftInput({
   saved,
   save,
@@ -142,12 +136,10 @@ function DraftInput({
   ...input
 }: {
   saved: string;
-  /** Resolves false when the save failed. */
   save: (text: string) => Promise<boolean>;
   style: stylex.StyleXStyles;
 } & Pick<InputHTMLAttributes<HTMLInputElement>, "aria-label" | "placeholder">) {
   const [draft, setDraft] = useState<string | null>(null);
-  // Escape blurs too, and the blur must not save what Escape threw away.
   const reverting = useRef(false);
   return (
     <input
@@ -241,7 +233,6 @@ function Banner({
 
 type PageCommand = RecordingCommand | Extract<PromptCommand, "keep" | "discard">;
 
-/** The page's side of "Started by mistake?", in the notepad's words. */
 function ShortRecording({
   pending,
   onCommand,
@@ -327,7 +318,6 @@ function SummaryPanel({
   );
 }
 
-/** A speaker's name; blank goes back to "Speaker N". */
 function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: Speaker }) {
   const action = useAction();
   return (
@@ -400,9 +390,7 @@ export function MeetingDetail({
 }: {
   meeting: Meeting;
   folders: readonly Folder[];
-  /** This meeting's notices. */
   notices: readonly MeetingBanner[];
-  /** The summary model's row while it is not on disk, else null. */
   summaryModel: ChecklistRow | null;
   onBack: () => void;
 }) {

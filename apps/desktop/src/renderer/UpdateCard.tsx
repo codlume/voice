@@ -91,16 +91,13 @@ export function UpdateCardTrigger({
   if (open && !card) setOpen(false);
 
   return (
-    // One trigger for every status, so the button keeps focus when an update starts or finishes.
     <Popover.Root
       open={open}
       onOpenChange={(next, details) => {
-        // A click runs the button's action instead of pinning the card open.
         if (details.reason === "trigger-press") {
           details.cancel();
           return;
         }
-        // Escape hands focus back to the trigger, which must not reopen the card.
         if (!next && details.reason === "escape-key") focusReturnedByEscape.current = true;
         setOpen(next);
       }}

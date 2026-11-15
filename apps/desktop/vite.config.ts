@@ -48,7 +48,6 @@ const electronEntry = (
 // Packaged windows load over file://, which carries no response headers, so the policy rides in a
 // meta tag. The dev server injects inline scripts (React Refresh), admitted by a nonce, and the
 // StyleX dev runtime writes un-nonced <style> elements, so dev styles allow inline.
-// Fixed on purpose: dev pages carry no untrusted content, so the nonce only has to match the tags.
 const DEV_NONCE = "voice-dev";
 
 function contentSecurityPolicy(): Plugin {
@@ -109,13 +108,9 @@ export default defineConfig({
   pack: [
     {
       ...electronEntry("main", "src/main/index.ts"),
-      // Baked in at build time so a packaged app never reads it from its environment. Empty
-      // (the default) builds an app that cannot send diagnostics at all.
       env: { VOICE_SENTRY_DSN: process.env.VOICE_SENTRY_DSN ?? "" },
-      // Main's `import()`s (the Better Auth account client, model downloads) become their own
-      // chunks, so launch parses only what runs at launch. They get a folder of their own, which
-      // this build empties first: the other entries write to dist-electron too, so no entry can
-      // clean the whole of it.
+      // Main's `import()` chunks get a folder of their own, which this build empties first: the
+      // other entries write to dist-electron too, so no entry can clean the whole of it.
       outputOptions: { codeSplitting: true, chunkFileNames: "chunks/[name].cjs" },
       hooks: {
         "build:prepare": () =>

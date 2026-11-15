@@ -131,7 +131,6 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
     deps.assertCanUninstall(model);
     return deps.modelControls[model.id].uninstall();
   });
-  // The first list the hub sees is the loaded one, so an empty list means empty, not pending.
   hubCommands.handle(Channel.getHistory, () => history.loaded().then(history.state));
   hubCommands.handle(Channel.copyHistoryEntry, (_event, id: unknown, value: unknown) => {
     const version = parseTranscriptVersion(value);
@@ -234,7 +233,6 @@ const withMeeting =
 
 type MeetingControlDeps = Pick<HubCommandDeps, "meetings" | "meetingRecorder" | "log">;
 
-/** The commands the Voice window and the notepad both send about one meeting. */
 export function registerMeetingControls(
   commands: Commands<MeetingControls>,
   { meetings, meetingRecorder: recorder, log }: MeetingControlDeps,

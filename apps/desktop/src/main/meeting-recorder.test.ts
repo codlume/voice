@@ -105,7 +105,6 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     emit(event: HelperEvent) {
       recorder.onHelperEvent(event);
     },
-    /** The helper goes down and its replacement reports ready. */
     async restartHelper() {
       helperRunning = false;
       recorder.helperExited();
@@ -127,7 +126,6 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
       const text = await readFile(NodePath.join(dir, id, "meeting.json"), "utf8");
       return (JSON.parse(text) as { meeting: Meeting }).meeting;
     },
-    /** Grows both audio files to `ms` of 16 kHz mono Int16, as the helper writes them. */
     async audio(id: MeetingId, ms = 100) {
       await writeFile(NodePath.join(dir, id, "mic.pcm"), Buffer.alloc(ms * 32));
       await writeFile(NodePath.join(dir, id, "system.pcm"), Buffer.alloc(ms * 32));
@@ -148,7 +146,6 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
       h.emit({ type: "meeting.drained", id, failure });
       await h.settle();
     },
-    /** The helper's final pass; by default it hears what the live transcript did. */
     async finalized(id: MeetingId, segments?: readonly FinalSegment[]) {
       const live = (await store.transcript(id)).flatMap((entry) =>
         entry.kind === "segment" ? [{ ...entry, speaker: null }] : [],
@@ -156,7 +153,6 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
       h.emit({ type: "meeting.finalized", id, segments: segments ?? live });
       await h.settle();
     },
-    /** After Stop: the live tail, then the final pass. */
     async finish(id: MeetingId) {
       await h.drained(id);
       await h.finalized(id);
@@ -453,7 +449,6 @@ describe("meeting recorder", () => {
     await h.recorder.stop(id);
     await h.drained(id);
     await h.drained(id);
-    // The summary never ends on its own, so this waits for it to start instead of settling.
     h.emit({ type: "meeting.finalized", id, segments: [] });
     await vi.waitFor(() => expect(seen).toBeDefined());
 
@@ -617,7 +612,6 @@ describe("meeting recorder", () => {
     expect(h.sentTypes()).toEqual(["meeting.transcribe"]);
     expect(h.sent[0]).toMatchObject({ id });
 
-    // A helper that restarts mid-pass is asked for the pass again, not the drain.
     await h.drained(id);
     h.emit({ type: "ready", version: 18 });
     await h.settle();
@@ -656,7 +650,6 @@ describe("meeting recorder", () => {
     expect(await first.store.transcript(id)).toMatchObject([{ kind: "segment", text: TEN_WORDS }]);
     await first.store.settled();
 
-    // The next launch leaves the pass to the user's retry, which can finish it.
     const h = harness();
     await h.recorder.recover();
     h.emit({ type: "ready", version: 18 });
@@ -805,7 +798,6 @@ describe("meeting recorder", () => {
   test("markers sit at the end of the recorded audio, so they sort among segments at any playback speed", async () => {
     const h = harness();
     const id = await h.start();
-    // Fixture playback runs 8x: one wall-clock second records eight seconds of audio.
     h.advance(1000);
     await h.audio(id, 8000);
     await h.segment(id, "mic", 5000, "Before the pause");
@@ -867,7 +859,6 @@ describe("meeting recorder", () => {
     expect(h.sentTypes()).toEqual(["meeting.start", "meeting.cancel"]);
     expect(h.store.get(id)).toBeNull();
     expect(existsSync(h.folder(id))).toBe(false);
-    // No timer of the deleted meeting fires into a new one.
     await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
     await h.settle();
     expect(h.notices).toEqual([]);
@@ -885,7 +876,6 @@ describe("meeting recorder", () => {
     await h.recorder.remove(id);
     await h.settle();
     expect(h.sent.at(-1)).toEqual({ type: "meeting.cancel", id });
-    // A pass that finishes anyway changes nothing.
     await h.finalized(id, []);
     expect(h.store.get(id)).toBeNull();
   });
@@ -1598,7 +1588,6 @@ describe("meeting recorder", () => {
     await first.settle();
     expect(first.store.get(id)?.finalPassFailed).toBe("speakerModels");
 
-    // The reason outlives the relaunch, so its notice still says to download speaker detection.
     const h = harness();
     await h.store.loaded();
     expect(h.store.get(id)?.finalPassFailed).toBe("speakerModels");

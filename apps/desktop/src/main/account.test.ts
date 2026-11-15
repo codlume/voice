@@ -261,7 +261,6 @@ describe("createAccount", () => {
     expect(h.createClient).not.toHaveBeenCalled();
     expect(h.exchanges).toEqual([]);
 
-    // Retry opens a new browser; the interrupted code belongs to the dead process's attempt.
     await startSignIn(h, "state2");
     expect(h.requests).toHaveLength(1);
     h.account.handleCallbackUrl(callbackUrl(CODE));
@@ -759,7 +758,6 @@ describe("restore", () => {
     await startSignIn(before);
     expect(before.fake.forgotten).toBe(1);
 
-    // Voice quits while signing in; the next launch sees what the sign-in left in storage.
     const after = harness({ hasStoredAuthSession: () => before.fake.forgotten === 0 });
     expect(after.account.handleCallbackUrl(callbackUrl(CODE))).toBe("interrupted");
     expect(after.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });

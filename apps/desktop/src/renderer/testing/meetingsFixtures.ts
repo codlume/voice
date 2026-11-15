@@ -27,7 +27,6 @@ function dayAt(daysAgo: number, hour: number, minute: number): number {
 }
 
 let segmentCount = 0;
-// Fixture speakers are keyed by their name, so a fixture line can name who says it.
 const said = (atMinute: number, text: string, speaker: string | null | "you" = "you"): Segment => {
   const startMs = Math.round(atMinute * MINUTE);
   const voice =
@@ -43,7 +42,6 @@ const said = (atMinute: number, text: string, speaker: string | null | "you" = "
     ...voice,
   };
 };
-/** A named speaker for every voice the transcript gives a name, in the order they first spoke. */
 function speakersIn(transcript: readonly TranscriptEntry[] = []): Speaker[] {
   const names = transcript.flatMap((entry) =>
     entry.kind === "segment" && entry.source === "system" && entry.speakerId

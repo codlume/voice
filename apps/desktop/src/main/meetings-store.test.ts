@@ -389,7 +389,6 @@ describe("meetings store", () => {
     expect(await store.search("postgres with you")).toEqual([
       { id: B, field: "summary", snippet: snippet("We chose ", "Postgres with You", ".") },
     ]);
-    // Token markup is not text the user wrote.
     expect(await store.search("speaker:")).toEqual([]);
     expect((await store.search("hiring")).map(({ field }) => field)).toEqual(["notes"]);
     expect(await store.search("   ")).toEqual([]);
@@ -462,7 +461,6 @@ describe("meetings store", () => {
     });
     expect(ids.map((id) => first.store.get(id)?.folderIds)).toEqual([[folder.id], [], []]);
 
-    // B is added by hand, then the rule moves from "1:1" to "sync".
     await first.store.setInFolder(C, folder.id, true);
     await first.store.updateFolder(folder.id, { name: "Syncs", kind: "auto", rule: rule("Sync") });
     expect(ids.map((id) => first.store.get(id)?.folderIds)).toEqual([[], [folder.id], [folder.id]]);

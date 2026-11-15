@@ -28,7 +28,6 @@ const styles = stylex.create({
   nested: { marginTop: 4 },
 });
 
-/** Inline summary text, with **bold** and the meeting's speaker names highlighted. */
 export function Inline({ text, speakers }: { text: string; speakers: readonly Speaker[] }) {
   return inlineRuns(text, speakers).map((run) =>
     run.name ? (

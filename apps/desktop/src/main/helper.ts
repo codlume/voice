@@ -13,7 +13,6 @@ export const RESTART_MIN_MS = 250;
 const RESTART_MAX_MS = 5000;
 const HEALTHY_RUN_MS = 10_000;
 
-// Only codes, never error messages or stderr: this can leave the machine as a diagnostic.
 export type HelperExit =
   | { code: number | null; signal: NodeJS.Signals | null; pid?: number | undefined }
   | { spawnError: string };
@@ -30,7 +29,6 @@ type HelperOptions = {
 };
 
 export type Helper = {
-  /** False when the helper is not running, so the command was dropped and no reply will come. */
   send(command: HelperCommand): boolean;
   stop(): Promise<void>;
 };
@@ -64,7 +62,6 @@ export function startHelper(options: HelperOptions): Helper {
       }
       if (event.type === "ready") {
         if (event.version !== HELPER_PROTOCOL_VERSION) {
-          // A restart would only meet the same binary, so this ends the helper for good.
           options.log(
             `helper: speaks protocol v${event.version} but this build expects v${HELPER_PROTOCOL_VERSION}; refusing to use it`,
             {
@@ -85,7 +82,7 @@ export function startHelper(options: HelperOptions): Helper {
     });
     createInterface({ input: proc.stderr }).on("line", (line) => options.log(`helper: ${line}`));
     // A write racing the helper's exit fails with EPIPE; without a listener that would throw
-    // out of the event loop and take main down with it. The close handler does the recovery.
+    // out of the event loop and take main down with it.
     proc.stdin.on("error", (error: NodeJS.ErrnoException) =>
       options.log(`helper: stdin ${error.message}`, {
         message: "helper stdin failed",

@@ -38,31 +38,23 @@ type MeetingsAppDeps = {
   store: Store;
   send: (command: HelperCommand) => boolean;
   transformModel: TransformModel;
-  /** The Voice window while it exists. */
   hub: () => BrowserWindow | undefined;
-  /** Brings the Voice window up on a meeting's summary; `activate: false` leaves focus where it is. */
   showMeeting: (id: MeetingId, options: { activate: boolean }) => void;
   refreshTray: () => void;
-  /** Throws while a restart is under way, when the helper is about to stop. */
   assertNotRestarting: () => void;
   notepadWindow: { webPreferences: WebPreferences; load: (window: BrowserWindow) => void };
   log: Log;
 };
 
-/** Meetings in the main process: the store, the recorder, the notepad, and their entry points. */
 export type MeetingsApp = {
   store: MeetingsStore;
   recorder: MeetingRecorder;
   onHelperEvent(event: HelperEvent): void;
   helperExited(): void;
-  /** The menu bar item that starts or stops a meeting. */
   trayItem(): MenuItemConstructorOptions;
-  /** Shows the notepad for the current meeting, taking focus. */
   openNotepad(): void;
-  /** Follows a change of `AppState.meeting`: brings up the notepad when a meeting asks for it. */
   focusChanged(state: AppState, previous: AppState): void;
   raiseRestartBlocked(id: MeetingId): void;
-  /** Stops summaries without writing anything, before the model they run on is disposed. */
   dispose(): void;
   settled(): Promise<void>;
 };
@@ -75,7 +67,6 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
     if (hub && !hub.isDestroyed()) hub.webContents.send(channel, payload);
   };
 
-  // The tray names what its meeting item does, so it is rebuilt when that changes.
   let trayMeeting: MeetingToggle["kind"] = "start";
   const meetings = createMeetingsStore({
     dir,
@@ -128,7 +119,6 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
         if (id && meetings.get(id)) deps.showMeeting(id, { activate: true });
       });
       commands.handle(Channel.dismissMeetingPrompt, () => {
-        // Dismissing "Still in a meeting?" answers it: the meeting goes on.
         const { raised } = store.state.meeting;
         if (raised?.prompt.kind === "silence") recorder.keepRecording(raised.id);
         store.update((s) => ({ ...s, meeting: dismiss(s.meeting) }));
@@ -159,7 +149,6 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
   function syncNotepad() {
     if (notepad.meetingId() === null) return;
     const next = notepadState();
-    // A discarded meeting leaves nothing to show.
     if (next === null) {
       notepad.close();
       return;
@@ -194,9 +183,7 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
     );
   }
 
-  // A launch only ever finishes what a crash or quit left; it never records.
   recorder.recover().catch((error) => log(`meetings: recovery failed (${String(error)})`));
-  // Audio a failed final pass kept is still on disk after a relaunch, and so is its notice.
   meetings
     .loaded()
     .then(() => {
@@ -216,7 +203,6 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
     store: meetings,
     recorder,
     onHelperEvent(event) {
-      // A press the helper caught before it heard the shortcut was turned off changes nothing.
       if (event.type === "meeting.shortcut" && store.state.settings.meetingShortcut !== null) {
         toggle("shortcut");
       }
@@ -234,7 +220,6 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
       click: () => toggle("tray"),
     }),
     openNotepad: () => openNotepad("focused"),
-    // A new meeting brings up the notepad, and so does a question the user has to answer.
     focusChanged(state, previous) {
       const { current } = state.meeting;
       const started = current && current.id !== previous.meeting.current?.id;

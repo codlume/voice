@@ -98,8 +98,6 @@ const PERMISSION_PANES: Record<PermissionKind, string> = {
   systemAudio: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
 };
 
-// The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
-// only. A packaged app ignores them and never hands them to its helper.
 const development = !app.isPackaged;
 const testMode = development && process.env.VOICE_HELPER_TEST === "1";
 
@@ -112,12 +110,11 @@ if (development) {
   if (testMode && process.env.VOICE_USER_DATA_DIR) {
     app.setPath("userData", process.env.VOICE_USER_DATA_DIR);
     // The stock Electron that verify and e2e launch would get a Keychain prompt for the Voice Dev
-    // item, and an agent cannot answer it. A scratch userData needs only scratch secrets.
+    // item, and an agent cannot answer it.
     app.commandLine.appendSwitch("use-mock-keychain");
   }
 }
 
-// The verify skill plays the browser through this file, and can shorten the sign-in timeout.
 const signInUrlFile = testMode ? NodePath.join(app.getPath("userData"), "sign-in-url.txt") : null;
 const testTimeoutMs = testMode ? Number(process.env.VOICE_SIGN_IN_TIMEOUT_MS) : Number.NaN;
 const signInTimeoutMs =
@@ -144,9 +141,7 @@ function readLoginItem(): LoginItem {
   return "off";
 }
 
-// macOS delivers a launch by URL only to a listener that exists before ready. main() points this
-// at the account module synchronously, before any event can arrive, and once the hub exists, at
-// a handler that also brings the hub forward.
+// macOS delivers a launch by URL only to a listener that exists before ready.
 let handleCallbackUrl: (url: string) => void = () => {};
 app.on("open-url", (event, url) => {
   event.preventDefault();
@@ -154,8 +149,7 @@ app.on("open-url", (event, url) => {
 });
 
 // Test runs launch the stock Electron.app, which does not declare the scheme. Making it the
-// default handler would take the sign-in link away from a Voice that can receive it. Only
-// pnpm dev on macOS runs a bundle that declares it; elsewhere the read fails and Voice skips.
+// default handler would take the sign-in link away from a Voice that can receive it.
 function receivesCallbackUrls(): boolean {
   if (!development) return true;
   try {
@@ -239,8 +233,6 @@ function applyZoom(hub: BrowserWindow, zoomLevel: number) {
   });
 }
 
-// Dictation needs these two. System Audio Recording is checked only while Set up Meetings asks
-// for it, so a Mac that never records a meeting is not polled for it forever.
 const dictationGranted = ({ permissions }: AppState) =>
   permissions.microphone === "granted" && permissions.accessibility === "granted";
 const systemAudioSettled = ({ permissions }: AppState) =>
@@ -249,7 +241,6 @@ const systemAudioSettled = ({ permissions }: AppState) =>
 async function main() {
   const userData = app.getPath("userData");
   const modelsDir = NodePath.join(userData, "models");
-  // Printed before diagnostics start, and a path to the user's home never leaves the machine.
   console.log(`[voice] userData ${userData}`);
 
   const manifest: unknown = JSON.parse(
@@ -266,7 +257,6 @@ async function main() {
     development,
     hasStoredAuthSession: () => authSessionStored(userData, installedChannel),
     hasStoredAuth: () => authStored(userData, installedChannel),
-    // The verify skill shortens the hourly check to bring the window back after it.
     ...(testCheckIntervalMs > 0 && { checkIntervalMs: testCheckIntervalMs }),
     createClient: (apiUrl) =>
       import("./account-client.ts").then((m) =>
@@ -411,7 +401,6 @@ async function main() {
     env: helperEnv(),
     onEvent: (event) => {
       if (lifecycle !== "running") {
-        // A quit keeps the helper up for the transcript it still owes, and only dictation hears it.
         if (store.state.session.phase === "transcribing") dictation.onHelperEvent(event);
         return;
       }
@@ -437,7 +426,6 @@ async function main() {
         installedApps.helperExited();
         meetingsApp.helperExited();
       } else if (lifecycle === "stopping") {
-        // A quit that waits for a transcript has to hear that none is coming.
         dictation.dispatch({ type: "helperExited" });
       }
     },
@@ -452,8 +440,6 @@ async function main() {
     },
     log,
   });
-  // The tray reads the newest entry when clicked, so it is rebuilt only when it goes from none to
-  // some or back.
   let trayHasEntry = false;
   const history = createHistory({
     file: NodePath.join(userData, "history.json"),
@@ -520,7 +506,6 @@ async function main() {
       liveHub()?.webContents.send(Channel.lastTransform, value);
     },
   });
-  // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({
     store,
     send: helper.send,
@@ -593,7 +578,6 @@ async function main() {
 
   const showHub = () => openHub({ activate: true });
 
-  /** `activate: false` shows the window behind the user's app, which keeps focus. */
   function openHub({ activate }: { activate: boolean }): BrowserWindow {
     if (hub && !hub.isDestroyed()) {
       if (!activate) {
@@ -610,8 +594,7 @@ async function main() {
       title: "Voice",
       titleBarStyle: "hidden",
       trafficLightPosition: trafficLightPosition(store.state.settings.zoomLevel),
-      // StyleX tokens cannot be imported here, so this repeats color.sidebar as hex
-      // (BrowserWindow rejects oklch). It keeps a dark first frame from flashing white.
+      // BrowserWindow rejects oklch, so this repeats color.sidebar as hex.
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
       webPreferences: {
         ...webPreferencesFor("hub"),
@@ -622,7 +605,6 @@ async function main() {
     // committed, so a zoom pressed before the first load is reapplied here.
     const contents = hub.webContents;
     contents.on("did-finish-load", () => contents.setZoomLevel(store.state.settings.zoomLevel));
-    // The window came back (shown, unminimized, Cmd-Tab): re-read what may have changed meanwhile.
     hub.on("focus", () => {
       helper.send({ type: "permissions.check" });
       refreshLoginItem();
@@ -638,7 +620,6 @@ async function main() {
     hub.on("restore", syncPermissionPolling);
     hub.on("focus", syncPermissionPolling);
     hub.on("blur", syncPermissionPolling);
-    // A page that closes with its window never says that Set up Meetings stopped showing.
     hub.on("closed", () => {
       meetingSetupShown = false;
       syncPermissionPolling();
@@ -646,10 +627,7 @@ async function main() {
     hub.on("hide", microphoneTest.stop);
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
-    // Restore loads Better Auth and reads the Keychain, which holds main for about 40 ms, so it
-    // waits until the window has loaded and the speech model has, or a load has run long enough
-    // to be a first-time compile. It never runs mid-session.
-    // Not ready-to-show: a window covered by another app paints nothing, and restore would wait.
+    // Not ready-to-show: a window covered by another app paints nothing.
     hub.webContents.once("did-finish-load", () =>
       whenSpeechModelSettles(store, ASR_PREPARING_AFTER_MS, () => runWhenIdle(restoreAccount)),
     );
@@ -725,7 +703,6 @@ async function main() {
   }
   refreshTray(store.state);
 
-  // The Flow Bar lets clicks through, except over its capsule while that shows a meeting.
   let pillHovered = false;
   let pillMouse = { clickable: false, forward: false };
   function syncPillMouse() {
@@ -753,8 +730,6 @@ async function main() {
     followTransformSettings(transformModel, transforms, state, previous);
   });
 
-  // A restart request holds the history still from the moment it starts draining it, so what it
-  // checks is what the restart will leave behind.
   let restartRequested = false;
   function assertNotRestarting() {
     if (
@@ -768,7 +743,6 @@ async function main() {
     assertNotRestarting();
     restartRequested = true;
     try {
-      // An accepted channel change must reach the updater before it installs.
       await settingsQueue.settled();
       await history.settled();
       await acceptRestart(request, {
@@ -852,7 +826,7 @@ async function main() {
   }
 
   // Each window's handlers live on its own webContents.ipc, which Electron consults only for that
-  // window's invokes. The Flow Bar cannot reach a hub command, and a recreated hub gets a new set.
+  // window's invokes.
   const pillCommands: Commands<PillApi> = pill.webContents.ipc;
   pillCommands.handle(Channel.getPillSnapshot, () => pillSnapshot(store.state));
   pillCommands.handle(Channel.setPillClickable, (_event, clickable: unknown) => {
@@ -892,8 +866,6 @@ async function main() {
     log,
   };
 
-  // A callback that changed the account brings the hub forward, but never mid-session: the
-  // target app must keep focus until insertion. A launch by URL shows the hub anyway.
   handleCallbackUrl = (url) => {
     if (account.handleCallbackUrl(url) !== "ignored") runWhenIdle(showHub);
   };
@@ -915,21 +887,17 @@ async function main() {
       { development },
     ),
   );
-  // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});
 
-  // Electron quits without waiting on promises, so the first quit only starts the shutdown: a
-  // settings save, the Insights and history writes, the helper, and the model processes get to
-  // finish, and their logs get sent. The quit that follows it passes.
+  // Electron quits without waiting on promises, so the first quit only starts the shutdown and
+  // the quit that follows it passes.
   async function shutdown(forUpdate = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
       timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
     });
-    // Only what the transcript needs waits for it, so the other saves keep their whole bound.
     const transcript = Promise.race([whenTranscriptArrives(store), timeout]);
     transforms.dispose();
-    // An aborted summary writes nothing, so the next launch writes it instead of a failure.
     meetingsApp.dispose();
     const stopped = Promise.allSettled([
       settingsQueue.settled(),
@@ -982,10 +950,6 @@ async function main() {
   updates.start();
   void cleanup.loadIfDownloaded();
   void transformModel.refresh();
-  // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
-  // verify skill deliver a sign-in callback URL, which macOS does not route to the stock
-  // Electron.app the verify instance runs, and choose menu items, whose shortcuts CDP cannot press,
-  // and tray items, which no script can click.
   if (testMode) {
     Object.assign(globalThis, {
       voiceTest: {
@@ -1016,9 +980,6 @@ async function main() {
   }
 }
 
-// Called last because main runs synchronously until whenReady and reads module constants. The
-// argument check comes before the lock so a refused launch never reaches a running Voice as a
-// second instance, and before Chromium has spawned a child or opened a debug port.
 const refused = development ? [] : refusedLaunchArguments(process.argv.slice(1));
 if (refused.length > 0) {
   process.stderr.write(`[voice] refusing launch arguments ${refused.join(" ")}\n`);

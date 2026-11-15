@@ -173,7 +173,6 @@ describe("History", () => {
     await render(
       <History history={{ ...history, entries: [added, edited, missed] }} today={today} />,
     );
-    // The new row and the edited one; the dentist row is the same entry as before.
     expect(timeLabel).toHaveBeenCalledTimes(2);
     expect(row("Meet Anna on Friday.")?.textContent).toContain("Copied");
     expect(row("Book the train.")?.textContent).not.toContain("Copied");

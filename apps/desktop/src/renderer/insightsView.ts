@@ -164,7 +164,6 @@ function percents(parts: readonly number[]): number[] {
     result[index] = (result[index] ?? 0) + 1;
     left -= 1;
   }
-  // Whole shares that still round to zero show up to two decimals, floored at 0.01 so anything used never reads 0%.
   return result.map((share, index) => {
     const part = parts[index] ?? 0;
     return share === 0 && part > 0

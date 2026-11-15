@@ -68,7 +68,6 @@ type CleanupFailure = { message: string; entry: DiagnosticLog };
 
 export const START_TIMEOUT_MS = 3000;
 export const TRANSCRIBE_TIMEOUT_MS = 30_000;
-// A release while the speech model is still loading waits for the load and the transcription.
 export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
 export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
 // A cached speech model loads in about a second. Past this, macOS is compiling it for the Neural
@@ -80,7 +79,6 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
-// What a helper event reports as null is unknown here, so onHelperEvent turns it into undefined.
 type Started = {
   id: string;
   language: DictationLanguage;
@@ -101,8 +99,6 @@ type Started = {
   asrState?: AsrSessionState | undefined;
 };
 
-// pressRelayMs is the part of startMs spent on the hop through main. releaseToInsertMs starts
-// when main sees the release, so it leaves releaseRelayMs out.
 export type SessionTimings = {
   startMs?: number | undefined;
   pressRelayMs?: number | undefined;
@@ -117,7 +113,6 @@ export type SessionTimings = {
   releaseToInsertMs?: number | undefined;
 };
 
-// Carries no text, session id, or target: this is what diagnostics may see of a session.
 export type SessionReport = {
   outcome: Outcome;
   finishedAt: number;
@@ -162,7 +157,6 @@ function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number
   };
 }
 
-// How the session's text did or did not reach the target, for the local session line.
 function insertDecision(outcome: Outcome) {
   if (outcome.kind === "inserted") return { method: outcome.method };
   if (outcome.kind !== "notInserted") return {};
@@ -199,16 +193,12 @@ export function createDictation(options: DictationOptions): Dictation {
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
     const { state, effects } = step(before, event, now());
-    // The helper is waiting on the commands, so they go out before the store update, whose
-    // subscribers publish the snapshot to both windows and move the pill. send() never dispatches
-    // back.
     for (const effect of effects) if (effect.type === "send") toHelper(effect.command);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
       const overdue =
         state.phase === "transcribing" && before.phase === "transcribing" && state.overdue;
       if (state.phase !== before.phase || overdue) armWatchdog(state);
-      // Transcription is the window to keep the GPU clocked up for the clean that follows.
       if (state.phase !== before.phase) {
         if (state.phase === "transcribing" && workFor(state.id)?.kind === "style") {
           cleanup.keepGpuBusy();
@@ -352,7 +342,6 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "copy": {
         const { id } = effect;
-        // The executor runs now, so the write starts in this tick and a synchronous throw rejects.
         void new Promise<void>((resolve) => resolve(options.copy(effect.output))).then(
           () => dispatch({ type: "copied", id, ok: true }),
           (error: unknown) => {
@@ -430,7 +419,6 @@ export function createDictation(options: DictationOptions): Dictation {
         signal,
       })
       .catch((error: unknown) => {
-        // The worker's message is not ours to repeat in the log; the type is enough.
         throw Object.assign(new Error("transform failed"), { name: errorType(error) });
       });
     if (!result.ok) throw new Error(`transform ${result.failure.kind}`);
@@ -546,8 +534,6 @@ export function createDictation(options: DictationOptions): Dictation {
         dispatch({ type: "transcriptFailed", id: event.id, message: event.message });
         return;
       case "insert.result": {
-        // A result for a session the watchdog or a helper exit already settled changes nothing,
-        // but it shows whether the text landed after the fallback.
         const session = store.state.session;
         const current = session.phase !== "idle" && session.id === event.id;
         if (started?.id === event.id && !(current && session.phase === "inserting")) {

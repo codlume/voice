@@ -30,7 +30,6 @@ export function useClock<T>(read: (now: Date) => T): T {
   return value;
 }
 
-/** Today's key. */
 export function useToday(): DayKey {
   return useClock(dayKey);
 }

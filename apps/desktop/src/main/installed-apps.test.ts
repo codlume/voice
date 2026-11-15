@@ -47,7 +47,6 @@ const dataUrl = (app: Listed) => `data:image/png;base64,${png(app)}`;
 
 function setup(options: {
   apps: Listed[];
-  /** A silent helper takes the command and never replies; a down helper is not running to take it. */
   helper?: "answers" | "silent" | "down";
   renders?: boolean;
 }) {

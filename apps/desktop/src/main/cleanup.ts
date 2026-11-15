@@ -22,8 +22,6 @@ export type Cleanup = {
   uninstall(): Promise<void>;
   unload(): Promise<void>;
   loaded(): boolean;
-  // Keeps the GPU clocked up while the speech model transcribes, so the clean that follows does not
-  // pay the ramp-up. letGpuIdle ends it when no clean follows.
   keepGpuBusy(): void;
   letGpuIdle(): void;
   clean(raw: string, style: CleanupStyle, request: Required<CleanRequest>): Promise<CleanResult>;
@@ -59,7 +57,6 @@ async function importModule(log: (message: string) => void): Promise<CleanupModu
 
 const WARM_UP_TEXT = "um so this is a quick warm up";
 const WARM_UP_STYLE: CleanupStyle = { style: "formal", layout: "general" };
-// Typical transcription takes 150-250 ms. A longer one outlasts the cap and its clean starts cold.
 const GPU_BUSY_MS = 1000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -68,14 +65,11 @@ type Model =
   | { phase: "none" }
   | { phase: "loading"; model: CleanupEngine }
   | { phase: "loaded"; model: CleanupEngine }
-  // Left behind by dispose so a load or download still in flight does not bring the model back.
   | { phase: "disposed" };
 
 const held = (model: Model): model is Extract<Model, { model: CleanupEngine }> =>
   model.phase === "loading" || model.phase === "loaded";
 
-// A session in flight keeps the model until it ends, so a language change applies to the next
-// session. The loaded check unloads a model it kept once that session is done.
 export function followSettings(
   cleanup: Pick<Cleanup, "loadIfDownloaded" | "unload" | "loaded">,
   state: AppState,
@@ -141,8 +135,6 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         onLost: (lostMessage) => {
           if (!owns(candidate)) return;
           model = { phase: "none" };
-          // Only a model that once reached ready comes back on its own; one that dies loading or
-          // warming up would only die again, so it waits for Retry.
           if (!warmedUp) {
             options.onStatus({ state: "failed", message: lostMessage });
             return;
@@ -228,7 +220,6 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         options.onStatus({ state: "missing" });
       });
     },
-    // Rerunning the startup check reports installed, or reloads if cleanup came back on meanwhile.
     unload: () => disposeThen(loadIfOnDisk),
     loaded: () => model.phase === "loaded",
     keepGpuBusy() {

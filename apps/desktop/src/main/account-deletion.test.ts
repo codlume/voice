@@ -16,10 +16,6 @@ import {
   expectNoSecrets,
 } from "./account.test-harness.ts";
 
-/**
- * Confirms and answers the check of which account the stored cookie belongs to. The deletion's
- * own promise is returned unawaited, so a test can answer the deletion request in between.
- */
 async function confirmAsCookieOwner(h: ReturnType<typeof harness>, user = USER) {
   const asked = h.checks.length;
   const done = h.account.confirmDeletion();
@@ -99,7 +95,6 @@ describe("account deletion through the snapshot", () => {
       notice: `Voice is signed in as ${GRACE.email}, so it did not delete ${USER.email}.`,
     });
 
-    // A fresh confirmation names the account the cookie belongs to.
     h.account.requestDeletion();
     expect(h.state).toEqual({ kind: "signedIn", ...GRACE, deletion: { kind: "confirming" } });
     const { done: retried } = await confirmAsCookieOwner(h, GRACE);

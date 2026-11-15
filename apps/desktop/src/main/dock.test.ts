@@ -28,9 +28,6 @@ function harness(options: { show?: () => Promise<void> } = {}) {
       if (entry) entries.push(entry);
     },
   });
-  // Each settings change reaches main in its own IPC task, so a request lands after the
-  // previous one has started. The applied promise is boxed so awaiting the request does not
-  // also wait for the change.
   async function request(value: boolean) {
     showInDock = value;
     const applied = sync();

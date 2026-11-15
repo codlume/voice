@@ -27,7 +27,6 @@ import {
 import type { MeetingsStore } from "./meetings-store.ts";
 import type { TransformModel } from "./transform-model.ts";
 
-/** `stopped` is a model that broke mid-run, as opposed to an answer it could not give. */
 type SummaryOutcomeFailure = SummaryFailure | { kind: "stopped" };
 
 type SummaryOutcome = { ok: true } | { ok: false; failure: SummaryOutcomeFailure };
@@ -36,26 +35,14 @@ type TitleOutcome =
   | { ok: true; title: string | null }
   | { ok: false; failure: SummaryOutcomeFailure };
 
-/**
- * Summaries and titles for meetings, written to the meeting as they finish. Both run after Stop,
- * never on the dictation path, one model step at a time, and a Transform stops the running step
- * and goes first (`TransformModel.generate`). Aborting rejects with the signal's reason and
- * writes nothing.
- */
 export type MeetingSummarizer = {
-  /**
-   * Writes the summary, and a generated title when the title is blank. A failure is written with
-   * the previous summary kept; the transcript is never touched.
-   */
   summarizeMeeting(
     id: MeetingId,
     options: { signal: AbortSignal; onProgress?: (progress: SummaryProgress) => void },
   ): Promise<SummaryOutcome>;
-  /** Writes a generated title when the title is blank, for a meeting not summarized yet. */
   generateTitle(id: MeetingId, options: { signal: AbortSignal }): Promise<TitleOutcome>;
 };
 
-/** A 12,000-token step took up to 52 s on an M1 Pro (measured); slower Macs get room. A step a Transform stopped gets a new budget when it runs again. */
 export const STEP_BUDGET_MS = 240_000;
 
 export const summaryFailureMessage: Record<SummaryOutcomeFailure["kind"], string> = {
@@ -67,11 +54,6 @@ export const summaryFailureMessage: Record<SummaryOutcomeFailure["kind"], string
   stopped: "The summary model stopped.",
 };
 
-/**
- * The transcript as the provider reads it, with the ids the summary's tokens use: You first, then
- * everyone in order of first word, and Others for system audio no speaker was found for. A name
- * another speaker already goes by falls back to the "Speaker N" label, so owners stay distinct.
- */
 export function summaryInput(
   transcript: readonly TranscriptEntry[],
   meetingSpeakers: readonly MeetingSpeaker[],
@@ -138,7 +120,6 @@ export function createMeetingSummarizer({
   now?: () => number;
   log: (message: string) => void;
 }): MeetingSummarizer {
-  /** Fills a blank title, the auto folders it matches included; a title the user typed meanwhile wins. */
   const withTitle = (meeting: Meeting, title: string | null): Meeting => {
     if (meeting.title !== null || title === null) return meeting;
     const titled: Meeting = { ...meeting, title };
@@ -153,7 +134,6 @@ export function createMeetingSummarizer({
     signal: AbortSignal,
     work: () => Promise<T>,
   ): Promise<T | { ok: false; failure: SummaryOutcomeFailure }> {
-    // A meeting recovered at launch can get here before the model's first look at the disk.
     if (!model.onDisk()) await model.refresh();
     if (!model.onDisk()) return { ok: false, failure: { kind: "modelUnavailable" } };
     try {

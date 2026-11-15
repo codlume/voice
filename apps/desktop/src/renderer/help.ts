@@ -1,14 +1,12 @@
 import type { AppPage } from "./HubShell.tsx";
 
 type HelpItem = {
-  /** Matches the `data-help` attribute that `helpAnchor` puts on the control. */
   readonly anchor: string;
   readonly title: string;
   readonly body: string;
 };
 
 export type ViewHelp = {
-  /** The page's name in the nav, for the info button's label. */
   readonly name: string;
   readonly overview: string;
   readonly items: readonly HelpItem[];

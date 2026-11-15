@@ -20,7 +20,6 @@ const styles = stylex.create({
     position: {
       default: "sticky",
       [layout.narrow]: "static",
-      // Pinned with both cards, the aside needs a window about 575px tall to show whole.
       "@media (max-height: 600px)": "static",
     },
     top: 0,

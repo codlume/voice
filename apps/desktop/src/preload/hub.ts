@@ -14,7 +14,6 @@ import type {
 import type { LastTransform } from "../shared/transforms.ts";
 import { subscribe } from "./subscribe.ts";
 
-// The tray can ask before React has mounted, for example right after it creates the hub.
 let restartRequested = false;
 const restartListeners = new Set<() => void>();
 ipcRenderer.on(Channel.requestRestart, () => {
@@ -22,7 +21,6 @@ ipcRenderer.on(Channel.requestRestart, () => {
   for (const listener of restartListeners) listener();
 });
 
-// So can a ready summary, which brings up a hub main may have only just created.
 let openRequested: OpenMeetingRequest | null = null;
 const openListeners = new Set<(request: OpenMeetingRequest) => void>();
 ipcRenderer.on(Channel.openMeeting, (_event, request: OpenMeetingRequest) => {

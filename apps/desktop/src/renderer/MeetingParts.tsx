@@ -13,8 +13,6 @@ import { color, space } from "./tokens.stylex.ts";
 import { useMeetingPartials, useMeetingTranscript, type Read } from "./useMeetings.ts";
 import { useNow } from "./useNow.ts";
 
-// The Voice window's meeting pages and the notepad draw a meeting with these parts. `look` sizes
-// them for a page or for the narrow notepad.
 type Look = "page" | "notepad";
 
 const styles = stylex.create({
@@ -142,7 +140,6 @@ export function useTranscriptRows(
   const transcript = useMeetingTranscript(api, meeting);
   const partials = useMeetingPartials(api, meeting.id, meeting.status.kind === "recording");
   const { speakers } = meeting;
-  // Partials change several times a second; the saved lines only when one is added.
   const saved = useMemo(
     () =>
       transcript.kind === "read" && transcript.value && transcriptRows(transcript.value, speakers),
@@ -159,7 +156,6 @@ type SpeechProps = Omit<Extract<TranscriptRow, { kind: "speech" }>, "kind" | "id
   notepad: boolean;
 };
 
-// Memoized on plain values, so a new line renders only itself, not every line before it.
 const Speech = memo(function Speech({
   speaker,
   mine,
@@ -220,10 +216,6 @@ export function TranscriptList({ rows, look }: { rows: readonly TranscriptRow[];
   );
 }
 
-/**
- * The recorded length, ticking each second while it records or counts down to the limit. It
- * owns the clock, so only it renders each second, never the transcript beside it.
- */
 export function StatusClock({
   meeting,
   prompt = null,
@@ -237,14 +229,12 @@ export function StatusClock({
   return <time {...stylex.props(styles.clock, style)}>{statusClock(meeting, now)}</time>;
 }
 
-// Pause and Resume are icons in the notepad, so the status keeps its room there.
 const controlLooks: Record<RecordingCommand, { label: string; icon: ReactNode | null }> = {
   pause: { label: "Pause", icon: <PauseIcon size={16} aria-hidden="true" /> },
   resume: { label: "Resume", icon: <PlayIcon size={16} aria-hidden="true" /> },
   stop: { label: "Stop", icon: null },
 };
 
-/** The recording controls the meeting's status offers, the same in every window. */
 export function RecordingControls({
   meeting,
   look,

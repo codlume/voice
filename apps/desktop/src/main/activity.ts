@@ -10,12 +10,6 @@ export function activity(state: { session: Session; transform: TransformRun }): 
   return "idle";
 }
 
-/**
- * Returns a function that runs a task now, or once the current session or transform run reaches
- * its outcome. Showing a window mid-session would take focus from the target app and fail the
- * insertion; a slow task on main would hold up the key press on its way to capture. A task
- * queued more than once runs once.
- */
 export function whenIdle(store: Store): (task: () => void) => void {
   const waiting = new Set<() => void>();
   let flushQueued = false;
@@ -27,9 +21,6 @@ export function whenIdle(store: Store): (task: () => void) => void {
       task();
     }
   };
-  // The tasks run in a microtask, after every subscriber has heard the state that freed them: a
-  // task that updates the store from inside the notify loop would leave the subscribers after it
-  // hearing the older state last. A microtask runs before any I/O, so nothing shows later.
   store.subscribe((state) => {
     if (waiting.size === 0 || flushQueued || activity(state) !== "idle") return;
     flushQueued = true;
@@ -42,11 +33,6 @@ export function whenIdle(store: Store): (task: () => void) => void {
   };
 }
 
-/**
- * Runs a task once, when the speech model has loaded or failed to, or after `timeoutMs`. Work that
- * holds main then lands after launch instead of the moment a key press can first start a session.
- * The timeout covers a missing model, a first-time compile, and a helper that never answers.
- */
 export function whenSpeechModelSettles(store: Store, timeoutMs: number, task: () => void) {
   const settled = () => ["ready", "failed"].includes(store.state.models.asr.state);
   if (settled()) return task();
@@ -61,11 +47,6 @@ export function whenSpeechModelSettles(store: Store, timeoutMs: number, task: ()
   });
 }
 
-/**
- * Resolves once the helper owes main no transcript: at once unless a session is transcribing.
- * Quit waits on this before it stops the helper, because history can keep only a transcript that
- * has reached main.
- */
 export function whenTranscriptArrives(store: Store): Promise<void> {
   const owed = () => store.state.session.phase === "transcribing";
   if (!owed()) return Promise.resolve();

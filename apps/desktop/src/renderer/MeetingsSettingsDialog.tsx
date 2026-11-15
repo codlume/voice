@@ -61,7 +61,6 @@ const shorteningDescription = (drops: number) =>
 
 type Shortening = { open: boolean; to: MeetingRetention; drops: number };
 
-/** The Meetings page's gear: limits, prompts, how long meetings stay, and automatic folders. */
 export function MeetingsSettingsDialog({
   open,
   onOpenChange,

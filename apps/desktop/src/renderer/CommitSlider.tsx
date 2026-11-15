@@ -60,8 +60,6 @@ const sliderStyles = stylex.create({
   },
 });
 
-// Saving every drag tick would write settings.json and broadcast a snapshot per tick, so the thumb
-// holds its own value and saves once the gesture or key press commits.
 export function CommitSlider({
   saved,
   onCommit,
@@ -83,8 +81,6 @@ export function CommitSlider({
   valueText: (value: number) => string;
   disabled?: boolean;
 }) {
-  // `pending` is the newest commit main has not answered. Until it lands, the snapshot of an older
-  // save would move the thumb back, and the next key press would step from there.
   const [slider, setSlider] = useState<{ value: number; saved: number; pending: number | null }>({
     value: saved,
     saved,
@@ -110,7 +106,6 @@ export function CommitSlider({
         onValueCommitted={(committed) => {
           setSlider((current) => ({ ...current, pending: committed }));
           void onCommit(committed).then((ok) => {
-            // The updater reads the newest saved value, which another save may have changed since.
             setSlider((current) =>
               current.pending === committed
                 ? { ...current, value: ok ? current.value : current.saved, pending: null }

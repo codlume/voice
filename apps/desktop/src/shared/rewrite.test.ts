@@ -51,10 +51,8 @@ const only = (text: string) => ({
   entireDictation: true,
 });
 
-// Dictionary alone: the rewritten text.
 const fix = (text: string, dictionary: readonly DictionaryEntry[]) =>
   rewrite(text, { dictionary, snippets: [] }).text;
-// Snippets alone.
 const expand = (text: string, snippets: readonly Snippet[]) =>
   rewrite(text, { dictionary: [], snippets });
 
@@ -280,7 +278,6 @@ describe("rewrite with the dictionary", () => {
   });
 
   test("a list too large for one regex leaves the text as it is instead of throwing", () => {
-    // About 20,000 ten-word phrases, well past where V8 refuses to compile the alternation.
     const letters = "abcdefghijklmnopqrstuvwxyz";
     const spell = (n: number) => {
       let text = "";

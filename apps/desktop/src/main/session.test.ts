@@ -604,7 +604,6 @@ describe("cleanup", () => {
       output: { text: "Hello, world.", html: null },
       insertedCleanup: null,
     });
-    // Last transform is kept from the final text, after the dictionary pass, and before the write.
     expect(effects).toEqual([
       {
         type: "keepTransform",

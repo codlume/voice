@@ -76,7 +76,6 @@ describe("the notepad window", () => {
     const { notepad, made } = harness();
     notepad.open(first, "inactive");
     const [fake] = made;
-    // A non-activating panel, made hidden and shown inactive once painted.
     expect(fake?.options).toMatchObject({ type: "panel", show: false });
     expect(fake?.calls).toEqual(["alwaysOnTop true floating"]);
     fake?.emit("ready-to-show");

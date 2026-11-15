@@ -13,8 +13,6 @@ import {
   usage,
 } from "./insightsView.ts";
 
-// West of UTC, a local-time slip moves every cell a day early. CI runs in UTC, so pin the zone
-// before the module builds its date formatters.
 vi.hoisted(() => {
   process.env.TZ = "America/Los_Angeles";
 });

@@ -476,7 +476,6 @@ test("summaryInput names the mic You, speakers by their name, an unknown voice O
     speakers,
   );
 
-  // A second Ana keeps her label, so each owner the model names is one speaker.
   expect(read).toEqual([
     { id: "you", label: "You" },
     { id: "s1", label: "Ana" },

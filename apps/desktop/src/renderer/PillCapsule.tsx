@@ -185,7 +185,6 @@ function Dots() {
   );
 }
 
-// A paste went through the clipboard, and the user should know that is what happened.
 function Check({ pasted }: { pasted: boolean }) {
   return (
     <div {...stylex.props(styles.content, styles.check, styles.checkFade)}>
@@ -222,7 +221,6 @@ function MeetingGlyph({ look }: { look: MeetingLook }) {
   );
 }
 
-// The window lets clicks through everywhere else, so it takes them only while the pointer is here.
 function MeetingButton({ look, text }: { look: MeetingLook; text: string }) {
   return (
     <button

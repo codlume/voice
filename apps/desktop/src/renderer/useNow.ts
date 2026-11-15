@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-// Outside the component so the purity lint sees the clock read is not part of a render.
 const readClock = () => Date.now();
 
 /**

@@ -73,7 +73,6 @@ const styles = stylex.create({
     letterSpacing: "0.075em",
     textTransform: "uppercase",
   },
-  // Clips the selected row's background to the card's corners.
   card: { overflow: "hidden" },
   list: { margin: 0, padding: 0, listStyle: "none" },
   row: {
@@ -157,7 +156,6 @@ const styles = stylex.create({
   folderButtonOpen: { opacity: 1 },
 });
 
-/** Adds the meeting to folders or takes it out, and can make a new folder with it inside. */
 export function FolderMenu({
   meeting,
   folders,
@@ -173,7 +171,6 @@ export function FolderMenu({
 }) {
   const action = useAction();
   const [creating, setCreating] = useState(false);
-  // The folder this dialog made, so retrying a failed move does not make a second one.
   const made = useRef<Folder | null>(null);
   // Every meeting row has this menu, and Base UI's is costly to mount, so a plain button stands in
   // until the pointer or focus reaches it, before any press. The real trigger takes the focus over.
@@ -279,8 +276,6 @@ export function FolderMenu({
   );
 }
 
-// Memoized with the list's callbacks passed through as they are, so hovering a row, or scrolling
-// rows under the pointer, renders the two rows whose selection changed rather than all of them.
 const Row = memo(function Row({
   meeting,
   folders,
@@ -344,7 +339,6 @@ const Row = memo(function Row({
   );
 });
 
-/** Meetings grouped by day, with the search snippet under a row that `snippets` has one for. */
 export function MeetingList({
   days,
   folders,

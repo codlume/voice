@@ -14,7 +14,6 @@ import { Switch } from "./Switch.tsx";
 import { color, radius, snippetEditor, space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
 
-// The editor is the hub's only Lexical user, so it loads with the Snippets page, not the hub.
 const loadSnippetEditor = () => import("./SnippetEditor.tsx");
 const SnippetEditor = lazy(() =>
   loadSnippetEditor().then((module) => ({ default: module.SnippetEditor })),
@@ -125,7 +124,6 @@ export function Snippets({
   );
 }
 
-/** A switch followed by the label that names it, for the start of the dialog's action row. */
 function FooterSwitch({
   label,
   checked,

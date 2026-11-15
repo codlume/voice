@@ -17,7 +17,6 @@ export const localDate = (day: DayKey, offset = 0) => {
   return new Date(year, month - 1, date + offset);
 };
 
-// A formatter is costly to build and every row needs one, so each locale builds it once.
 export function formatterCache(options: Intl.DateTimeFormatOptions) {
   const byLocale = new Map<string | undefined, Intl.DateTimeFormat>();
   return (locale: string | undefined) => {
@@ -45,7 +44,6 @@ export function timeLabel(at: number, locale?: string): string {
 
 const EXCERPT_LENGTH = 40;
 
-/** The start of a transcript on one line, short enough to name a row's buttons. */
 export function excerpt(text: string): string {
   const line = text.replace(/\s+/gu, " ").trim();
   if (line.length <= EXCERPT_LENGTH) return line;

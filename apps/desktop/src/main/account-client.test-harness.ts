@@ -8,8 +8,6 @@ import { createVoiceAuthClient } from "./account-client.ts";
 import { USER, harness } from "./account.test-harness.ts";
 import { authSessionStored, authStorageKeys, authStored } from "./account-storage.ts";
 
-// The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
-// stand-in, so the test never touches the login Keychain.
 const electron = vi.hoisted(() => {
   const state = { userData: "", encryption: true };
   const api = {
@@ -98,7 +96,6 @@ afterEach(() => {
   rmSync(electron.state.userData, { recursive: true, force: true });
 });
 
-/** Each request so far as its path and Cookie header. */
 export const requests = () =>
   http.sent.map(({ url, cookie }) => [new URL(url).pathname, cookie] as const);
 
@@ -113,7 +110,6 @@ export const writeCachedIdentity = (identity: unknown) =>
     electron.api.safeStorage.encryptString(JSON.stringify(identity)).toString("base64"),
   );
 
-/** Plays a whole sign-in: the browser opens, then the landing page's code is redeemed. */
 export async function signIn(auth: ReturnType<typeof client>) {
   const { state } = await auth.openBrowser();
   const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");

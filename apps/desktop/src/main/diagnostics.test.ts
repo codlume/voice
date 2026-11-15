@@ -430,7 +430,6 @@ describe("startDiagnostics consent", () => {
     SentryNode.setUser({ id: "someone", email: "anna@example.com" });
     SentryNode.getCurrentScope().setAttributes({ "app.home": "/Users/someone/Voice" });
     const id = await h.dictate();
-    // Logs from the renderer or any other SDK caller reach the transport with free-form bodies.
     SentryNode.logger.info(RAW);
     SentryNode.logger.warn(SentryNode.logger.fmt`cleanup failed for ${RAW}`);
     const transactions = JSON.stringify(await h.items("transaction"));
@@ -507,7 +506,6 @@ describe("startDiagnostics consent", () => {
 
   test("an event captured with a type is scrubbed before it is sent", async () => {
     const h = harness("on");
-    // A renderer envelope reaches captureEvent with whatever payload the renderer wrote.
     SentryNode.captureEvent({
       type: "event" as never,
       message: RAW,
@@ -612,7 +610,6 @@ describe("startDiagnostics consent", () => {
     await h.dictate();
     h.diagnostics.helperExited({ spawnError: "ENOENT" });
     h.diagnostics.log({ message: "dock update failed", level: "warn" });
-    // Errors from SDK integrations bypass Voice's reporters; the transport gate still holds them.
     SentryNode.captureException(new Error(RAW));
     expect(await h.sent()).toEqual([]);
   });

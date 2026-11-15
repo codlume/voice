@@ -201,8 +201,6 @@ export function TitlebarAccount({
   account: AccountState;
   onOpenAccount: () => void;
 }) {
-  // Signing out unmounts the menu with its trigger, so the menu leaves focus alone and the
-  // button that replaces the trigger takes it.
   const focusAfterSignOut = useRef(false);
   if (account.kind === "unavailable") return null;
   if (account.kind === "signedIn") {

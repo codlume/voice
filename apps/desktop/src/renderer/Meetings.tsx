@@ -54,7 +54,6 @@ const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
 const styles = stylex.create({
   container: { containerType: "inline-size" },
-  // HubShell leaves the block and right padding to this page, so the overview can run full height.
   layout: {
     display: "grid",
     gridTemplateColumns: { default: "minmax(0, 1fr) 300px", [layout.narrow]: "minmax(0, 1fr)" },
@@ -194,10 +193,6 @@ const SEARCH_DELAY_MS = 150;
 
 type SearchAnswer = readonly MeetingSearchHit[] | "failed";
 
-/**
- * Main's answer to a search, asked once typing pauses. The last answer stays up while the next one
- * loads; a cleared search starts afresh.
- */
 function useSearch(query: string): SearchAnswer | null {
   const trimmed = query.trim();
   const [answer, setAnswer] = useState<SearchAnswer | null>(null);
@@ -221,7 +216,6 @@ function useSearch(query: string): SearchAnswer | null {
   return answer;
 }
 
-/** A search icon that opens into the field, and closes again once the field is empty and left. */
 function Search({ query, onChange }: { query: string; onChange: (query: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -256,7 +250,6 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
       <SearchIcon size={14} aria-hidden="true" {...stylex.props(styles.searchIcon)} />
       <input
         ref={input}
-        // Opened by the icon or the shortcut, so the user is about to type.
         autoFocus
         type="search"
         aria-label="Search meetings"
@@ -356,7 +349,6 @@ export function Meetings({
 }: {
   snapshot: Snapshot;
   settings: SettingsDialog;
-  /** A meeting main asked to show on its summary. */
   request?: OpenMeetingRequest | null;
   sidebar: HTMLElement | null;
 }) {
@@ -408,7 +400,6 @@ function MeetingsPage({
 }) {
   const { meetings, folders } = state;
   const [openId, setOpenId] = useState<MeetingId | null>(request?.id ?? null);
-  // Each request opens its meeting afresh, so the page lands on the Summary tab it asks for.
   const [shownRequest, setShownRequest] = useState(request);
   const [requests, setRequests] = useState(0);
   if (request !== shownRequest) {
@@ -443,11 +434,9 @@ function MeetingsPage({
   });
   const summaryModel = summaryModelRow(snapshot);
   const opened = meetings.find(({ id }) => id === openId);
-  // The panel describes a meeting the list shows: a search result, or any meeting in a folder.
   const shown = tab === "notes" ? days.flatMap((day) => day.meetings) : meetings;
   const selected =
     shown.find(({ id }) => id === selectedId) ?? (tab === "notes" ? shown[0] : null) ?? null;
-  // Main checks System Audio Recording again only while Set up Meetings asks for it.
   const asksForSetup = !setup.ready && (sidebar !== null || !opened);
   useEffect(() => {
     if (!asksForSetup) return;
@@ -462,7 +451,6 @@ function MeetingsPage({
       if (refusal) setNotice(refusal);
     }, "Could not start the meeting.");
 
-  // The setup card sits in the sidebar, or above the list while the sidebar is collapsed.
   const setupCard = !setup.ready && <MeetingsSetup rows={setup.rows} consent={CONSENT_REMINDER} />;
   const around = (page: ReactNode) => (
     <>

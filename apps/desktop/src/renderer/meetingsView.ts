@@ -25,7 +25,6 @@ import {
 } from "../shared/meetings.ts";
 import { dayLabel, formatterCache, localDate, timeLabel } from "./historyView.ts";
 
-/** Shown where a first meeting starts: the setup checklist and the notepad before anyone speaks. */
 export const CONSENT_REMINDER = "Always get consent before recording others.";
 
 /** When the meeting began, or when it was made if it never recorded. */
@@ -55,7 +54,6 @@ const shortDateWithYear = formatterCache({
   year: "numeric",
 });
 
-/** "Today", "Yesterday", then "Thu, Oct 22", with the year only for an earlier year. */
 function meetingDayLabel(day: DayKey, today: DayKey, locale?: string): string {
   const named = dayLabel(day, today, locale);
   if (named === "Today" || named === "Yesterday") return named;
@@ -80,7 +78,6 @@ export function durationLabel(ms: number): string {
 type SummaryNotice = {
   text: string;
   error: boolean;
-  /** What the notice offers to do about it. */
   action: "generate" | "retry" | "update" | null;
 };
 
@@ -126,9 +123,6 @@ export function summaryNotice(meeting: Meeting): SummaryNotice | null {
   if (summaryStale(meeting)) return say("New recording since this summary.", "update");
   return null;
 }
-
-// Summary Markdown, limited to what the summary step writes: headings, paragraphs, and bullet
-// lists one level deep, with **bold** inline.
 
 /** `line` is where the text starts in the Markdown, which keys it when rendered. */
 export type Line = { line: number; text: string };
@@ -185,7 +179,6 @@ export function overview(markdown: string): string | null {
   return first?.kind === "paragraph" ? first.text : null;
 }
 
-/** `at` is the run's offset in the source text, which keys it when rendered. */
 type Run = { text: string; bold: boolean; name: boolean; at: number };
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -355,7 +348,6 @@ export const retentionLabels: Record<MeetingRetention, string> = {
   forever: "Forever",
 };
 
-/** How long meetings stay, in one sentence the settings show under the choice. */
 export function retentionSentence(retention: MeetingRetention): string {
   const kept =
     retention === "forever"

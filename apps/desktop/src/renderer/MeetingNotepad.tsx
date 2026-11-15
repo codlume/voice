@@ -27,9 +27,7 @@ import { useNow } from "./useNow.ts";
 import { notepadApi } from "./voice.ts";
 
 const HEADER_HEIGHT = 40;
-// Clears the traffic lights main places at x 14.
 const TRAFFIC_LIGHTS_INSET = 88;
-// Within this many px of the bottom the transcript keeps following new lines.
 const FOLLOW_SLACK = 24;
 
 const styles = stylex.create({
@@ -111,11 +109,9 @@ const tabs = [
   { value: "thoughts", label: "My thoughts" },
 ] as const satisfies readonly { value: NotepadTab; label: string }[];
 
-/** Undefined until main answers; null once the meeting is gone. */
 function useNotepadState(): NotepadState | null | undefined {
   const [state, setState] = useState<NotepadState | null | undefined>(undefined);
   useEffect(() => {
-    // As in useMeetings: a push that lands before the answer is newer, so the answer yields.
     const unsubscribe = notepadApi().onNotepad(setState);
     void notepadApi()
       .getNotepad()
@@ -167,7 +163,6 @@ function Transcript({ transcript }: { transcript: Read<readonly TranscriptRow[]>
   );
 }
 
-/** A question or notice from main, with its answers. It ticks only to count down to the limit. */
 function Prompt({
   prompt,
   pending,
@@ -222,7 +217,6 @@ async function send(command: PromptCommand, id: MeetingId): Promise<MeetingComma
 }
 
 function MeetingNotepad({ meeting, prompt }: NotepadState) {
-  // Held here, not in the tab, so lines keep arriving while My thoughts is open.
   const transcript = useTranscriptRows(notepadApi(), meeting);
   const status = statusView(meeting.status);
   const [tab, setTab] = useState<NotepadTab>("transcript");
@@ -238,7 +232,6 @@ function MeetingNotepad({ meeting, prompt }: NotepadState) {
       <header {...stylex.props(styles.header)}>
         <div {...stylex.props(styles.status)}>
           <span aria-hidden="true" {...stylex.props(styles.light, styles[status.tone])} />
-          {/* The live region says only the status, so a screen reader does not read each tick. */}
           <span role="status" {...stylex.props(styles.label)}>
             {status.label}
           </span>
@@ -278,6 +271,5 @@ function MeetingNotepad({ meeting, prompt }: NotepadState) {
 export function Notepad() {
   const state = useNotepadState();
   if (!state) return null;
-  // A new meeting starts its transcript, thoughts and tab afresh.
   return <MeetingNotepad key={state.meeting.id} {...state} />;
 }

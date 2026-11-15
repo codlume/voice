@@ -30,7 +30,6 @@ export type ChecklistRow = {
     | { kind: "needed"; text: string }
     | { kind: "busy"; text: string; progress?: number }
     | { kind: "failed"; text: string }
-    /** Nothing the user can do on this Mac; it does not hold the checklist open. */
     | { kind: "unavailable"; text: string };
   actions: readonly Action[];
 };

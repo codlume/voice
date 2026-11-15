@@ -74,7 +74,6 @@ export function fakeClient() {
         exchanges.push({
           code,
           signal,
-          // As the real adapter: an aborted exchange persists nothing, whatever the API answers.
           resolve: () => {
             if (signal.aborted) {
               resolve({ kind: "abandoned" });
@@ -272,8 +271,6 @@ export function expectNoSecrets(h: ReturnType<typeof harness>) {
 
 export const withStoredAuthSession = () => true;
 
-// Each resolves once the check is in flight, with the call's own promise wrapped so that
-// awaiting the helper does not wait for the API's answer.
 export async function restore(h: ReturnType<typeof harness>) {
   const done = h.account.restore();
   await flush();

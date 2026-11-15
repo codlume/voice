@@ -5,7 +5,6 @@ import type { MeetingId } from "../shared/meetings.ts";
 const SIZE = { width: 360, height: 520 };
 const MINIMUM = { width: 300, height: 320 };
 const MARGIN = 20;
-// The smallest visible strip of a saved window that still counts as on screen.
 const VISIBLE = 48;
 
 const isFiniteNumber = (value: unknown): value is number =>
@@ -23,7 +22,6 @@ const overlaps = (a: Rectangle, b: Rectangle) =>
   Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) >= VISIBLE &&
   Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) >= VISIBLE;
 
-/** Where the user left it, unless that display is gone; else the top right of the main display. */
 export function notepadBounds(
   saved: Rectangle | null,
   workAreas: readonly Rectangle[],
@@ -55,7 +53,6 @@ function notepadWindowOptions(
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    // Repeats color.background as hex, like the hub, so the first frame does not flash.
     backgroundColor: dark ? "#0a0a0a" : "#fdfdfd",
     webPreferences,
   };
@@ -64,7 +61,6 @@ function notepadWindowOptions(
 export type NotepadWindow = {
   isDestroyed(): boolean;
   showInactive(): void;
-  /** Shows the window and makes it key. */
   show(): void;
   close(): void;
   getBounds(): Rectangle;
@@ -75,7 +71,6 @@ export type NotepadWindow = {
 };
 
 export type NotepadDeps = {
-  /** Makes the window and loads its page; the controller shows it. */
   create: (options: BrowserWindowConstructorOptions) => NotepadWindow;
   webPreferences: WebPreferences;
   dark: () => boolean;
@@ -84,22 +79,15 @@ export type NotepadDeps = {
   save: (bounds: Rectangle) => void;
 };
 
-/**
- * `inactive` leaves focus where the user is typing: a meeting that starts or asks a question
- * brings the notepad up beside their app. `focused` answers a click on the notepad's own button.
- */
 export type NotepadOpening = "inactive" | "focused";
 
 type Notepad = {
-  /** Shows the notepad for `id`, making the window if it is closed. */
   open(id: MeetingId, opening: NotepadOpening): void;
-  /** The meeting the open notepad shows; null while it is closed. */
   meetingId(): MeetingId | null;
   send(channel: string, value: unknown): void;
   close(): void;
 };
 
-/** One floating notepad. Closing it only closes the window; the meeting keeps recording. */
 export function createNotepad(deps: NotepadDeps): Notepad {
   let window: NotepadWindow | null = null;
   let id: MeetingId | null = null;

@@ -150,9 +150,6 @@ export function forkUtility(
 
 type EngineProcess<Work, Result, Notice> = {
   load(): Promise<void>;
-  // Settles with the work's result; a failed reply rejects with the engine's error. Aborting
-  // rejects at once with the reason and asks the child to stop. A child that has not answered
-  // within ABORT_GRACE_MS is killed and reported lost.
   run(request: (id: number) => Work, signal?: AbortSignal): Promise<Result>;
   post(notice: Notice): void;
   dispose(): Promise<void>;

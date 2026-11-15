@@ -100,7 +100,6 @@ describe("Delete from the editor", () => {
   const editing = openEditor("edit", bullets, "editor-key");
 
   test("Delete then Cancel keeps the editor open on the same draft", () => {
-    // The editor keeps its draft for as long as it stays mounted under the same key.
     expect(cancelDelete(askToDelete(editing))).toEqual(editing);
   });
 

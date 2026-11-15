@@ -1,4 +1,3 @@
-// Load the Electron mock before plugin storage.
 import {
   USER,
   GRACE,
@@ -109,7 +108,6 @@ test.each([USER, GRACE])(
 test("deletion refuses a cached identity the cookie does not belong to and shows the cookie's account", async () => {
   http.answer = () => signedIn("beta-token", GRACE);
   await client("nightly").checkAuthSession(new AbortController().signal);
-  // What a late answer from a cancelled sign-in wrote before exchanges were fenced.
   writeCachedIdentity(USER);
   http.answer = () => {
     throw new TypeError("offline");

@@ -25,7 +25,6 @@ const local = stylex.create({
   arrow: { flexShrink: 0, color: color.mutedForeground },
 });
 
-// Only one editor dialog is open at a time.
 const switchId = "dictionary-replace";
 const problemId = "dictionary-problem";
 
