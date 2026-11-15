@@ -22,7 +22,6 @@ const freshIp = () => {
   return `198.18.${n >> 8}.${n & 255}`;
 };
 
-/** Sends a request into the Worker from one client IP; `ip: null` sends none, as a proxyless client would. */
 function worker(input: string | Request, init?: RequestInit, ip: string | null = freshIp()) {
   const request = new Request(input, init);
   if (ip !== null && !request.headers.has("cf-connecting-ip"))
@@ -57,7 +56,6 @@ const startUrl = (state = crypto.randomUUID()) =>
 
 type PlayOptions = Partial<Pick<Parameters<typeof playBrowser>[1], "signOut" | "secFetchSite">>;
 
-/** Starts a sign-in as Voice would (PKCE), then plays the browser through /callback/google. */
 async function playSignIn(googleCode: string, options: PlayOptions = {}) {
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64Url(
@@ -75,13 +73,11 @@ async function playSignIn(googleCode: string, options: PlayOptions = {}) {
   return { ...flow, ip, state, verifier };
 }
 
-/** A sign-in that must reach the landing page with an Electron code. */
 async function browserSignIn(googleCode: string, options: PlayOptions = {}) {
   const flow = await playSignIn(googleCode, options);
   expect(flow.init.status).toBe(302);
   expect(flow.callback.status).toBe(302);
   expect(flow.callback.headers.get("location")).toBe(base);
-  // The Electron code the callback left in its cookie, as the landing page reads it.
   const { identifier } = JSON.parse(
     atob(
       decodeURIComponent(flow.electronCookie ?? "")
@@ -123,7 +119,6 @@ const count = async (sql: string, ...bindings: string[]) =>
     .bind(...bindings)
     .first<number>("n")) ?? 0;
 
-// Well past the grace period that keeps a first sign-in in flight, between its two writes, safe.
 const age = (userId: string) =>
   env.DB.prepare("update user set created_at = created_at - ? where id = ?")
     .bind(2 * 60_000, userId)
@@ -135,7 +130,6 @@ const rowsOf = async (userId: string) => ({
   sessions: await count("select count(*) as n from session where user_id = ?", userId),
 });
 
-/** Runs `action` while one D1 write fails, as it does when D1 drops mid-request. */
 async function whileWriteFails<T>(
   write: "insert on account" | "delete on user",
   action: () => Promise<T>,
@@ -212,7 +206,6 @@ describe("Google sign-in", () => {
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(1);
 
-    // Past the sweep's grace period: a user with an account is never swept.
     await age(user.id);
     const second = await exchange(await browserSignIn("ada-lovelace"));
     expect(second.status).toBe(200);
@@ -315,7 +308,6 @@ describe("disabled sign-in paths", () => {
   });
 });
 
-/** The user row a cut-off write left for `email`. */
 async function orphanOf(email: string) {
   const id = await env.DB.prepare("select id from user where email = ?")
     .bind(email)
@@ -361,7 +353,6 @@ describe("a user row with no account", () => {
     expect(atOnce.callback.headers.get("location")).toContain("error=account_not_linked");
     expect(atOnce.electronCookie).toBeNull();
 
-    // Google may have reported the email unverified the first time; the row must not stay for that.
     await env.DB.prepare("update user set email_verified = 0 where id = ?").bind(orphan).run();
     await age(orphan);
     await runSweep();
@@ -384,7 +375,6 @@ describe("a user row with no account", () => {
     expect(deletion.status).toBe(500);
     expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 0, sessions: 0 });
 
-    // The row is as old as the sign-up, which here was a moment ago.
     await age(user.id);
     await runSweep();
     expect(await rowsOf(user.id)).toEqual({ users: 0, accounts: 0, sessions: 0 });

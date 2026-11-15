@@ -1,5 +1,3 @@
-// The real Worker with Google's token endpoint faked, for wrangler.verify.jsonc only.
-// It lives under test/ so no fake code reaches the deployed bundle.
 import worker from "../src/index.ts";
 import { fakeGoogleToken, googleTokenUrl } from "./google-fake.ts";
 

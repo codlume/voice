@@ -1,5 +1,4 @@
-// Runs the landing page's inline script against a stub DOM, for the API's own tests and the
-// desktop's cross-app test. The workerd tests cannot execute it, because Workers forbid eval.
+// Workers forbid eval, so the workerd tests cannot run the landing page's inline script.
 import { runInNewContext } from "node:vm";
 import { landingPage } from "../src/landing.ts";
 

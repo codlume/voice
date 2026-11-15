@@ -1,7 +1,3 @@
-// Plays the system browser's part of a sign-in: init-oauth-proxy, the faked Google callback,
-// then, as the landing page's script does, the page itself, the browser's sign-out and a
-// get-session that must come back null. The workerd tests pass the Worker, the script passes fetch.
-
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 type Jar = Map<string, string>;
 
@@ -33,7 +29,6 @@ export async function playBrowser(
     base: string;
     initUrl: string;
     googleCode: string;
-    /** Also load the landing page and end the browser's own auth session, as the page does. */
     signOut: boolean;
     secFetchSite?: { init: string | null; callback: string | null };
   },

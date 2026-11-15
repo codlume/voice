@@ -7,7 +7,6 @@ const row = () =>
   env.DB.prepare("select access_token, id_token from account where id = 'old-account'").first();
 
 it("0001 clears ID tokens stored before the account hooks, and changes nothing when run again (catches plain ID tokens left in D1 after deploy)", async () => {
-  // Roll the database back to the previous migration set, holding a row as the old code wrote it.
   await env.DB.prepare("delete from d1_migrations where name = ?").bind(clearIdTokens).run();
   await env.DB.batch([
     env.DB.prepare(
