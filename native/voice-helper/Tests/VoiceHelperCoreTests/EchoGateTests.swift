@@ -148,6 +148,14 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
         #expect(gated.filter { $0 == 0 }.count > gated.count * 9 / 10, "silence, not residue for the model to make words of")
     }
 
+    @Test(arguments: [-50.0, 120, 300, 550])
+    func aVoiceThatLeavesMostOfTheBandUnplayedLeavesNothingToTranscribe(lagMs: Double) {
+        // Fourteen harmonics of 110 Hz: nothing plays above 1.8 kHz, as on a narrowband call.
+        let system = voice(22, pitch: 110, seed: 1)
+        let gated = EchoGate.gate(mic: add(throughAMacBookAir(system, lagMs: lagMs), roomNoise(22)), system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "nothing is loud enough to be decoded as the user's words")
+    }
+
     @Test func theUsersVoiceOverTheOtherSideStaysAndOnlyTheirEchoGoes() {
         let system = voice(10, pitch: 120, seed: 1)
         let echo = throughTheSpeakers(system, lagMs: 120)
