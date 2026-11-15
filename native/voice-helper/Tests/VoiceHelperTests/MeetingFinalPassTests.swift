@@ -11,6 +11,27 @@ private func tone(_ seconds: Double, _ amplitude: Float, hz: Float = 440) -> [Fl
 
 private func silence(_ seconds: Double) -> [Float] { [Float](repeating: 0, count: Int(seconds * 16_000)) }
 
+/// The other side talking: noise in syllables, as broadband as a voice, so its echo shows the
+/// lag the mic hears it at.
+private func talk(_ seconds: Double, _ amplitude: Float = 0.3) -> [Float] {
+    var state: UInt32 = 1
+    return (0..<Int(seconds * 16_000)).map { n in
+        state = state &* 1_664_525 &+ 1_013_904_223
+        let syllable = max(0, sin(Float(n) * 2 * .pi * 3 / 16_000))
+        return amplitude * syllable * (Float(state >> 8) / Float(1 << 23) - 1)
+    }
+}
+
+/// What the mic hears of `played` through the speakers, `lagMs` later, over the room's hiss.
+private func throughTheSpeakers(_ played: [Float], lagMs: Double) -> [Float] {
+    var state: UInt32 = 7
+    let late = silence(lagMs / 1000) + played
+    return played.indices.map { n in
+        state = state &* 1_664_525 &+ 1_013_904_223
+        return late[n] / 4 + (Float(state >> 8) / Float(1 << 23) - 1) * 0.001
+    }
+}
+
 private func write(_ samples: [Float], _ source: MeetingSource, in dir: URL) throws {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let writer = try PcmWriter(url: source.file(in: dir))
@@ -449,6 +470,38 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         _ = try await lines.wait(for: "meeting.partial")
         try await Task.sleep(for: .milliseconds(300))
         #expect(micEvents().isEmpty)
+    }
+
+    /// The sound goes to another output device 1.3 s before the mic's live window ends: the mic
+    /// hears the other side 300 ms late where it heard them 80 ms late.
+    @Test func anEchoWhoseLagJustMovedShowsAsNeitherPartialNorSegment() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let theirs = talk(9) + silence(0.7) + talk(6)
+        let moveAt = Int(8.3 * 16_000)
+        let mic = Array(throughTheSpeakers(theirs, lagMs: 80).prefix(moveAt)) + throughTheSpeakers(theirs, lagMs: 300).dropFirst(moveAt)
+        // The files end in the other side's pause, which ends the mic's window at 9.6 s.
+        let live = Int(9.9 * 16_000)
+        try write(Array(theirs.prefix(live)), .system, in: dir)
+        try write(Array(mic.prefix(live)), .mic, in: dir)
+        var looks = 0
+        let job = job(isDictating: {
+            looks += 1
+            return false
+        })
+        defer { job.cancel() }
+        job.record([.mic, .system])
+        // The loop looks for a dictation before every window, so four looks after the system
+        // window the mic's has had its turn.
+        try await until { lines.snapshot().contains { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "system" } }
+        let seen = looks
+        try await until { looks >= seen + 4 }
+
+        try write(Array(theirs.dropFirst(live)), .system, in: dir)
+        try write(Array(mic.dropFirst(live)), .mic, in: dir)
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+        #expect(micSegments() == [], "the user said nothing")
+        #expect(micEvents() == [])
     }
 
     @Test func aLegWithoutSystemAudioAfterOneWithItKeepsTranscribingTheMic() async throws {
