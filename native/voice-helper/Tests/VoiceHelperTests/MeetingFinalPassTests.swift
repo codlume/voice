@@ -305,6 +305,27 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         #expect(lines.snapshot().contains { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "mic" })
     }
 
+    /// A lag that just moved does not show in the newest 0.75 s, so what the gate left of
+    /// them, where the other side played, waits.
+    @Test func theUsersVoiceOverTheOtherSideShowsAsAPartialUpToTheNewestAudio() async throws {
+        let lines = EmittedLines()
+        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // Both talk on with no pause.
+        let theirs = talk(7)
+        try write(theirs, .system, in: dir)
+        try write(zip(throughTheSpeakers(theirs, lagMs: 80), silence(1) + tone(6, 0.3, hz: 660)).map(+), .mic, in: dir)
+        let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("\(samples.count / 16) ms", in: samples) },
+                                       newDetector: { nil }, isDictating: { false }, idle: .milliseconds(5))
+        defer { job.cancel() }
+        job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
+        job.record([.mic, .system])
+        let mine = { lines.snapshot().filter { $0["type"] as? String == "meeting.partial" && $0["source"] as? String == "mic" } }
+        try await until { !mine().isEmpty }
+        #expect(mine().first?["text"] as? String == "6250 ms")
+    }
+
     /// Main deletes a meeting's audio after its final pass and sends no cancel, so a later leg
     /// starts the files over under a new base and reaches the job the first leg used.
     @Test func aLegOnNewFilesAfterTheAudioWasDeletedShowsItsUnfinishedSpeech() async throws {
@@ -502,6 +523,27 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         _ = try await lines.wait(for: "meeting.drained")
         #expect(micSegments() == [], "the user said nothing")
         #expect(micEvents() == [])
+    }
+
+    /// The echo's lag has not moved, so the gate already told the user's voice from the other side.
+    @Test func anAnswerRightAfterTheOtherSideShowsWithoutWaiting() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // The user answers 0.2 s after the other side's last sound, and the files end 0.7 s
+        // after the answer.
+        let theirs = talk(2.8) + silence(1.6)
+        try write(theirs, .system, in: dir)
+        try write(zip(throughTheSpeakers(theirs, lagMs: 80), silence(3) + tone(0.7, 0.3, hz: 660) + silence(0.7)).map(+), .mic, in: dir)
+        var looks = 0
+        let job = job(isDictating: {
+            looks += 1
+            return false
+        })
+        defer { job.cancel() }
+        job.record([.mic, .system])
+        try await until { lines.snapshot().contains { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "system" } }
+        let seen = looks
+        try await until { looks >= seen + 4 }
+        #expect(micSegments() == ["3000-3700"])
     }
 
     @Test func aLegWithoutSystemAudioAfterOneWithItKeepsTranscribingTheMic() async throws {
