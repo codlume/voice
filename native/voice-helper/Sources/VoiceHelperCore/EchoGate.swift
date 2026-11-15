@@ -243,9 +243,10 @@ public enum EchoGate {
             // A frame the other side played into goes silent when it keeps no more than twice the
             // room's noise, or than the echo's residue: the speech model makes words of faint
             // echo residue. Beside the user's voice the residue is let be, since a frame cut out
-            // of a word costs the word.
+            // of a word costs the word, but only beside a voice at least as loud as this frame's
+            // residue: a faint sound just before a loud word of the other side's is no voice.
             let voiceNear = (max(0, t - voiceReach)...min(frames - 1, t + voiceReach)).contains {
-                kept[$0] >= voiceMargin * max(2 * roomNoise, residue[$0])
+                kept[$0] >= max(voiceMargin * max(2 * roomNoise, residue[$0]), residue[t])
             }
             if kept[t] < max(2 * roomNoise, voiceNear ? 0 : residue[t]) {
                 mask.replaceSubrange(t * bins..<(t + 1) * bins, with: silence)
