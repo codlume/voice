@@ -59,6 +59,7 @@ Preconditions: baseline. A fresh userData has no meetings.
 
 ## Gotchas
 
+- The voice detector (1 MB) comes with the speech model: `launch` fetches it into the test-model cache and links it as `models/silero-vad-coreml`. A meeting hears its mic with it and transcribes only sound it hears a voice in. Without it every sound on the mic is transcribed and the helper logs "no voice detector" once for the meeting, so read the log before you trust a run that shows stray mic words.
 - The speaker detection models (21 MB) download only on the helper's `meeting.models.download`, never at Stop. `launch` prepares them once in the test-model cache and links them into the userData as `models/speaker-diarization`.
 - Automatic folders only collect a meeting when a title is set. Making or editing an automatic folder, or turning Automatic folders on, files existing meetings whose title matches; editing a rule takes out meetings only the old rule matched, and keeps ones added by hand.
 - Test mode never opens the microphone or a system audio tap. Without the fixture files in the userData, `meeting.start` fails with "meeting capture disabled" or reports system audio `unavailable`. A fixture run proves files, transcription, echo gating, and lifecycle, not device or permission behavior.

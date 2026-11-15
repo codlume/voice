@@ -165,6 +165,7 @@ test("the required test models are linked always and the optional ones only when
   linkTestModels(join(dir, "without"), cache);
   assert.deepEqual(linkedModels(join(dir, "without")), {
     asr: true,
+    voice: true,
     cleanup: true,
     transform: false,
     speakers: false,
@@ -174,6 +175,7 @@ test("the required test models are linked always and the optional ones only when
   linkTestModels(join(dir, "with"), cache);
   assert.deepEqual(linkedModels(join(dir, "with")), {
     asr: true,
+    voice: true,
     cleanup: true,
     transform: true,
     speakers: true,

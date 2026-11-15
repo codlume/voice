@@ -18,6 +18,7 @@ final class Helper {
     private let installedApps: InstalledApps
     private let meetings: Meetings
     private let diarizer: SpeakerDiarizer
+    private let voiceDetection: VoiceDetection
     private var testTarget: TranscriptTarget?
     private var shuttingDown = false
 
@@ -51,12 +52,14 @@ final class Helper {
         let transcriber = transcriber
         let diarizer = SpeakerDiarizer(modelsDir: modelsDir, output: output)
         self.diarizer = diarizer
+        let voiceDetection = VoiceDetection(modelsDir: modelsDir, output: output)
+        self.voiceDetection = voiceDetection
         let finalPass = MeetingFinalPass(output: output, decode: { try await transcriber.decodeMeeting($0, language: $1) },
-                                         diarize: { try await diarizer.turns(in: $0) }, newDetector: { nil },
-                                         isDictating: { capture.isDictating })
+                                         diarize: { try await diarizer.turns(in: $0) },
+                                         newDetector: { await voiceDetection.detector() }, isDictating: { capture.isDictating })
         meetings = Meetings(output: output, devices: devices, source: .resolve(environment: environment),
-                            decode: { try await transcriber.decodeMeeting($0, language: $1) }, newDetector: { nil },
-                            finalPass: finalPass, isDictating: { capture.isDictating },
+                            decode: { try await transcriber.decodeMeeting($0, language: $1) },
+                            newDetector: { await voiceDetection.detector() }, finalPass: finalPass, isDictating: { capture.isDictating },
                             isCapturingDictation: { capture.isCapturingDictation })
         diarizer.reportStatus()
     }
@@ -116,8 +119,12 @@ final class Helper {
             permissions.request(kind)
         case .asrPrepare(let download):
             transcriber.prepare(download: download)
+            // The voice detector comes with the speech model, also to a user who has had the
+            // speech model since before there was a detector.
+            if transcriber.sessionState != .missing { voiceDetection.prepare() }
         case .asrRemove:
             transcriber.remove()
+            if transcriber.sessionState == .missing { voiceDetection.remove() }
         case .testAudioFile(let path):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             capture.testAudioPath = path

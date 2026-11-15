@@ -31,5 +31,6 @@ Preconditions: baseline, both models `ready`.
 ## Gotchas
 
 - Uninstall deletes the scratch userData's symlink, never the shared test-model cache. If the cache file disappears, that is a bug. Report it.
+- Uninstalling the speech model also removes the link to the voice detector meetings use, `models/silero-vad-coreml`. Restore that link with the speech model's, or `Install` downloads the detector (1 MB).
 - Clicking `Install` with no link in place starts a real download of about 480 MB. Restore the link first. Parakeet has no URL override and no Cancel, so cover its uninstall and reinstall with `node scripts/models-smoke.mjs`.
 - The confirmation is an in-window dialog. Its `Cancel` and `Uninstall` buttons are reachable with `click`, and the row button is named `Uninstall <model>`, so the names do not collide.
