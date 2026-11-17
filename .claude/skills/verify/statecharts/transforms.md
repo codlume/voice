@@ -116,7 +116,7 @@ Steps 0 to 4 as above, then:
 5. you press Escape or turn Transforms off: Replacing the selection
 6. the write lands: Replaced
 
-`step()` honors cancel only while reading or generating. The test "Escape once the write started changes nothing" pins this, so the code means it, and the feature map's "Escape during a run cancels it" claims more than the code does. The pill looks the same in all three running states, so you cannot see when Escape stops working.
+`step()` honors cancel only while reading or generating. The test "Escape once the write started changes nothing" pins this, so the code means it. The Transforms recipe says the same. The pill looks the same in all three running states, so you cannot see when Escape stops working.
 
 ## Transforms off and Last transform (`ResultIsInVoice`)
 

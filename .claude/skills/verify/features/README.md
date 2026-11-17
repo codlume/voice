@@ -178,7 +178,7 @@ No feature file yet.
 | Flow               | Live check                                                                                                                        | Tests                                                                                    | Proof           |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------- |
 | Setup checklist    | **Home checklist** in [models.md](./models.md#driving-it-with-voice-verify), and preview scene `preview.html?hub=setup-not-ready` | `apps/desktop/src/renderer/checklist.test.ts`, `apps/desktop/src/renderer/Home.test.tsx` | `vv text`, shot |
-| Permission prompts | No live recipe. The scratch instance never grants the microphone, and only a human grants Accessibility.                          | `swift: PermissionsTests`, `apps/desktop/src/renderer/checklist.test.ts`                 | Test output     |
+| Permission prompts | No live recipe. The instance never reads the microphone, and only a human grants Accessibility.                                   | `swift: PermissionsTests`, `apps/desktop/src/renderer/checklist.test.ts`                 | Test output     |
 
 ### Updates
 

@@ -1,6 +1,6 @@
 # Flow statecharts
 
-Each chart shows the states a stateful flow passes through, what the user sees in each, and the rules a verifier checks. A TLA+ model of the real code backs each chart, and TLC checks every rule. A red state breaks a rule. Its file gives the path and says whether the break is a bug or a design choice.
+Each chart shows the states a stateful flow passes through, what the user sees in each, and the rules a verifier checks. A TLA+ model of the real code backs each chart, and TLC checks every rule. Every model also passes TLC's deadlock check. A red state breaks a rule. Its file gives the path and says whether the break is a bug or a design choice.
 
 | Flow                         | Chart                          | Feature                                 |
 | ---------------------------- | ------------------------------ | --------------------------------------- |

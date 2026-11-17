@@ -112,7 +112,7 @@ To check it, press, release at 400 ms, and send `capture.started` at 1500 ms thr
 5. 5 s pass with no answer: Not inserted
 6. the helper's insert lands late: Not inserted, yet the text is in the app
 
-After 5 s with no `insert.result`, main ends the session `notInserted`, settles history to `notInserted`, and copies the text when Copy to clipboard is on. No command stops the helper's insert. When the helper's write lands later, main logs `insert.result <id> late phase=done` and changes nothing else. The Flow Bar reads "Not inserted. Copy it from Voice" while the text is in the app, so a paste from the clipboard adds a second copy. The helper inserts on its main thread with a 0.3 s timeout on each accessibility call, so a slow target app can delay the answer.
+After 5 s with no `insert.result`, main ends the session `notInserted`, settles history to `notInserted`, and copies the text when Copy to clipboard is on. No command stops the helper's insert. When the helper's write lands later, main logs `insert.result <id> late phase=done` and changes nothing else. The Flow Bar reads "Not inserted. Copy it from Voice", or "Not inserted. Copied to clipboard" with Copy to clipboard on, while the text is already in the app. A paste then adds a second copy. The helper inserts on its main thread with a 0.3 s timeout on each accessibility call, so a slow target app can delay the answer.
 
 To check it, drive a session through `createDictation` to `insert`, advance 5 s, and send `insert.result` with method `accessibility`. The pill still reads "Not inserted. Copy it from Voice", and the history entry stays `notInserted`.
 
