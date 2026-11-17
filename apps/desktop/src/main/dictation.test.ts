@@ -842,42 +842,6 @@ describe("createDictation", () => {
     expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
   });
 
-  test("releaseToInsertMs counts from the release even when capture caught up later", () => {
-    const h = harness({ cleanupEnabled: false });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
-    const id = h.id();
-    vi.advanceTimersByTime(300);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
-    vi.advanceTimersByTime(200);
-    h.dictation.onHelperEvent({
-      type: "capture.started",
-      id,
-      startMs: 500,
-      relayMs: null,
-      asrState: null,
-    });
-    expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
-    h.dictation.onHelperEvent({
-      type: "transcript",
-      id,
-      text: "hi",
-      audioMs: 0,
-      asrMs: 10,
-      speechMs: 600,
-      relayMs: null,
-      target: null,
-    });
-    vi.advanceTimersByTime(100);
-    h.dictation.onHelperEvent({
-      type: "insert.result",
-      id,
-      method: "paste",
-      route: "forced",
-      clipboardSaveMs: null,
-    });
-    expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBe(300);
-  });
-
   test("reports a failed session once, with its language", () => {
     const h = harness({ dictationLanguage: "pl" });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });

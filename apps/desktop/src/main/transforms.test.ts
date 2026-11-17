@@ -506,7 +506,7 @@ describe("createTransforms", () => {
 
     h.store.update((s) => ({
       ...s,
-      session: { phase: "starting", id: "s1", mode: "hold", pressedAt: 0, released: null },
+      session: { phase: "starting", id: "s1", mode: "hold", pressedAt: 0 },
     }));
 
     expect(h.store.state.transform).toEqual(idleRun);

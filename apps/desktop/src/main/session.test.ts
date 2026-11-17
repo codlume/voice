@@ -120,7 +120,6 @@ describe("starting a session", () => {
       id: ID,
       mode: "hold",
       pressedAt: 0,
-      released: null,
     });
     expect(effects).toEqual([{ type: "send", command: { type: "capture.start", id: ID } }]);
   });
@@ -136,7 +135,6 @@ describe("starting a session", () => {
       id: "s2",
       mode: "hold",
       pressedAt: 2200,
-      released: null,
     });
     expect(effects).toEqual([{ type: "send", command: { type: "capture.start", id: "s2" } }]);
   });
