@@ -34,7 +34,6 @@ export type Session =
       id: string;
       mode: DictationMode;
       pressedAt: number;
-      released: Release | null;
     }
   | { phase: "recording"; id: string; mode: DictationMode; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
@@ -64,7 +63,6 @@ type Cleaning = Extract<Session, { phase: "cleaning" }>;
 type Inserting = Extract<Session, { phase: "inserting" }>;
 
 type HotkeyTime = { hotkeyUptimeMs?: number | undefined };
-type Release = { at: number } & HotkeyTime;
 
 export type SessionEvent =
   | ({ type: "hotkeyDown"; id: string; asr: ModelStatus["state"] } & HotkeyTime)
@@ -143,23 +141,6 @@ function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
   };
 }
 
-function stopOrCancel(id: string, pressedAt: number, released: Release): Step {
-  if (released.at - pressedAt < MIN_HOLD_MS) {
-    return finish(id, { kind: "tooShort" }, send({ type: "capture.cancel", id }));
-  }
-  return {
-    state: { phase: "transcribing", id, overdue: false },
-    effects: [
-      send({
-        type: "capture.stop",
-        id,
-        releasedAt: released.at,
-        hotkeyUptimeMs: released.hotkeyUptimeMs,
-      }),
-    ],
-  };
-}
-
 function start(
   id: string,
   asr: ModelStatus["state"],
@@ -173,7 +154,7 @@ function start(
   if (asr === "downloading")
     return finish(id, { kind: "failed", message: ASR_DOWNLOADING_MESSAGE });
   return {
-    state: { phase: "starting", id, mode, pressedAt: now, released: null },
+    state: { phase: "starting", id, mode, pressedAt: now },
     effects: [send({ type: "capture.start", id, hotkeyUptimeMs: hotkey.hotkeyUptimeMs })],
   };
 }
@@ -183,10 +164,17 @@ function endCapture(
   now: number,
   hotkey: HotkeyTime,
 ): Step {
-  const released = { at: now, hotkeyUptimeMs: hotkey.hotkeyUptimeMs };
-  if (state.phase === "recording") return stopOrCancel(state.id, state.pressedAt, released);
-  if (state.released !== null) return { state, effects: [] };
-  return { state: { ...state, released }, effects: [] };
+  const { id, pressedAt } = state;
+  const cancel = send({ type: "capture.cancel", id });
+  if (now - pressedAt < MIN_HOLD_MS) return finish(id, { kind: "tooShort" }, cancel);
+  // The helper ignores capture.stop until its first audio chunk, so only a cancel frees the mic.
+  if (state.phase === "starting") return finish(id, { kind: "empty" }, cancel);
+  return {
+    state: { phase: "transcribing", id, overdue: false },
+    effects: [
+      send({ type: "capture.stop", id, releasedAt: now, hotkeyUptimeMs: hotkey.hotkeyUptimeMs }),
+    ],
+  };
 }
 
 function inserting(
@@ -289,9 +277,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "captureStarted": {
       if (state.phase !== "starting") return same;
-      if (state.released !== null) {
-        return stopOrCancel(state.id, state.pressedAt, state.released);
-      }
       return {
         state: { phase: "recording", id: state.id, mode: state.mode, pressedAt: state.pressedAt },
         effects: [],
