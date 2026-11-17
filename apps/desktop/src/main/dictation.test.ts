@@ -2161,15 +2161,25 @@ describe("createDictation", () => {
     ]);
   });
 
-  test("a release while capture is still starting does not extend the start watchdog", () => {
+  test("a release before the mic starts cancels capture at once and sends nothing later", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
+    vi.advanceTimersByTime(400);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
-    vi.advanceTimersByTime(1);
-    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands.map((c) => c.type)).toEqual(["capture.start", "capture.cancel"]);
     expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+    expect(h.store.state.session).toEqual({ phase: "done", id, outcome: { kind: "empty" } });
+    vi.advanceTimersByTime(1100);
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 1500,
+      relayMs: null,
+      asrState: null,
+    });
+    vi.advanceTimersByTime(START_TIMEOUT_MS);
+    expect(h.commands.map((c) => c.type)).toEqual(["capture.start", "capture.cancel"]);
   });
 
   test("the transcription watchdog waits longer while the speech model is still loading", () => {
