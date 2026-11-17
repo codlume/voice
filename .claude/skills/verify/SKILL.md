@@ -15,7 +15,7 @@ node .claude/skills/verify/scripts/voice-verify.mjs <command>
 
 It reuses the repo's own harness (`scripts/voice-app.mjs`, the same code `pnpm e2e` uses). Each worktree has its own instance, with its own state file, userData, evidence directory, and CDP ports. Every command acts on the instance of the worktree that contains the script you run, so sessions in different worktrees never drive or stop each other's app. `launch` and `doctor` print the instance's `worktree`, which names the checkout whose build a proof ran against. The hotkey, focus, and clipboard stay shared, so `dictate`, `transform`, and the clipboard recipes still need the desktop to themselves.
 
-Before driving a feature, read [features/README.md](features/README.md) and the feature's file. The map lists every entry point. A proof that covers only one of several entry points is incomplete.
+Before driving a feature, read [features/README.md](features/README.md) and the feature's file. The map lists each flow with its live check, tests, and proof, and the feature's file lists every entry point. A proof that covers only one of several entry points is incomplete.
 
 ## Asserted scenarios
 
@@ -43,7 +43,7 @@ Settings API calls establish preconditions. These scenarios prove dictation effe
 
 ## Launch
 
-1. Build what the instance runs. Rebuild after any change, because the instance runs built output, not the dev server. A fresh worktree first needs `pnpm install` and, if `doctor` reports the Electron binary missing, `pnpm --filter @voice/desktop exec install-electron`.
+1. Build what the instance runs. Rebuild after any change, because the instance runs built output, not the dev server. A fresh worktree first needs `pnpm install`, then `pnpm --filter @voice/desktop exec install-electron`, because `pnpm install` does not fetch the Electron binary there.
 
    ```sh
    swift build --package-path native/voice-helper   # helper, fnpost, disclaim
@@ -57,7 +57,7 @@ Settings API calls establish preconditions. These scenarios prove dictation effe
    node .claude/skills/verify/scripts/voice-verify.mjs launch     # run_in_background
    ```
 
-   It is ready when it prints a JSON object with `"ready": true`, the CDP `port`, `worktree`, `userData`, `evidence`, `permissions`, and `models`. A cold run, which includes the first launch in each worktree, takes 30 to 60 s, mostly CoreML compiling the speech model. The first run ever also downloads about 950 MB of test models into `~/Library/Caches/Voice Development/test-models`.
+   It is ready when it prints a JSON object with `"ready": true`. The helper's own `{"type":"ready"}` line comes first, so wait for `"ready": true`, not the word `ready`. The object has the CDP `port`, `worktree`, `userData`, `evidence`, `permissions`, and `models`. A cold run, which includes the first launch in each worktree, takes 30 to 60 s, mostly CoreML compiling the speech model. The first run ever also downloads about 950 MB of test models into `~/Library/Caches/Voice Development/test-models`.
 
    What `launch` sets up:
    - Test mode (`VOICE_HELPER_TEST=1`) with a scratch userData in `$TMPDIR`, one per worktree. `launch` and `doctor` print its path as `userData`. It never touches `~/Library/Application Support/Voice`, `Voice Development`, or the login Keychain, because test mode encrypts with a mock Keychain.
@@ -81,11 +81,11 @@ This check is read-only. Run it first, and again whenever something looks off. A
 - `app`, `helper`, and `fnpost` are `built`, not `stale` or `not built`. A stale build means you'd verify old code, so rebuild and relaunch.
 - `instance.cdpPages` lists both `pill.html` and `hub.html`.
 - `snapshot.models.asr.state` and `snapshot.models.cleanup.state` are `ready`.
-- `testModels` lists the required models, `asr` and `cleanup`. `launch` downloads any that say `will download`. `optionalTestModels` lists the rest. `optionalTestModels.transform` is `cached` if you plan to `transform`. With `missing`, the instance has no transform model. Seed the cache with the command in [Transforms](features/transforms.md#driving-it-with-voice-verify), then relaunch.
+- `testModels` lists the required models, `asr`, `voice` (voice activity detection), and `cleanup`. `launch` downloads any that say `will download`. `optionalTestModels` lists `transform` and `speakers` (the meeting diarizer). `optionalTestModels.transform` is `cached` if you plan to `transform`. With `missing`, the instance has no transform model. Seed the cache with the command in [Transforms](features/transforms.md#driving-it-with-voice-verify), then relaunch.
 - `snapshot.permissions.accessibility` is `granted`. Accessibility belongs to whatever launched the script (terminal, IDE, or agent host). Without it, the hotkey tap and insertion cannot work, and only a human can grant it in System Settings.
-- `otherVoiceProcesses` is empty if you plan to `dictate`. The user's own `Voice.app` and a `pnpm dev` session both show up here, and so do other sessions' verify instances, model downloads, e2e runs, and smoke runs.
+- `otherVoiceProcesses` is empty if you plan to `dictate`. The user's own `Voice.app` shows up as its `voice-helper` process, a `pnpm dev` session shows up too, and so do other sessions' verify instances, model downloads, e2e runs, and smoke runs.
 
-`snapshot.permissions.microphone` stays `notDetermined` in the scratch instance. That is expected, so don't press Grant.
+`snapshot.permissions.microphone` reports whatever the launching host was granted. The instance never reads the microphone, so its value does not matter. Don't press Grant.
 
 ## Drive
 
@@ -113,7 +113,7 @@ The hub is driven over CDP. Prefer the user path (`click`) over `window.voice.*`
 | `second-instance <code>`                                                                                | Launches a second Voice on the same userData with that callback URL as its argument, waits for it to exit, and prints its exit code and whether the instance is still alive.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `reopen`                                                                                                | Closes the Voice window, then opens Voice again: a second copy hands over through the single-instance lock and the running app shows its window, as when the user opens Voice from Finder. Use it to bring the window back.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `front`                                                                                                 | Brings the Voice window in front of other apps from the main process and waits until it paints. Run it after `dictate` and before driving dialogs, menus, or tabs (see below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `record <name>`                                                                                         | Screencasts the hub page into `<name>.mp4` in the evidence dir until it gets SIGTERM or SIGINT. Run it in the background, drive the flow, then `kill -TERM` the pid it prints. Without `ffmpeg` it keeps the PNG frames and prints their directory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `record <name>`                                                                                         | Screencasts the hub page into `<name>.mp4` in the evidence dir until it gets SIGTERM or SIGINT. Run it in the background, drive the flow, then `kill -TERM` the pid it prints. It gets a frame only when the hub repaints, so run `front` first or a covered window films nothing. Without `ffmpeg` it keeps the PNG frames and prints their directory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Stable handles:
 
@@ -135,7 +135,7 @@ Artifacts go to the `evidence` directory that `launch` and `stop` print, under `
 Proof standards:
 
 - Drive the real user path: a click in the hub, or the hotkey through `dictate`. `window.voice.updateSettings` is a setup shortcut, not proof that a control works.
-- Capture the action and the resulting state: a `shot` before and after, plus `text` or `snapshot` output, not only the final screen.
+- Capture the action and the resulting state: a `shot` before and after, plus `text` or `snapshot` output, not only the final screen. `text` prints the page behind an open dialog, so prove a dialog with a `shot`.
 - Check side effects alongside the UI. Settings persist in `<userData>/settings.json`, so `cat` it before `stop` deletes it. Model installs are files in `<userData>/models`. Insertion is the target textarea's value (`inserted`) and the first of `(await window.voice.getHistory()).entries`. Main-process logs are in `<userData>/main.log`.
 - The scratch target is an Electron textarea, which exposes no focused accessibility element, so `dictate` inserts with `paste`. That writes the real clipboard for about a second, then restores it.
 - Test mode replaces only the microphone with a fixture WAV. The hotkey tap, ASR, cleanup, and insertion are the production code paths. Don't describe a fixture-driven run as proof of capture-device behavior.
