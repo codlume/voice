@@ -690,6 +690,10 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           const hasAudio = ((await audioLength(meeting.id)) ?? 0) > 0;
           await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt, hasAudio });
         }
+        const { meetings } = store.state();
+        const lengths = await Promise.all(meetings.map(({ id }) => audioLength(id)));
+        const withAudio = meetings.filter((_, index) => (lengths[index] ?? 0) > 0);
+        for (const { id } of withAudio) await dispatch(id, { type: "audioFound" });
       }),
     async settled() {
       while (true) {

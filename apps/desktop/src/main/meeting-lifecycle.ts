@@ -51,7 +51,8 @@ export type MeetingEvent =
   | { type: "summaryProgress"; progress: SummaryProgress }
   | { type: "summarized" }
   | { type: "summaryFailed" }
-  | { type: "recover"; lastAudioAt: number; hasAudio: boolean };
+  | { type: "recover"; lastAudioAt: number; hasAudio: boolean }
+  | { type: "audioFound" };
 
 export type MeetingEffect =
   | { type: "startCapture"; leg: number }
@@ -433,6 +434,8 @@ export function step(
         }
         case "deleteAudio":
           return audioDeleted(meeting);
+        case "audioFound":
+          return audioFound(meeting);
         default:
           return same;
       }
@@ -446,6 +449,8 @@ export function step(
           return meeting.finalPassFailed ? finalizing(meeting) : same;
         case "deleteAudio":
           return audioDeleted(meeting);
+        case "audioFound":
+          return audioFound(meeting);
         case "captureStarted":
           return { meeting, effects: [{ type: "stopCapture" }] };
         default:
@@ -458,3 +463,13 @@ const audioDeleted = (meeting: Meeting): Step =>
   meeting.finalPassFailed
     ? { meeting: { ...meeting, finalPassFailed: null }, effects: [{ type: "deleteAudio" }] }
     : { meeting, effects: [] };
+
+/**
+ * A transcribed meeting keeps audio only after a failed final pass, for Try again and Delete
+ * audio. Any other audio it still has is out of the user's reach: its delete failed, Voice quit
+ * before deleting it, or a resume was stopped or failed before recording began.
+ */
+const audioFound = (meeting: Meeting): Step =>
+  meeting.finalPassFailed
+    ? { meeting, effects: [] }
+    : { meeting, effects: [{ type: "deleteAudio" }] };
