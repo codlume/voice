@@ -23,8 +23,33 @@ import {
 import { createMeetingsStore } from "./meetings-store.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 
+const disk = vi.hoisted(() => ({ nextAudioDelete: "works" as "works" | "throws" | "hangs" }));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const real = await importOriginal<typeof import("node:fs/promises")>();
+  const faultyRm: typeof real.rm = (path, options) => {
+    const fault = disk.nextAudioDelete;
+    if (fault === "works" || !String(path).endsWith("mic.pcm")) return real.rm(path, options);
+    disk.nextAudioDelete = "works";
+    return fault === "hangs" ? new Promise(() => {}) : Promise.reject(new Error("EBUSY"));
+  };
+  return { ...real, rm: faultyRm };
+});
+
 const START = Date.UTC(2026, 9, 31, 9, 0);
 const TEN_WORDS = "we agreed to ship the beta on friday after review";
+const FINAL_PASS: FinalSegment[] = [
+  { source: "mic", startMs: 0, endMs: 1800, text: "We agreed to ship the beta", speaker: null },
+];
+const AUDIO = ["mic.pcm", "system.pcm", "audio.json"];
+
+const summarizerInto = (summarized: MeetingId[]): MeetingRecorderDeps["summarizer"] => ({
+  summarizeMeeting: async (id) => {
+    summarized.push(id);
+    return { ok: true };
+  },
+  generateTitle: async () => ({ ok: true, title: null }),
+});
 
 let dir: string;
 
@@ -34,6 +59,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.useRealTimers();
+  disk.nextAudioDelete = "works";
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -159,6 +185,20 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     },
   };
   return h;
+}
+
+async function quitBeforeAudioDelete(recordedMs: number) {
+  const h = harness();
+  const id = await h.start();
+  await h.segment(id, "mic", 0, TEN_WORDS);
+  h.advance(recordedMs);
+  await h.recorder.stop(id);
+  await h.drained(id);
+  disk.nextAudioDelete = "hangs";
+  h.emit({ type: "meeting.finalized", id, segments: FINAL_PASS });
+  await vi.waitFor(() => expect(disk.nextAudioDelete).toBe("works"));
+  expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+  return h.onDisk(id);
 }
 
 describe("meeting recorder", () => {
@@ -1609,6 +1649,68 @@ describe("meeting recorder", () => {
       kind: "refused",
       message: "There is no kept audio to delete.",
     });
+  });
+
+  test("a relaunch deletes the audio of a finished meeting whose delete failed", async () => {
+    const first = harness();
+    const id = await first.start();
+    await first.segment(id, "mic", 0, TEN_WORDS);
+    await first.recorder.stop(id);
+    await first.drained(id);
+    disk.nextAudioDelete = "throws";
+    await first.finalized(id, FINAL_PASS);
+    expect(first.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
+    expect(existsSync(NodePath.join(first.folder(id), "mic.pcm"))).toBe(true);
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    expect(h.store.get(id)?.status.kind).toBe("ready");
+    expect(await h.store.transcript(id)).toMatchObject([{ text: "We agreed to ship the beta" }]);
+    for (const name of AUDIO)
+      expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
+  });
+
+  test("a relaunch deletes the audio of a finished meeting when Voice quit before deleting it", async () => {
+    const left = await quitBeforeAudioDelete(0);
+    expect(left).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    expect(h.store.get(left.id)?.status.kind).toBe("ready");
+    expect(await h.store.transcript(left.id)).toMatchObject([
+      { text: "We agreed to ship the beta" },
+    ]);
+    for (const name of AUDIO)
+      expect(existsSync(NodePath.join(dir, left.id, name)), name).toBe(false);
+  });
+
+  test("a relaunch deletes the audio of a meeting Voice quit on before summarizing, and summarizes it", async () => {
+    const left = await quitBeforeAudioDelete(6 * 60_000);
+    expect(left).toMatchObject({ status: { kind: "summarizing" }, finalPassFailed: null });
+
+    const summarized: MeetingId[] = [];
+    const h = harness({ summarizer: summarizerInto(summarized) });
+    await h.recorder.recover();
+    await h.settle();
+    expect(summarized).toEqual([left.id]);
+    expect(h.store.get(left.id)?.status.kind).toBe("ready");
+    for (const name of AUDIO)
+      expect(existsSync(NodePath.join(dir, left.id, name)), name).toBe(false);
+  });
+
+  test("a relaunch that cannot write meeting.json still deletes that audio and summarizes", async () => {
+    const { id } = await quitBeforeAudioDelete(6 * 60_000);
+
+    const summarized: MeetingId[] = [];
+    const h = harness({ summarizer: summarizerInto(summarized) });
+    await meetingWritesFail(h.folder(id), async () => {
+      await h.recorder.recover();
+      await h.settle();
+    });
+    expect(summarized).toEqual([id]);
+    for (const name of AUDIO) expect(existsSync(NodePath.join(dir, id, name)), name).toBe(false);
   });
 
   test("live lines that arrive after the meeting finished are not appended", async () => {
