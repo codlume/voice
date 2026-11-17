@@ -634,6 +634,22 @@ describe("meeting lifecycle", () => {
     }
   });
 
+  test("audio found on a transcribed meeting is deleted, unless a failed final pass kept it", () => {
+    for (const status of statuses) {
+      const transcribed = status.kind === "ready" || status.kind === "summarizing";
+      const meeting = meetingAt(status);
+      expect(step(meeting, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual({
+        meeting,
+        effects: transcribed ? [{ type: "deleteAudio" }] : [],
+      });
+      const kept = meetingAt(status, { finalPassFailed: "other" });
+      expect(step(kept, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual({
+        meeting: kept,
+        effects: [],
+      });
+    }
+  });
+
   test("recovery finalizes whatever a crash left and never starts capture", () => {
     const lastAudioAt = T0 + 45 * MIN;
     const draining = { kind: "transcribing", step: "draining" } as const;

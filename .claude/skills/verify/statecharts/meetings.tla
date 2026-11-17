@@ -196,7 +196,7 @@ AudioDeleted ==
     /\ UNCHANGED <<capturing, intent, final, failed>>
     /\ Moved(FALSE)
 
-\* rm throws: runOrFail logs it and nothing retries.
+\* rm throws: runOrFail logs it, and the next launch deletes the audio again.
 DeleteFails ==
     /\ status = "deletingAudio"
     /\ status' = "ready"
@@ -220,14 +220,17 @@ YouDeleteAudio ==
     /\ Moved(TRUE)
 
 \* Quit or crash: the helper exits on stdin EOF and its files keep what it appended. On the next
-\* launch recover() sends "recover" with hasAudio from the files, before any start or resume.
+\* launch recover() sends "recover" with hasAudio from the files, before any start or resume. Then
+\* it sends "audioFound" to each meeting whose files hold audio. A finished meeting with no failed
+\* final pass answers with deleteAudio, so it deletes the audio again.
 Recovered(s) ==
     CASE s = "starting" /\ audio # "kept" -> "gone"
-      [] s = "deletingAudio" -> "ready"
+      [] s \in {"deletingAudio", "ready"} -> "deletingAudio"
       [] OTHER -> "draining"
 
 VoiceRestarts ==
-    /\ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing", "deletingAudio"}
+    /\ \/ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing", "deletingAudio"}
+       \/ status = "ready" /\ final /\ ~failed /\ audio = "kept"
     /\ status' = Recovered(status)
     /\ capturing' = FALSE
     /\ intent' = FALSE
@@ -263,7 +266,7 @@ AudioDeletedOnlyAfterFinal == audio = "deleted" => final
 \* A crash, a relaunch or a failure never throws away audio that has no final transcript.
 VoiceKeepsUnfinishedAudio == ~lost
 
-\* Once the final transcript is saved, the audio leaves the disk.
-AudioGoneOnceFinal == (final /\ audio = "kept") => status = "deletingAudio"
+\* Once the final transcript is saved, the next launch deletes any audio still on disk.
+AudioGoneOnceFinal == (final /\ audio = "kept") => ENABLED (VoiceRestarts /\ status' = "deletingAudio")
 
 ====
