@@ -12,8 +12,8 @@ stateDiagram-v2
     lg1: Finishing
     lg2: Done
     lg3: No meeting
-    lg4: Breaks AudioDeletedOnlyAfterFinal or AudioGoneOnceFinal
-    lg5: Path to the AudioDeletedOnlyAfterFinal or AudioGoneOnceFinal bug
+    lg4: Breaks AudioDeletedOnlyAfterFinal
+    lg5: Path to the AudioDeletedOnlyAfterFinal bug
   }
   class lg0 orange
   class lg1 blue
@@ -54,9 +54,10 @@ stateDiagram-v2
   s8 --> s11: you press Delete audio
   s8 --> s5: you press Try again
   s9 --> s12: the audio files are deleted
-  s9 --> s13: deleting fails, or Voice quits or crashes first
+  s9 --> s13: deleting fails
   s10 --> s3: you press Stop, or Voice quits or crashes, then opens again
   s10 --> s6: the resume fails, or you press Pause
+  s13 --> s9: Voice quits or crashes, then opens again
   s10 --> s4: recording begins
   classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
   class s0 tan
@@ -74,15 +75,12 @@ stateDiagram-v2
   class s8 teal
   class s8 bugPath
   class s9 blue
-  class s9 bugPath
   class s10 orange
   class s11 teal
   class s11 breaks
   class s11 bugPath
   class s12 teal
   class s13 teal
-  class s13 breaks
-  class s13 bugPath
 ```
 
 ## Rules
@@ -93,7 +91,7 @@ stateDiagram-v2
 - `RecordingMeansCapturing` holds. A meeting reads Recording only while the helper records.
 - `AudioDeletedOnlyAfterFinal` breaks, by design. Audio is deleted only after its final transcript is saved, except when you press Delete audio on the "final pass failed" notice. That keeps the live transcript only.
 - `VoiceKeepsUnfinishedAudio` holds. A quit, a crash, a relaunch or a failure never throws away audio that has no final transcript. The helper only appends to `mic.pcm` and `system.pcm`, and a relaunch removes a meeting only when its files hold no audio.
-- `AudioGoneOnceFinal` breaks. This is a bug. Once the final transcript is saved, the audio should leave the disk.
+- `AudioGoneOnceFinal` holds. Once the final transcript is saved, the next launch deletes any audio still on disk. A meeting keeps its audio after that only while the delete runs, or after the delete fails and until Voice opens again.
 
 ## The `AudioDeletedOnlyAfterFinal` break
 
@@ -107,17 +105,9 @@ stateDiagram-v2
 
 The notice offers Try again and Delete audio. Delete audio removes `mic.pcm`, `system.pcm`, `output.ndjson` and `audio.json` and keeps the live transcript. `meeting-recorder.test.ts` checks this in "a failed final pass can be tried again, or its audio deleted, after a relaunch too".
 
-## The `AudioGoneOnceFinal` break
+## The relaunch that deletes leftover audio
 
-0. No meeting
-1. you press Start meeting (tray, shortcut or hub): Starting
-2. the helper opens the microphone and system audio: Starting
-3. Voice quits or crashes after the audio began, then opens again: Catching up the live transcript
-4. the transcript catches up: Final pass
-5. the final transcript is saved: Final transcript saved, deleting audio
-6. deleting fails, or Voice quits or crashes first: Ready, audio left on disk
-
-Steps 1 to 4 are only the shortest way in. A plain Start, Recording, Stop reaches step 5 too. On `finalized`, main writes `meeting.json` as finished (`ready`, or `summarizing` first when summaries are on) with `finalPassFailed: null`, and then it deletes the audio files. If `rm` throws, `runOrFail` only logs it. If Voice quits or crashes between the two, nothing deletes them on the next launch, because `recover()` skips meetings that are `ready`. Delete audio is refused with "There is no kept audio to delete.", and Try again is refused too. With the default retention, "forever", the audio stays on disk for good. To check it, drive the real recorder and store through Start and Stop with `rm` of `mic.pcm` made to throw, then relaunch on the same folder. The meeting is `ready`, `mic.pcm` still exists, and both Delete audio and Try again are refused. Make `rm` never return to stand in for a crash.
+On `finalized`, main writes `meeting.json` as finished (`ready`, or `summarizing` first when summaries are on) with `finalPassFailed: null`, and then it deletes the audio files. If `rm` throws, `runOrFail` only logs it. If Voice quits or crashes before the delete, the audio stays too. On the next launch, `recover()` sends `audioFound` to each meeting whose files hold audio. A finished meeting with `finalPassFailed: null` then deletes its audio files. If that delete fails too, the launch after it tries again. A meeting whose final pass failed keeps its audio for Try again and Delete audio. `meeting-recorder.test.ts` checks this in the tests whose names start with "a relaunch deletes the audio of".
 
 ## What the model leaves out
 
@@ -137,6 +127,7 @@ Steps 1 to 4 are only the shortest way in. A plain Start, Recording, Stop reache
 
 - A quit or crash in `Started by mistake?` or in Final pass. Both lead to "Catching up the live transcript", as from Paused.
 - A quit or crash while catching up. It stays in "Catching up the live transcript".
+- A quit or crash while deleting the audio. The next launch deletes it again, so it stays in "Final transcript saved, deleting audio".
 
 ## Regenerate
 

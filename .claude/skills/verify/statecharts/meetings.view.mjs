@@ -74,7 +74,7 @@ export function step(action, from, to) {
     case "AudioDeleted":
       return "the audio files are deleted";
     case "DeleteFails":
-      return "deleting fails, or Voice quits or crashes first";
+      return "deleting fails";
     case "YouTryAgain":
       return "you press Try again";
     case "YouDeleteAudio":
@@ -82,7 +82,7 @@ export function step(action, from, to) {
     case "VoiceRestarts":
       if (to.status === "gone")
         return "the start fails, you press Stop, or Voice closes before any audio";
-      if (from.status === "deletingAudio") return "deleting fails, or Voice quits or crashes first";
+      if (["ready", "deletingAudio"].includes(from.status)) return restart;
       if (["paused", "resuming"].includes(from.status)) return `you press Stop, or ${restart}`;
       if (from.status === "recording") return stopOrLimit;
       if (from.status === "starting")
