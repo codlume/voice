@@ -20,7 +20,7 @@ import {
 import type { HelpAnchor } from "./help.ts";
 import { HelpTitle } from "./HelpPopover.tsx";
 import { appNames, CATEGORY_LABELS } from "./styleView.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, font, leading, radius, space, text } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useInsights } from "./useInsights.ts";
 import { useInstalledApps } from "./useInstalledApps.ts";
@@ -45,10 +45,10 @@ const styles = stylex.create({
   },
   value: {
     margin: 0,
-    fontFamily: font.serif,
-    fontSize: 32,
-    fontWeight: 400,
-    lineHeight: 1.1,
+    fontSize: text.xxxl,
+    fontWeight: 600,
+    lineHeight: leading.xxxl,
+    letterSpacing: "-0.025em",
     fontVariantNumeric: "tabular-nums",
   },
   unit: { fontFamily: font.sans, fontSize: 14, color: color.mutedForeground },

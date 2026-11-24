@@ -38,6 +38,7 @@ import { copyText } from "../shared/history.ts";
 import type { MeetingId } from "../shared/meetings.ts";
 import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
+import { windowBackground } from "../shared/window-background.ts";
 import { runsAfterDictation } from "../shared/transforms.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
 import { authSessionStored, authStored } from "./account-storage.ts";
@@ -594,8 +595,7 @@ async function main() {
       title: "Voice",
       titleBarStyle: "hidden",
       trafficLightPosition: trafficLightPosition(store.state.settings.zoomLevel),
-      // BrowserWindow rejects oklch, so this repeats color.sidebar as hex.
-      backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
+      backgroundColor: windowBackground.hub[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
       webPreferences: {
         ...webPreferencesFor("hub"),
         zoomFactor: zoomFactor(store.state.settings.zoomLevel),

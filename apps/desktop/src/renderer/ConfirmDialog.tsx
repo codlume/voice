@@ -4,35 +4,25 @@ import * as stylex from "@stylexjs/stylex";
 import type { ReactNode, RefObject } from "react";
 
 import { Button } from "./Button.tsx";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { color, leading, motion, radius, space, text } from "./tokens.stylex.ts";
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-const dark = "@media (prefers-color-scheme: dark)";
 const centered = "translate(-50%, -50%)";
 
+// Adapted dialog (MIT, see THIRD_PARTY_NOTICES.md): a blurred scrim, a frosted panel that scales in
+// from 98%, and a tinted footer under a rule.
 export const dialogStyles = stylex.create({
   backdrop: {
-    position: "fixed",
-    inset: 0,
-    backgroundColor: { default: "rgb(0 0 0 / 32%)", [dark]: "rgb(0 0 0 / 60%)" },
     opacity: 1,
     transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: { default: motion.slow, [motion.reduced]: "0s" },
   },
   backdropHidden: { opacity: 0 },
   surface: {
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.large,
-    color: color.foreground,
-    fontFamily: font.sans,
-    WebkitFontSmoothing: "antialiased",
-    boxShadow: "0 12px 32px -8px rgb(0 0 0 / 25%)",
-    outline: "none",
     opacity: 1,
     transitionProperty: "opacity, transform",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: { default: motion.slow, [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.ease,
   },
   surfaceHidden: { opacity: 0 },
 });
@@ -42,19 +32,37 @@ const styles = stylex.create({
     position: "fixed",
     top: "50%",
     left: "50%",
-    width: "min(420px, calc(100vw - 32px))",
-    padding: space.lg,
-    backgroundColor: color.card,
+    display: "flex",
+    flexDirection: "column",
+    width: "min(512px, calc(100vw - 32px))",
+    maxHeight: "calc(100vh - 32px)",
     transform: centered,
   },
   popupWide: { width: "min(600px, calc(100vw - 32px))" },
-  popupHidden: { transform: `${centered} scale(0.96)` },
-  title: { margin: 0, fontSize: 15, fontWeight: 600, color: color.foreground },
+  popupHidden: { transform: `${centered} scale(0.98)` },
+  header: { display: "flex", flexDirection: "column", gap: space.sm, padding: 24 },
+  title: {
+    margin: 0,
+    fontSize: text.xl,
+    fontWeight: 600,
+    lineHeight: 1.375,
+    overflowWrap: "anywhere",
+  },
+  panel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.base,
+    minHeight: 0,
+    overflowY: "auto",
+    paddingInline: 24,
+    paddingBottom: 24,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
+  },
   description: {
-    marginTop: 6,
-    marginBottom: 0,
-    fontSize: 13,
-    lineHeight: 1.45,
+    margin: 0,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     color: color.mutedForeground,
   },
   footer: {
@@ -62,7 +70,14 @@ const styles = stylex.create({
     flexWrap: "wrap",
     alignItems: "center",
     gap: space.sm,
-    marginTop: space.lg,
+    paddingBlock: space.base,
+    paddingInline: 24,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: color.border,
+    borderBottomLeftRadius: `calc(${radius.xl} - 1px)`,
+    borderBottomRightRadius: `calc(${radius.xl} - 1px)`,
+    backgroundColor: `color-mix(in srgb, ${color.muted} 72%, transparent)`,
   },
   actions: {
     display: "flex",
@@ -83,6 +98,7 @@ export function DialogBackdrop() {
       forceRender
       className={({ transitionStatus }) =>
         stylex.props(
+          surfaces.backdrop,
           dialogStyles.backdrop,
           transitionHidden(transitionStatus) && dialogStyles.backdropHidden,
         ).className
@@ -117,6 +133,7 @@ export function DialogFrame({
         finalFocus={finalFocus}
         className={({ transitionStatus }) =>
           stylex.props(
+            surfaces.dialog,
             dialogStyles.surface,
             styles.popup,
             wide && styles.popupWide,
@@ -124,8 +141,10 @@ export function DialogFrame({
           ).className
         }
       >
-        <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
-        {children}
+        <div {...stylex.props(styles.header)}>
+          <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
+        </div>
+        {children && <div {...stylex.props(styles.panel)}>{children}</div>}
         <div {...stylex.props(styles.footer)}>
           {footerStart}
           <div {...stylex.props(styles.actions)}>

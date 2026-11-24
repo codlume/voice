@@ -20,7 +20,8 @@ import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
 import { resetTo, Row } from "./settingsParts.tsx";
 import { Switch } from "./Switch.tsx";
-import { color, space } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
@@ -37,13 +38,12 @@ const styles = stylex.create({
     width: "min(600px, calc(100vw - 32px))",
     maxHeight: "calc(100vh - 64px)",
     overflowY: "auto",
-    padding: space.lg,
-    backgroundColor: color.background,
+    padding: 24,
     transform: centered,
   },
-  popupHidden: { transform: `${centered} scale(0.96)` },
+  popupHidden: { transform: `${centered} scale(0.98)` },
   head: { display: "flex", alignItems: "center", justifyContent: "space-between" },
-  title: { margin: 0, fontSize: 15, fontWeight: 600 },
+  title: { margin: 0, fontSize: text.xl, fontWeight: 600, lineHeight: 1.375 },
 });
 
 const maxLengthOptions = maxLengths.map((value) => ({ value, label: maxLengthLabels[value] }));
@@ -101,6 +101,7 @@ export function MeetingsSettingsDialog({
         <Dialog.Popup
           className={({ transitionStatus }) =>
             stylex.props(
+              surfaces.dialog,
               dialogStyles.surface,
               styles.popup,
               transitionHidden(transitionStatus) && [

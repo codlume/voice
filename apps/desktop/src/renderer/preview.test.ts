@@ -42,6 +42,23 @@ describe("preview harness", { timeout: 30_000 }, () => {
     },
   );
 
+  test.each([
+    ["loading", "getSnapshot"],
+    ["meetings-loading", "getMeetings"],
+  ] as const)("the %s scene never answers %s", async (scene, method) => {
+    const voice = await openPreview(`?hub=${scene}`);
+    const answer = await Promise.race([
+      voice[method]().then(() => "answered"),
+      new Promise((resolve) => setTimeout(resolve, 50, "pending")),
+    ]);
+    expect(answer).toBe("pending");
+  });
+
+  test("the restart-notice scene carries a dismissable notice", async () => {
+    const voice = await openPreview("?hub=restart-notice");
+    expect((await voice.getSnapshot()).restartNotice).toMatchObject({ dismissable: true });
+  });
+
   test("records, pauses and stops a meeting, so live states can be shown", async () => {
     const voice = await openPreview("?hub=meetings");
     const started = await voice.startMeeting();

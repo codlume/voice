@@ -1,6 +1,7 @@
 import type { BrowserWindowConstructorOptions, Rectangle, WebPreferences } from "electron";
 
 import type { MeetingId } from "../shared/meetings.ts";
+import { windowBackground } from "../shared/window-background.ts";
 
 const SIZE = { width: 360, height: 520 };
 const MINIMUM = { width: 300, height: 320 };
@@ -53,7 +54,7 @@ function notepadWindowOptions(
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    backgroundColor: dark ? "#0a0a0a" : "#fdfdfd",
+    backgroundColor: windowBackground.notepad[dark ? "dark" : "light"],
     webPreferences,
   };
 }

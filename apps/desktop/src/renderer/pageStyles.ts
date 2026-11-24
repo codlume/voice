@@ -1,15 +1,14 @@
 import * as stylex from "@stylexjs/stylex";
 
-import { color, font } from "./tokens.stylex.ts";
+import { color, leading, text } from "./tokens.stylex.ts";
 
 export const pageStyles = stylex.create({
   headline: {
     margin: 0,
-    fontFamily: font.serif,
-    fontSize: 36,
-    fontWeight: 400,
-    lineHeight: 1.15,
-    letterSpacing: "-0.01em",
+    fontSize: text.xxl,
+    fontWeight: 600,
+    lineHeight: leading.xxl,
+    letterSpacing: "-0.015em",
   },
-  error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
+  error: { margin: 0, color: color.errorForeground, fontSize: text.xs, lineHeight: leading.xs },
 });

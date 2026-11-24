@@ -1,18 +1,21 @@
 import * as stylex from "@stylexjs/stylex";
 
-import { color, radius } from "./tokens.stylex.ts";
+import { color, leading, radius, text } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
+  // Adapted secondary badge (MIT, see THIRD_PARTY_NOTICES.md).
   badge: {
-    display: "inline-block",
+    display: "inline-flex",
+    alignItems: "center",
     flexShrink: 0,
-    paddingInline: 6,
-    borderRadius: radius.round,
-    backgroundColor: `color-mix(in srgb, ${color.foreground} 6%, transparent)`,
-    color: `color-mix(in srgb, ${color.foreground} 30%, ${color.mutedForeground})`,
-    fontSize: 11,
+    height: 18,
+    paddingInline: 3,
+    borderRadius: radius.xs,
+    backgroundColor: color.secondary,
+    color: color.mutedForeground,
+    fontSize: text.xs,
     fontWeight: 500,
-    lineHeight: "16px",
+    lineHeight: leading.xs,
     whiteSpace: "nowrap",
   },
 });

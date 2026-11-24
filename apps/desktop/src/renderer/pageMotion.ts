@@ -1,14 +1,13 @@
 import * as stylex from "@stylexjs/stylex";
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-const easing = "cubic-bezier(0.2, 0, 0, 1)";
+import { motion } from "./tokens.stylex.ts";
 
 const rise = stylex.keyframes({ from: { opacity: 0, transform: "translateY(8px)" } });
 
 export const pageMotion = stylex.create({
   rise: {
-    animationName: { default: rise, [reducedMotion]: "none" },
+    animationName: { default: rise, [motion.reduced]: "none" },
     animationDuration: "var(--page-animation)",
-    animationTimingFunction: easing,
+    animationTimingFunction: motion.easeOut,
   },
 });

@@ -229,7 +229,7 @@ function MeetingNotepad({ meeting, prompt }: NotepadState) {
     }, "Could not change the recording. Try again.");
   return (
     <div {...stylex.props(styles.root)}>
-      <header {...stylex.props(styles.header)}>
+      <header data-drag-region {...stylex.props(styles.header)}>
         <div {...stylex.props(styles.status)}>
           <span aria-hidden="true" {...stylex.props(styles.light, styles[status.tone])} />
           <span role="status" {...stylex.props(styles.label)}>
