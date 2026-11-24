@@ -32,6 +32,21 @@ const catalogNames = new Map<BundleId, string>(
   BUILT_IN_APPS.map(({ bundleId, name }) => [bundleId, name]),
 );
 
+// Labels that name a build of the app, not the app.
+const BUILD_LABELS = new Set(["app", "client", "desktop", "mac", "macos", "osx"]);
+
+function nameFromBundleId(bundleId: BundleId): string {
+  const labels = bundleId.split(".");
+  if (labels.length > 1) labels.shift();
+  while (BUILD_LABELS.has(labels.at(-1) ?? "")) labels.pop();
+  const label = labels.at(-1) ?? "";
+  if (!/^[a-z]+(?:[-_][a-z]+)*$/.test(label)) return bundleId;
+  return label
+    .split(/[-_]/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export function appNames(
   assignments: readonly Assignment[],
   installed: readonly InstalledApp[],
@@ -44,7 +59,7 @@ export function appNames(
     assigned.get(bundleId) ??
     catalogNames.get(bundleId) ??
     installedNames.get(bundleId) ??
-    bundleId;
+    nameFromBundleId(bundleId);
 }
 
 export function bannerApps(
