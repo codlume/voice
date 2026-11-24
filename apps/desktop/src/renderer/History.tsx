@@ -171,6 +171,8 @@ const Row = memo(function Row({
     onCopy(entry.id, "text");
   };
   const missed = entry.status === "notInserted";
+  // A missed row confirms its copy on the labelled button the user just pressed.
+  const copiedHere = missed && copied === "text";
   return (
     <li onClick={copyRow} {...stylex.props(stylex.defaultMarker(), styles.row)}>
       <time dateTime={new Date(entry.at).toISOString()} {...stylex.props(styles.time)}>
@@ -190,14 +192,18 @@ const Row = memo(function Row({
               aria-label={`Copy dictation ${named}`}
               onClick={() => onCopy(entry.id, "text")}
             >
-              <CopyIcon size={16} aria-hidden />
-              Copy
+              {copiedHere ? (
+                <CheckIcon size={16} aria-hidden />
+              ) : (
+                <CopyIcon size={16} aria-hidden />
+              )}
+              {copiedHere ? "Copied" : "Copy"}
             </Button>
           </div>
         )}
       </div>
-      <div {...stylex.props(styles.actions, copied !== null && styles.shown)}>
-        {copied !== null && (
+      <div {...stylex.props(styles.actions, copied !== null && !copiedHere && styles.shown)}>
+        {copied !== null && !copiedHere && (
           <span aria-hidden="true" {...stylex.props(styles.copied)}>
             <CheckIcon size={14} />
             {copiedLabels[copied]}

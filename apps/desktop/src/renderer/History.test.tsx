@@ -112,6 +112,7 @@ describe("History", () => {
     expect(copies.map((b) => b.textContent)).toEqual(["Copy"]);
     await click(copies[0]!);
     expect(api.copyHistoryEntry).toHaveBeenCalledWith("missed", "text");
+    expect(copies[0]!.textContent).toBe("Copied");
   });
 
   test("deletes one transcript", async () => {
