@@ -27,7 +27,6 @@ import { dayLabel, formatterCache, localDate, timeLabel } from "./historyView.ts
 
 export const CONSENT_REMINDER = "Always get consent before recording others.";
 
-/** When the meeting began, or when it was made if it never recorded. */
 export const meetingAt = (meeting: Meeting) => startedAt(meeting) ?? meeting.createdAt;
 
 export type MeetingDay = { day: DayKey; label: string; meetings: readonly Meeting[] };

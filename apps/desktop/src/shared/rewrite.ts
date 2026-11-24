@@ -3,7 +3,6 @@ import { matchKey, withoutAccents } from "./phrase.ts";
 import { escapeHtml, paragraphsAsLines } from "./snippet-html.ts";
 import type { Snippet } from "./snippets.ts";
 
-/** Everything the user saved that rewrites dictated text. */
 export type Rewrites = { dictionary: readonly DictionaryEntry[]; snippets: readonly Snippet[] };
 
 export type Output = { text: string; html: string | null };
