@@ -140,7 +140,6 @@ function installProbe(componentsRendered, methods) {
   const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
 
   window.bench = {
-    /** Resolves once the page's first real render is painted and the page went quiet. */
     async ready() {
       const deadline = performance.now() + 20_000;
       while (firstPainted() === null) {
@@ -177,7 +176,6 @@ function installProbe(componentsRendered, methods) {
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
     },
-    /** What the last message main sent made React do, once it has committed. */
     async after(from) {
       if (commits.length === from) {
         const committed = new Promise((resolve) => commitWaiters.push(resolve));
@@ -190,13 +188,11 @@ function installProbe(componentsRendered, methods) {
       await frame();
       return { ...since(from), wallMs };
     },
-    /** Commits during `ms` with nothing pushed. */
     async idle(ms) {
       const from = commits.length;
       await sleep(ms);
       return commits.length - from;
     },
-    /** Drops the probe's own records, so a heap sample holds the page's memory and not the probe's. */
     forget() {
       commits.length = 0;
       longTasks.length = 0;

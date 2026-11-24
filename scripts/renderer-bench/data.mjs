@@ -9,8 +9,7 @@
 const MINUTE = 60_000;
 const DAY = 86_400_000;
 
-/** A small deterministic generator (mulberry32) returning numbers in [0, 1). */
-export function seeded(seed) {
+export function mulberry32(seed) {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;
@@ -54,7 +53,6 @@ function transcriptText(rand) {
   const shape = rand();
   const count = shape < 0.55 ? 1 : shape < 0.85 ? 2 + int(rand, 2) : 4 + int(rand, 5);
   const lines = Array.from({ length: count }, () => pick(rand, sentences)(rand));
-  // A long dictation carries a paragraph break, as cleanup writes one.
   return count > 3
     ? `${lines.slice(0, 2).join(" ")}\n\n${lines.slice(2).join(" ")}`
     : lines.join(" ");
@@ -67,7 +65,6 @@ function entry(rand, id, at) {
   return { id, at, raw, text, status: rand() < 0.04 ? "notInserted" : "inserted" };
 }
 
-/** `count` entries, newest first, a few minutes to an hour apart, all before `now`. */
 export function history(rand, count, now) {
   let at = now;
   return Array.from({ length: count }, (_, i) => {
@@ -76,7 +73,6 @@ export function history(rand, count, now) {
   });
 }
 
-/** The entry a finished dictation adds: newer than every entry `history` made. */
 export const dictated = (rand, index, now) => entry(rand, `new${index}`, now + (index + 1) * 1000);
 
 const dayKey = (date) =>
@@ -120,7 +116,6 @@ export function insights(rand, now) {
 
 const meetingTitles = ["Weekly product sync", "Design review", "Customer call", "Sprint planning"];
 
-/** `count` finished meetings, newest first, two a day; most carry a summary. */
 export function meetings(rand, count, now) {
   return Array.from({ length: count }, (_, i) => {
     const startedAt = now - Math.floor(i / 2) * DAY - (4 + (i % 2) * 5) * 60 * MINUTE;
@@ -149,7 +144,6 @@ export function meetings(rand, count, now) {
   });
 }
 
-/** A long meeting's transcript: `segments` lines, the user and three other voices taking turns. */
 export function transcript(rand, segments) {
   return Array.from({ length: segments }, (_, i) => {
     const startMs = i * 9000;

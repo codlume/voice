@@ -30,13 +30,11 @@ const statusViews: Record<MeetingStatus["kind"], StatusView> = {
 export const statusView = (status: Pick<MeetingStatus, "kind">): StatusView =>
   statusViews[status.kind];
 
-/** The status word beside a meeting that is not done yet; a ready meeting needs none. */
 export const statusLabel = (meeting: Meeting): string | null =>
   meeting.status.kind === "ready" ? null : statusViews[meeting.status.kind].label;
 
 export const statusClock = (meeting: Meeting, now: number) => clock(recordedMs(meeting, now));
 
-/** The clock moves only while the meeting records or counts down to its maximum length. */
 export const clockTicks = (status: Pick<MeetingStatus, "kind">, prompt: MeetingPrompt | null) =>
   status.kind === "recording" || prompt?.kind === "maxLengthSoon";
 
@@ -45,7 +43,6 @@ const MINUTE_MS = 60_000;
 export const minutesLeft = (endsAt: number, now: number) =>
   Math.max(1, Math.ceil((endsAt - now) / MINUTE_MS));
 
-/** Why a command did nothing, in words for the user, or null when it went ahead. */
 export const commandRefusal = (result: MeetingCommandResult) =>
   result.kind === "refused" ? result.message : null;
 

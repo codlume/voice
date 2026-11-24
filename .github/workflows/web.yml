@@ -1,7 +1,5 @@
 name: Deploy website
 
-# Deploy only after CI passes on a push to main. A manual run deploys main without a change, but
-# still needs green CI.
 on:
   workflow_run:
     workflows: [CI]

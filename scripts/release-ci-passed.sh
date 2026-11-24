@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Exits 0 only when CI's push run for commit $1 finished green. Nightlies and deploys call this, so
-# they never ship a commit CI failed or has not finished checking.
+# Exits 0 only when CI's push run for commit $1 finished green.
 set -euo pipefail
 
 sha="$1"

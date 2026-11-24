@@ -12,14 +12,12 @@ export const SPEAKER_TOKEN = /\{\{speaker:([A-Za-z0-9_-]+)\}\}/g;
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/**
- * Tokens for the speaker labels free text mentions. The mic's label is left alone: "You" in a
- * sentence is as likely the pronoun as the speaker.
- */
+// "You" in a sentence is as likely the pronoun as the speaker, so the mic's label is never a mention.
+const mentionableSpeakers = (speakers: readonly Speaker[]) =>
+  speakers.filter(({ id, label }) => id !== "you" && label.trim() !== "");
+
 function mentionTokens(text: string, speakers: readonly Speaker[]): string {
-  const named = speakers
-    .filter(({ id, label }) => id !== "you" && label.trim() !== "")
-    .toSorted((a, b) => b.label.length - a.label.length);
+  const named = mentionableSpeakers(speakers).toSorted((a, b) => b.label.length - a.label.length);
   if (named.length === 0) return text;
   const byLabel = new Map(named.map((speaker) => [speaker.label, speaker.id]));
   const pattern = new RegExp(
@@ -29,11 +27,7 @@ function mentionTokens(text: string, speakers: readonly Speaker[]): string {
   return text.replace(pattern, (label) => speakerToken(byLabel.get(label)!));
 }
 
-/**
- * Bullets read as sentences whatever the model wrote: a capital first letter, unless the first word
- * is cased on purpose ("iOS"), and a closing period.
- */
-function sentence(text: string): string {
+function asSentence(text: string): string {
   const trimmed = text.trim();
   const first = trimmed.match(/^\p{L}+/u)?.[0] ?? "";
   const cased =
@@ -59,13 +53,13 @@ export function renderSummaryMarkdown(
     const tasks = summary.nextSteps.filter((step) => step.owner === owner);
     if (tasks.length === 0) return [];
     const heading = `**${owner === null ? UNASSIGNED : speakerToken(owner)}**`;
-    return [[heading, ...tasks.map(({ task }) => `- ${inline(sentence(task))}`)].join("\n")];
+    return [[heading, ...tasks.map(({ task }) => `- ${inline(asSentence(task))}`)].join("\n")];
   });
   const sections = overview === "" ? [] : [overview];
   if (summary.decisions.length > 0) {
     sections.push(
       "### Decisions",
-      summary.decisions.map((decision) => `- ${inline(sentence(decision))}`).join("\n"),
+      summary.decisions.map((decision) => `- ${inline(asSentence(decision))}`).join("\n"),
     );
   }
   if (groups.length > 0) sections.push("### Next Steps", ...groups);

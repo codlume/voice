@@ -120,7 +120,6 @@ class Stream {
   }
 }
 
-// Every snapshot the page reports, starting with the current one.
 export async function snapshotStream(page) {
   const snapshots = new Stream();
   await page.bind("__voiceSnapshot", (payload) => snapshots.push(JSON.parse(payload)));
@@ -203,7 +202,6 @@ export class Page {
     return result.value;
   }
 
-  /** One listener per CDP event method. */
   on(method, listener) {
     this.#events.set(method, listener);
   }

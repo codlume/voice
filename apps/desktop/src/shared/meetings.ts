@@ -222,7 +222,6 @@ export const DEFAULT_MEETING_SHORTCUT: Shortcut = { keycode: 46, modifiers: ["op
 export type LiveStatus = Extract<MeetingStatus, { kind: "starting" | "recording" | "paused" }>;
 export type LiveMeeting = Meeting & { status: LiveStatus };
 
-/** A capture is open or opening. */
 export const isCapturing = ({ status }: Meeting): boolean =>
   status.kind === "starting" || status.kind === "recording";
 
@@ -261,7 +260,6 @@ export type AudioLoss = { source: MeetingSource; reason: "permission" | "device"
 /** Why a final pass failed, as far as the user can act on it: download speaker detection, or not. */
 export type FinalPassFailure = "speakerModels" | "other";
 
-/** What a meeting tells the user: warnings, prompts and outcomes. */
 export type MeetingNotice =
   | { kind: "startFailed"; message: string }
   | { kind: "resumeFailed"; message: string }
@@ -363,7 +361,6 @@ export function noticeText(notice: MeetingNotice): string | null {
   }
 }
 
-/** The meeting the floating notepad shows, with the prompt it waits on. */
 export type NotepadState = { meeting: Meeting; prompt: MeetingPrompt | null };
 
 /** Statuses the Flow Bar shows: a capture open or resumable, or an answer the user owes. */
@@ -390,7 +387,6 @@ export type MeetingTranscriptChange = {
 export type MeetingPartial = { id: MeetingId; source: MeetingSource; text: string };
 
 export type MeetingSearchField = "title" | "summary" | "notes" | "transcript";
-/** The text around a search match, the match itself kept apart so it can be marked. */
 export type MeetingSnippet = { before: string; match: string; after: string };
 export type MeetingSearchHit = {
   id: MeetingId;
@@ -451,7 +447,6 @@ export function tokenName(id: string, speakers: readonly Speaker[]): string {
   return speaker ? speakerDisplayName(speaker) : OTHERS;
 }
 
-/** Summary Markdown with each speaker token replaced by the name it stands for now. */
 export const resolveSpeakerTokens = (markdown: string, speakers: readonly Speaker[]) =>
   markdown.replace(SPEAKER_TOKEN, (_token, id: string) => tokenName(id, speakers));
 

@@ -74,7 +74,6 @@ export function GlobeHint() {
   );
 }
 
-// Undefined while the value already equals its default, which hides the reset button.
 export function resetTo<T>(
   value: T,
   defaultValue: T,

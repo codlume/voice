@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { history, meetings, seeded, transcript } from "./renderer-bench/data.mjs";
+import { history, meetings, mulberry32, transcript } from "./renderer-bench/data.mjs";
 import {
   bridgeMethods,
   compare,
   compareTable,
   entryAssets,
   median,
-  slope,
+  leastSquaresSlope,
   table,
 } from "./renderer-bench/stats.mjs";
 
@@ -18,7 +18,7 @@ const preload = (page) =>
   readFileSync(new URL(`../apps/desktop/src/preload/${page}.ts`, import.meta.url), "utf8");
 
 function dataset(seed) {
-  const rand = seeded(seed);
+  const rand = mulberry32(seed);
   return [history(rand, 200, NOW), meetings(rand, 20, NOW), transcript(rand, 50)];
 }
 const side = (...values) => ({ build: "prod", values });
@@ -29,7 +29,7 @@ test("the same seed gives the same data, and another seed gives other data", () 
 });
 
 test("history is newest first, with unique ids, all before now", () => {
-  const entries = history(seeded(1), 500, NOW);
+  const entries = history(mulberry32(1), 500, NOW);
   assert.equal(new Set(entries.map((entry) => entry.id)).size, 500);
   assert.ok(entries.every((entry, i) => entry.at < (entries[i - 1]?.at ?? NOW)));
   assert.ok(entries.some((entry) => entry.status === "notInserted"));
@@ -60,10 +60,10 @@ test("the bridge has the methods of the app's own preloads", () => {
 test("median and slope", () => {
   assert.equal(median([5, 1, 3]), 3);
   assert.equal(median([4, 1, 3, 2]), 2.5);
-  assert.equal(slope([10, 10, 10]), 0);
-  assert.equal(slope([1, 3, 5, 7]), 2);
+  assert.equal(leastSquaresSlope([10, 10, 10]), 0);
+  assert.equal(leastSquaresSlope([1, 3, 5, 7]), 2);
   // A sawtooth that rises 4 over 5 steps: the fit is 11 / 17.5, not the 0.8 of its two ends.
-  assert.ok(Math.abs(slope([10, 12, 11, 13, 12, 14]) - 11 / 17.5) < 1e-9);
+  assert.ok(Math.abs(leastSquaresSlope([10, 12, 11, 13, 12, 14]) - 11 / 17.5) < 1e-9);
 });
 
 test("a difference inside the run-to-run range is no measurable difference", () => {

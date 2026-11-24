@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 
 const scripts = fileURLToPath(new URL(".", import.meta.url));
 
-// Answers the gh calls the gate scripts make from JSON fixtures, then applies --jq like gh does.
 const fakeGh = `#!/usr/bin/env bash
 set -euo pipefail
 args=("$@")

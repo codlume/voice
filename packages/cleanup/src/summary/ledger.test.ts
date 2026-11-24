@@ -81,7 +81,6 @@ describe("sameItem", () => {
     expect(sameItem(a, b)).toBe(true);
   });
 
-  // Filler, owners' verbs and deadlines are shared; the object, name or platform is not.
   test.each([
     ["Send the contract to Tom by Friday.", "Send the invoice to Kasia by Friday."],
     ["The iOS app ships on Thursday.", "The Android app ships on Thursday."],
@@ -248,7 +247,7 @@ test("in one part, a repeat is asked about and a yes drops the shorter; two owne
 
   const pairs = candidatePairs(ledger);
 
-  expect(pairs.map(({ question, drop }) => [question, drop.text])).toEqual([
+  expect(pairs.map(({ question, dropOnYes }) => [question, dropOnYes.text])).toEqual([
     ["same", "Brightline Messaging is used for SMS."],
   ]);
   expect(dropConfirmed(ledger, pairs, new Set(["P1"])).decisions.map(({ text }) => text)).toEqual([

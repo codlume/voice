@@ -4,15 +4,15 @@
 
 ### Issue tracker
 
-Use GitHub Issues. Before reading or publishing issues, read `docs/agents/issue-tracker.md`.
+Use GitHub Issues.
 
 ### Triage labels
 
-Use the default triage labels and the additional `spec` label. Before labeling issues, read `docs/agents/triage-labels.md`.
+Use the default triage labels and the additional `spec` label.
 
 ### Domain docs
 
-Use a single-context layout. Before exploring the codebase, read `docs/agents/domain.md`.
+Use a single-context layout.
 
 ### Verification
 

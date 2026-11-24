@@ -10,7 +10,6 @@ export const hotkeyLabel = (hotkey: Hotkey) => hotkeyKeys[hotkey].label;
 
 export type DictationKeySettings = Pick<Settings, "hotkey" | "toggleHotkey">;
 
-/** The keys that start dictation: the hold key, and the toggle key when one is set. */
 export const dictationKeys = ({ hotkey, toggleHotkey }: DictationKeySettings): Hotkey[] =>
   toggleHotkey === null ? [hotkey] : [hotkey, toggleHotkey];
 

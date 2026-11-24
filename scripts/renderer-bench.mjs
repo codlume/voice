@@ -115,7 +115,6 @@ function build(dist) {
   writeFileSync(join(dist, "build.json"), `${JSON.stringify(built)}\n`);
 }
 
-/** Raw and gzip bytes of what each page loads before it runs, and of every asset in the build. */
 function bundle(dist) {
   const size = (files) => {
     const contents = files.map((file) => readFileSync(join(dist, file)));
@@ -209,7 +208,6 @@ function measure(sides) {
     const warmUp = electron({ ...dataset, scenario: "hub-cold" }, join(order[0].dist, "prod"));
     note(`warm-up of run ${turn}/${runs}: ${warmUp.errors.length} errors`);
     for (const job of jobs) {
-      // Heap and DOM counts need no profiling build.
       const builds = job.scenario === "memory" ? ["prod"] : ["prod", "profiling"];
       for (const side of order) {
         const { metrics, profilingCounts, errors, info } = taken[sides.indexOf(side)];

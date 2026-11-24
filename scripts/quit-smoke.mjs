@@ -74,7 +74,6 @@ function launch(userData, env) {
 const quitMain = (inspectPort) =>
   evaluateInMain(inspectPort, "process.mainModule.require('electron').app.quit(); 'quit called'");
 
-// Starts a long cleanup and returns before it finishes, so the quit lands mid-generation.
 const startCleaning = (inspectPort) =>
   evaluateInMain(
     inspectPort,
@@ -83,7 +82,6 @@ const startCleaning = (inspectPort) =>
       { budgetMs: 60_000, signal: new AbortController().signal }).catch(() => undefined); 'cleaning'`,
   );
 
-// Holds the scripted key, releases it, and returns while the helper still owes the transcript.
 async function startTranscribing(hub, snapshots) {
   await hub.evaluate('window.voice.setHistoryRetention("forever")');
   const helper = connect(helperControl);

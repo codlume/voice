@@ -177,7 +177,6 @@ function footprintMb(pid) {
   return Number(/phys_footprint: (\d+) B/.exec(output)?.[1]) / 2 ** 20;
 }
 
-// A process that left during the sample, like a model process that finished, has none.
 function footprintOrZeroMb(pid) {
   try {
     return footprintMb(pid);

@@ -4,7 +4,6 @@ import { transformsFirst } from "./preempt.ts";
 
 type Request = { name: string; signal: AbortSignal };
 
-/** One model, one call at a time, like the engine: a step stops when its signal aborts. */
 function fakeModel() {
   const log: string[] = [];
   let queue: Promise<unknown> = Promise.resolve();

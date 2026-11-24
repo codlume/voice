@@ -1,17 +1,8 @@
-/**
- * What the meeting settled, merged part by part. Within a part the model gives every item a
- * status, so an idea that part rejected, left open or moved never counts. An item that repeats
- * another word for word merges into it. The reconcile step then judges items that share a subject:
- * a later part's change or hand-over replaces the earlier item, since the later mention is the
- * meeting's last word, and one item said twice keeps its fuller wording.
- */
-
 export const UNASSIGNED = "Unassigned";
 
 export const decisionStatuses = ["final", "rejected", "open", "changed"] as const;
 export const taskStatuses = ["agreed", "moved", "dropped", "idea", "done"] as const;
 
-/** One part's extraction, as the JSON grammar shapes it. Owners are speaker labels. */
 export type Part = {
   topics: string[];
   decisions: { decision: string; status: (typeof decisionStatuses)[number] }[];
@@ -31,7 +22,6 @@ export type Ledger = {
 
 export const emptyLedger: Ledger = { topics: [], decisions: [], tasks: [], next: 1 };
 
-/** The ledger as the overview reads it. */
 export const describeLedger = ({ topics, decisions, tasks }: Ledger) =>
   [
     "Topics:",
@@ -49,9 +39,7 @@ const words = (text: string) =>
     .replace(/\p{M}/gu, "")
     .match(/[\p{L}\p{N}]+/gu) ?? [];
 
-// Words that tie an item to nothing: articles, pronouns, auxiliaries, prepositions, in English and
-// Polish. Another language keeps every word, which only makes repeats rarer.
-const FILLER = new Set(
+const STOP_WORDS = new Set(
   (
     "a an and are as at be been being but by can could did do does for from had has have he her " +
     "him his i if in into is it its may me might must my no not now of on or our shall she should " +
@@ -63,27 +51,24 @@ const FILLER = new Set(
   ).split(" "),
 );
 
-// Six letters keep "payment" and "payments", or "dokumenty" and "dokumentow", one word.
+const STEM_LENGTH = 6;
+
 const contentWords = (text: string) =>
   new Set(
     words(text)
-      .filter((word) => !FILLER.has(word))
-      .map((word) => word.slice(0, 6)),
+      .filter((word) => !STOP_WORDS.has(word))
+      .map((word) => word.slice(0, STEM_LENGTH)),
   );
 
-/**
- * Says the same thing: every content word of the item with fewer is in the other, so a repeat may
- * only add a date or a detail. Any different name, object or number keeps both.
- */
 export function sameItem(a: string, b: string): boolean {
   const [fewer, more] = [contentWords(a), contentWords(b)].toSorted((x, y) => x.size - y.size);
   return fewer!.size >= 2 && [...fewer!].every((word) => more!.has(word));
 }
 
-// A name, a product, an amount: a word this long or with a digit. Short words such as "the" or
-// "will" do not tie two items to one subject.
+const MIN_SUBJECT_WORD_LENGTH = 5;
+
 const subjectWords = (text: string) =>
-  new Set(words(text).filter((word) => word.length >= 5 || /\d/.test(word)));
+  new Set(words(text).filter((word) => word.length >= MIN_SUBJECT_WORD_LENGTH || /\d/.test(word)));
 
 const SHARED_SUBJECT_WORDS = 2;
 
@@ -93,7 +78,6 @@ const clean = (text: string) => text.trim().replace(/^@+\s*/, "");
 /** A task needs a verb and an object; anything shorter is a fragment. */
 const MIN_TASK_WORDS = 3;
 
-/** A repeat keeps the fuller wording at the first one's place, and counts as said in the later part. */
 function merge<T extends Decision | Task>(
   items: readonly T[],
   item: T,
@@ -132,17 +116,12 @@ export function applyPart(
 
 type Item = Decision | Task;
 
-/**
- * Two items of one kind that share a subject, and what a "yes" means. `changed`: the later part
- * changed the earlier item. `same`: both are one decision or one piece of work, said twice in a
- * part or handed to a new owner in a later one. A "yes" drops `drop`.
- */
 export type Pair = {
   id: string;
   question: "changed" | "same";
   earlier: Item;
   later: Item;
-  drop: Item;
+  dropOnYes: Item;
 };
 
 const MAX_PAIRS = 40;
@@ -155,12 +134,12 @@ function pairOf(earlier: Item, later: Item): Omit<Pair, "id"> | null {
   if (shared.length < SHARED_SUBJECT_WORDS) return null;
   const sameOwner = owner(earlier) === owner(later);
   if (earlier.part < later.part) {
-    return { question: sameOwner ? "changed" : "same", earlier, later, drop: earlier };
+    return { question: sameOwner ? "changed" : "same", earlier, later, dropOnYes: earlier };
   }
   // In one part, two owners of similar work are each doing their own.
   if (!sameOwner) return null;
   const fuller = contentWords(earlier.text).size >= contentWords(later.text).size;
-  return { question: "same", earlier, later, drop: fuller ? later : earlier };
+  return { question: "same", earlier, later, dropOnYes: fuller ? later : earlier };
 }
 
 const of = (items: readonly Item[]) =>
@@ -171,8 +150,8 @@ const of = (items: readonly Item[]) =>
 export function candidatePairs({ decisions, tasks }: Ledger): Pair[] {
   // Decisions come first but leave tasks half the room: a hand-over is the most common change.
   const tasked = of(tasks);
-  const share = Math.max(MAX_PAIRS / 2, MAX_PAIRS - tasked.length);
-  return [...of(decisions).slice(0, share), ...tasked]
+  const decisionPairBudget = Math.max(MAX_PAIRS / 2, MAX_PAIRS - tasked.length);
+  return [...of(decisions).slice(0, decisionPairBudget), ...tasked]
     .slice(0, MAX_PAIRS)
     .map((pair, index) => Object.assign(pair, { id: `P${index + 1}` }));
 }
@@ -180,13 +159,14 @@ export function candidatePairs({ decisions, tasks }: Ledger): Pair[] {
 export const describeItem = (item: Item) =>
   "owner" in item ? `${item.owner}: ${item.text}` : item.text;
 
-/** Drops each confirmed pair's `drop`. */
 export function dropConfirmed(
   ledger: Ledger,
   pairs: readonly Pair[],
   confirmed: ReadonlySet<string>,
 ): Ledger {
-  const dropped = new Set(pairs.filter(({ id }) => confirmed.has(id)).map(({ drop }) => drop.ref));
+  const dropped = new Set(
+    pairs.filter(({ id }) => confirmed.has(id)).map(({ dropOnYes }) => dropOnYes.ref),
+  );
   return {
     ...ledger,
     decisions: ledger.decisions.filter(({ ref }) => !dropped.has(ref)),

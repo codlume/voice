@@ -605,7 +605,6 @@ describe("createAccount", () => {
       history: { remember: () => {}, settle: () => {} },
       copy: async () => {},
     });
-    // The same wiring as index.ts: only a callback that changed the account shows the hub.
     const shownDuring: string[] = [];
     const runWhenIdle = whenIdle(h.store);
     const takeCallback = (url: string) => {

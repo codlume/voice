@@ -1,7 +1,4 @@
 /// <reference path="../../apps/desktop/node_modules/electron/electron.d.ts" />
-// The Electron side of scripts/renderer-bench.mjs, which starts it once per scenario. It plays
-// main for the built renderer: it answers the bridge with synthetic data, pushes what main would
-// push, drives the page, and writes what the probe in preload.cjs measured.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, screen } from "electron";
@@ -9,8 +6,8 @@ import { app, BrowserWindow, ipcMain, screen } from "electron";
 import { DEFAULT_SETTINGS, toPillSnapshot } from "../../apps/desktop/src/shared/api.ts";
 import { applyHistoryChange } from "../../apps/desktop/src/shared/history.ts";
 import { DEFAULT_MEETINGS_SETTINGS } from "../../apps/desktop/src/shared/meetings.ts";
-import { apps, dictated, history, insights, meetings, seeded, transcript } from "./data.mjs";
-import { bridgeMethods, median, slope } from "./stats.mjs";
+import { apps, dictated, history, insights, meetings, mulberry32, transcript } from "./data.mjs";
+import { bridgeMethods, median, leastSquaresSlope } from "./stats.mjs";
 
 /** @typedef {import("../../apps/desktop/src/shared/api.ts").HubApi} HubApi */
 /** @typedef {import("../../apps/desktop/src/shared/api.ts").PillApi} PillApi */
@@ -39,7 +36,7 @@ const MEETING_ROWS = "main section[aria-label] li";
 const APP_PAGES = ["Meetings", "Insights", "Style", "Transforms", "Snippets", "Dictionary", "Home"];
 const SETTINGS_PAGES = ["System", "Models", "Shortcuts", "Account", "Data and Privacy"];
 
-const rand = seeded(options.seed);
+const rand = mulberry32(options.seed);
 // Midnight today, so the history's day groups have the same shape at any hour of the run.
 const now = new Date().setHours(0, 0, 0, 0);
 
@@ -90,7 +87,6 @@ const meetingsState = {
 };
 const insightsState = insights(rand, now);
 
-// One dictation and one transform, then a dictation that was not inserted: every session kind.
 /** @type {PillState[]} */
 const sessions = [
   { kind: "listening" },
@@ -154,7 +150,6 @@ function record(group, values) {
     if (Number.isFinite(value)) metrics[`${group} | ${name}`] = value;
   }
 }
-/** Calls `bench.<method>` in the page, defined by the probe in preload.cjs. */
 const page = (method, ...args) =>
   win.webContents.executeJavaScript(
     `bench.${method}(${args.map((arg) => JSON.stringify(arg) ?? "undefined").join(", ")})`,
@@ -167,7 +162,6 @@ function cpuMs() {
   const used = app.getAppMetrics().find((process) => process.pid === pid)?.cpu.cumulativeCPUUsage;
   return (used ?? NaN) * 1000;
 }
-/** One measured click or keystroke in the page, with the CPU time its process spent on it. */
 async function act(method, ...args) {
   const before = cpuMs();
   const step = await page(method, ...args);
@@ -203,7 +197,6 @@ async function open(name, size) {
     show: false,
     webPreferences: {
       preload: join(import.meta.dirname, "preload.cjs"),
-      // As the app's windows.
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -233,7 +226,6 @@ async function open(name, size) {
     "first render ms": load.firstRenderMs,
     "interactive ms": load.interactiveMs,
     "longest task ms": load.longestTaskMs,
-    // Read once the page is quiet: everything the process spent to get there.
     "renderer cpu ms": cpuMs(),
     "react ms": load.reactMs,
     components: load.components,
@@ -261,7 +253,6 @@ async function push(name, value) {
   return { ...step, cpuMs: cpuMs() - before };
 }
 
-/** The snapshot main would push next: a new object each time, as main's is. */
 function changed(/** @type {Partial<Snapshot>} */ patch) {
   snapshot = { ...snapshot, ...patch };
   return snapshot;
@@ -277,7 +268,6 @@ async function pushSnapshots(count) {
 }
 
 let dictations = 0;
-/** One new entry per push, as main sends after each dictation. */
 async function pushHistory(count) {
   const steps = [];
   for (let i = 0; i < count; i += 1) {
@@ -301,7 +291,6 @@ async function pushHistory(count) {
   return steps;
 }
 
-/** Renames the newest meeting once per push, as main sends a patch after each edit. */
 async function renameMeetings(count) {
   const steps = [];
   for (let i = 0; i < count; i += 1) {
@@ -345,7 +334,6 @@ async function openSettings() {
 }
 const closeSettings = () => act("click", 'button[aria-label="Close settings"]');
 
-/** Every page once, ending on Home, where it began. */
 async function tour(visits = {}) {
   const add = (label, step) => (visits[label] ??= []).push(step);
   for (const label of APP_PAGES) add(label, await visit(label));
@@ -523,7 +511,7 @@ const scenarios = {
         [`${unit} after loop 1`]: values[1],
         [`${unit} after loop 10`]: values[10],
         // The first loops also fill caches and compile code; the later ones show what stays.
-        [`${unit} growth per loop (loops 5–10)`]: slope(values.slice(5)),
+        [`${unit} growth per loop (loops 5–10)`]: leastSquaresSlope(values.slice(5)),
       });
     }
   },

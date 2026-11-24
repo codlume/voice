@@ -98,7 +98,6 @@ export type HelpAnchor = (typeof viewHelp)[HelpPage]["items"][number]["anchor"];
 
 export const helpFor = (page: AppPage): ViewHelp | null => viewHelp[page];
 
-/** Marks the control a help item points at. help.test.ts checks every item has one. */
 export const helpAnchor = (anchor: HelpAnchor) => ({ "data-help": anchor });
 
 /** The control for an anchor, if the page shows it; narrow windows hide some, like the overview. */

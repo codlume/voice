@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   schedule:
-    # Nightlies are throttled to one per slot, like T3 Code; minute 17 avoids the busy top of the hour.
+    # Minute 17 avoids the busy top of the hour.
     - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
