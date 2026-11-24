@@ -1,5 +1,3 @@
-# Semantic PR titles, branch names and conventional commits.
-#
 # Copied from hadrysm/fleet's reusable conventional.yml. An org repo can't call
 # that private workflow, so this copy runs on pull_request with its inputs inlined.
 name: conventional

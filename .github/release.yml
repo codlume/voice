@@ -1,4 +1,3 @@
-# Nightly and stable release notes both come from GitHub's generated notes.
 changelog:
   exclude:
     labels:
