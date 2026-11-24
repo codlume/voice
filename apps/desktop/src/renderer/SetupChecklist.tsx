@@ -1,84 +1,92 @@
-import { Progress } from "@base-ui/react/progress";
 import * as stylex from "@stylexjs/stylex";
-import { CheckIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  CircleAlertIcon,
+  CircleCheckIcon,
+  CircleDashedIcon,
+  CircleIcon,
+  CircleMinusIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useId, type ReactNode } from "react";
 
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { settled, type ChecklistRow, type SetupCommand } from "./checklist.ts";
 import { pageStyles } from "./pageStyles.ts";
+import { ProgressBar } from "./Skeleton.tsx";
 import { Switch } from "./Switch.tsx";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { color, leading, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-
 const styles = stylex.create({
-  section: { display: "flex", flexDirection: "column", gap: space.sm },
-  sectionHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
-  label: { margin: 0, fontSize: 13, fontWeight: 600 },
-  note: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  section: { display: "flex", flexDirection: "column", gap: space.md },
+  sectionHead: { display: "flex", alignItems: "center", gap: space.md, minHeight: 32 },
+  label: { flexGrow: 1, margin: 0, fontSize: text.sm, fontWeight: 600, lineHeight: leading.sm },
+  progress: { display: "flex", alignItems: "center", gap: space.sm, flexShrink: 0 },
+  progressBar: { width: 96 },
+  note: {
+    margin: 0,
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
+    fontVariantNumeric: "tabular-nums",
+  },
   list: { margin: 0, padding: 0, listStyle: "none" },
   row: {
     display: "flex",
     alignItems: "center",
     gap: space.md,
-    paddingBlock: 14,
-    paddingInline: space.lg,
+    minHeight: 56,
+    paddingBlock: space.md,
+    paddingInline: space.base,
     borderTopWidth: { default: 1, ":first-child": 0 },
     borderTopStyle: "solid",
     borderTopColor: color.border,
   },
-  rowText: { flexGrow: 1, minWidth: 0 },
-  rowTitle: { display: "block", margin: 0, fontWeight: 500 },
-  rowSubtitle: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  icon: { flexShrink: 0, color: color.mutedForeground },
+  iconReady: { color: color.successForeground },
+  iconFailed: { color: color.errorForeground },
+  rowText: { display: "flex", flexDirection: "column", gap: 2, flexGrow: 1, minWidth: 0 },
+  rowTitle: {
+    display: "block",
+    margin: 0,
+    fontSize: text.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
+  },
+  rowSubtitle: {
+    margin: 0,
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
+  },
   status: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-end",
-    gap: 6,
+    gap: space.xs,
     flexShrink: 0,
     maxWidth: 220,
     color: color.mutedForeground,
-    fontSize: 12.5,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
     textAlign: "right",
+    fontVariantNumeric: "tabular-nums",
   },
   statusReady: { color: color.successForeground },
   statusFailed: { color: color.errorForeground },
-  track: {
-    width: 120,
-    height: 4,
-    overflow: "hidden",
-    borderRadius: radius.round,
-    backgroundColor: color.accent,
-  },
-  fill: {
-    height: "100%",
-    backgroundColor: color.primary,
-    transitionProperty: "width",
-    transitionDuration: { default: "300ms", [reducedMotion]: "0s" },
-  },
-  mark: {
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    width: 20,
-    height: 20,
-    borderWidth: 1.5,
-    borderStyle: "solid",
-    borderColor: color.input,
-    borderRadius: radius.round,
-  },
-  markReady: {
-    borderColor: color.success,
-    backgroundColor: color.success,
-    color: color.primaryForeground,
-  },
-  markFailed: { borderColor: color.error },
-  markBusy: { borderStyle: "dashed", borderColor: color.foreground },
-  markEmpty: { borderColor: "transparent" },
+  download: { width: 120 },
 });
+
+const statusIcons: Record<ChecklistRow["status"]["kind"], LucideIcon> = {
+  ready: CircleCheckIcon,
+  needed: CircleIcon,
+  busy: CircleDashedIcon,
+  failed: CircleAlertIcon,
+  unavailable: CircleMinusIcon,
+};
 
 export function runSetupCommand(command: SetupCommand): Promise<void> {
   switch (command.type) {
@@ -99,18 +107,18 @@ export const setupFailure = (label: string, title: string) =>
 function SetupRow({ row }: { row: ChecklistRow }) {
   const { status, actions } = row;
   const setupAction = useAction();
+  const StatusIcon = statusIcons[status.kind];
   return (
     <li {...stylex.props(styles.row)}>
-      <span
+      <StatusIcon
+        size={16}
+        aria-hidden
         {...stylex.props(
-          styles.mark,
-          status.kind === "ready" && styles.markReady,
-          status.kind === "failed" && styles.markFailed,
-          status.kind === "busy" && styles.markBusy,
+          styles.icon,
+          status.kind === "ready" && styles.iconReady,
+          status.kind === "failed" && styles.iconFailed,
         )}
-      >
-        {status.kind === "ready" && <CheckIcon size={12} strokeWidth={3} />}
-      </span>
+      />
       <div {...stylex.props(styles.rowText)}>
         <p {...stylex.props(styles.rowTitle)}>{row.title}</p>
         <p {...stylex.props(styles.rowSubtitle)}>{row.subtitle}</p>
@@ -129,16 +137,15 @@ function SetupRow({ row }: { row: ChecklistRow }) {
       >
         <span>{status.text}</span>
         {status.kind === "busy" && status.progress !== undefined && (
-          <Progress.Root aria-label={`${row.title} download`} value={status.progress * 100}>
-            <Progress.Track {...stylex.props(styles.track)}>
-              <Progress.Indicator {...stylex.props(styles.fill)} />
-            </Progress.Track>
-          </Progress.Root>
+          <span {...stylex.props(styles.download)}>
+            <ProgressBar label={`${row.title} download`} value={status.progress * 100} />
+          </span>
         )}
       </div>
       {actions.map((action) => (
         <Button
           key={action.label}
+          variant={action.label === "Cancel" ? "secondary" : "primary"}
           aria-label={`${action.label} ${row.title}`}
           onClick={() =>
             void setupAction.run(
@@ -159,7 +166,7 @@ export function CrashReportsRow({ on }: { on: boolean }) {
   const diagnosticsAction = useAction();
   return (
     <div {...stylex.props(styles.row)}>
-      <span {...stylex.props(styles.mark, styles.markEmpty)} />
+      <ActivityIcon size={16} aria-hidden {...stylex.props(styles.icon)} />
       <div {...stylex.props(styles.rowText)}>
         <label htmlFor={id} {...stylex.props(styles.rowTitle)}>
           Crash reports
@@ -209,9 +216,14 @@ export function SetupChecklist({
           {title}
         </h2>
         {counted && (
-          <p {...stylex.props(styles.note)}>
-            {done} of {rows.length} done
-          </p>
+          <div {...stylex.props(styles.progress)}>
+            <p {...stylex.props(styles.note)}>
+              {done} of {rows.length} done
+            </p>
+            <div {...stylex.props(styles.progressBar)}>
+              <ProgressBar label={`${title} progress`} value={(done / rows.length) * 100} />
+            </div>
+          </div>
         )}
       </div>
       <Card>

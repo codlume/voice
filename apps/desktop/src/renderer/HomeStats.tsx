@@ -8,7 +8,7 @@ import { AppIcon } from "./AppIcon.tsx";
 import { Card } from "./Card.tsx";
 import { insightsView, usage, type InsightsView, type UsageView } from "./insightsView.ts";
 import { appNames } from "./styleView.ts";
-import { color, layout, leading, space, text } from "./tokens.stylex.ts";
+import { color, layout, leading, motion, space, text } from "./tokens.stylex.ts";
 import { useInsights } from "./useInsights.ts";
 import { useInstalledApps } from "./useInstalledApps.ts";
 
@@ -36,25 +36,29 @@ const styles = stylex.create({
     borderRadius: "inherit",
     backgroundColor: { default: "transparent", ":hover": color.accent },
     color: "inherit",
+    transitionProperty: "background-color",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
     font: "inherit",
     textAlign: "left",
     cursor: "pointer",
   },
   foot: {
     paddingBlock: space.md,
-    paddingInline: space.lg,
+    paddingInline: space.base,
     borderTopWidth: 1,
     borderTopStyle: "solid",
     borderTopColor: color.border,
     color: color.mutedForeground,
-    fontSize: 12.5,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
+    fontVariantNumeric: "tabular-nums",
   },
   statList: {
     display: "flex",
     flexDirection: { default: "column", [layout.narrow]: "row" },
     flexWrap: "wrap",
-    gap: { default: space.md, [layout.narrow]: space.xl },
-    padding: space.lg,
+    gap: { default: space.sm, [layout.narrow]: space.xl },
+    padding: space.base,
   },
   stat: { display: "flex", alignItems: "baseline", gap: space.sm },
   statValue: {
@@ -64,9 +68,15 @@ const styles = stylex.create({
     letterSpacing: "-0.025em",
     fontVariantNumeric: "tabular-nums",
   },
-  statLabel: { color: color.mutedForeground, fontSize: 14 },
-  topApps: { display: "flex", flexDirection: "column", gap: space.md, padding: space.lg },
-  label: { margin: 0, fontSize: 13, fontWeight: 600 },
+  statLabel: { color: color.mutedForeground, fontSize: text.sm, lineHeight: leading.sm },
+  topApps: { display: "flex", flexDirection: "column", gap: space.md, padding: space.base },
+  label: {
+    margin: 0,
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
+  },
   appList: {
     display: "flex",
     flexDirection: { default: "column", [layout.narrow]: "row" },
@@ -79,7 +89,8 @@ const styles = stylex.create({
     gap: space.sm,
     minWidth: 0,
     maxWidth: "100%",
-    fontSize: 13,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     fontVariantNumeric: "tabular-nums",
   },
   appName: {

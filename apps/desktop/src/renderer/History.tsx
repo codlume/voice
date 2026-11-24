@@ -1,5 +1,13 @@
 import * as stylex from "@stylexjs/stylex";
-import { CheckIcon, CopyIcon, FileTextIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleAlertIcon,
+  CopyIcon,
+  FileTextIcon,
+  HistoryIcon,
+  SearchIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import type { TranscriptVersion } from "../shared/api.ts";
@@ -8,105 +16,121 @@ import type { DayKey } from "../shared/insights.ts";
 import { a11y } from "./a11y.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
+import { EmptyState } from "./EmptyState.tsx";
 import { excerpt, historyPage, timeLabel } from "./historyView.ts";
+import { SearchField } from "./Input.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { color, elevation, leading, motion, radius, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-
 const styles = stylex.create({
-  section: { display: "flex", flexDirection: "column", gap: space.sm },
-  head: { display: "flex", alignItems: "center", gap: space.md, minHeight: 30 },
+  section: { display: "flex", flexDirection: "column", gap: space.md },
+  head: { display: "flex", alignItems: "center", gap: space.md, minHeight: 32 },
   heading: { display: "flex", alignItems: "baseline", gap: space.sm, flexGrow: 1, minWidth: 0 },
-  title: { margin: 0, fontSize: 13, fontWeight: 600 },
-  note: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  title: { margin: 0, fontSize: text.sm, fontWeight: 600, lineHeight: leading.sm },
+  note: { margin: 0, color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
   noteFailed: { color: color.errorForeground },
+  search: { display: "flex", width: 220, flexShrink: 0 },
   days: { display: "flex", flexDirection: "column", gap: space.lg },
   day: { display: "flex", flexDirection: "column", gap: space.sm },
+  // The section label used across the app: small, medium weight, muted, sentence case.
   dayLabel: {
     margin: 0,
+    paddingInline: space.xxs,
     color: color.mutedForeground,
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.075em",
-    textTransform: "uppercase",
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
   },
-  search: { position: "relative", display: "flex", alignItems: "center" },
-  searchIcon: {
-    position: "absolute",
-    left: 10,
-    color: color.mutedForeground,
-    pointerEvents: "none",
-  },
-  searchInput: {
-    width: 220,
-    height: 30,
-    paddingLeft: 30,
-    paddingRight: space.sm,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.border, ":focus": color.input },
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 13,
-  },
+  // Rows tint on hover, so the card clips them to its corners.
+  clip: { overflow: "hidden" },
   list: { margin: 0, padding: 0, listStyle: "none" },
   row: {
+    position: "relative",
     display: "grid",
-    gridTemplateColumns: "88px minmax(0, 1fr) auto",
+    gridTemplateColumns: "56px minmax(0, 1fr)",
     alignItems: "start",
     columnGap: space.md,
-    paddingBlock: 14,
-    paddingInline: space.lg,
+    minHeight: 44,
+    paddingBlock: 12,
+    paddingInline: space.base,
     borderTopWidth: { default: 1, ":first-child": 0 },
     borderTopStyle: "solid",
     borderTopColor: color.border,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
     cursor: "pointer",
+    transitionProperty: "background-color",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
   },
   time: {
     paddingTop: 2,
     color: color.mutedForeground,
-    fontSize: 13,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
     fontVariantNumeric: "tabular-nums",
     whiteSpace: "nowrap",
   },
-  body: { display: "flex", flexDirection: "column", gap: 4, minWidth: 0 },
+  body: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: space.xs },
   text: {
     margin: 0,
-    fontSize: 15,
-    lineHeight: "20px",
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
-  notInserted: { margin: 0, color: color.errorForeground, fontSize: 12 },
+  // Adapted warning badge (MIT, see THIRD_PARTY_NOTICES.md): this transcript never reached its
+  // target, so the user may need to copy it.
+  notInserted: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.xxs,
+    height: 18,
+    paddingInline: space.xs,
+    borderRadius: radius.xs,
+    backgroundColor: color.warningSurface,
+    color: color.warningForeground,
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
+    whiteSpace: "nowrap",
+  },
+  // Hover and focus reveal a small toolbar over the row's top-right corner, so the text keeps the
+  // full row width while the actions are hidden.
   actions: {
+    position: "absolute",
+    top: 5,
+    right: space.sm,
     display: "flex",
     alignItems: "center",
     gap: 2,
-    marginBlock: -4,
+    padding: 2,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: color.border,
+    borderRadius: radius.medium,
+    backgroundColor: color.popover,
+    boxShadow: elevation.sm,
     opacity: {
       default: 0,
       [stylex.when.ancestor(":hover")]: 1,
       [stylex.when.ancestor(":focus-within")]: 1,
     },
     transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: { default: motion.base, [motion.reduced]: "0s" },
   },
   shown: { opacity: 1 },
+  recovery: { display: "flex", alignItems: "center", gap: space.sm },
   copied: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
-    paddingInline: 6,
+    gap: space.xxs,
+    paddingInline: space.xs,
     color: color.successForeground,
-    fontSize: 12.5,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
   },
-  empty: { margin: 0, padding: space.lg, color: color.mutedForeground },
   more: { display: "flex", justifyContent: "center" },
 });
 
@@ -146,6 +170,7 @@ const Row = memo(function Row({
     if (clickedButton || keepSelection) return;
     onCopy(entry.id, "text");
   };
+  const missed = entry.status === "notInserted";
   return (
     <li onClick={copyRow} {...stylex.props(stylex.defaultMarker(), styles.row)}>
       <time dateTime={new Date(entry.at).toISOString()} {...stylex.props(styles.time)}>
@@ -153,8 +178,22 @@ const Row = memo(function Row({
       </time>
       <div {...stylex.props(styles.body)}>
         <p {...stylex.props(styles.text)}>{entry.text}</p>
-        {entry.status === "notInserted" && (
-          <p {...stylex.props(styles.notInserted)}>Not inserted</p>
+        {missed && (
+          // The one transcript the user may need to recover, so its Copy is always in view.
+          <div {...stylex.props(styles.recovery)}>
+            <span {...stylex.props(styles.notInserted)}>
+              <CircleAlertIcon size={12} strokeWidth={2.25} aria-hidden />
+              Not inserted
+            </span>
+            <Button
+              variant="secondary"
+              aria-label={`Copy dictation ${named}`}
+              onClick={() => onCopy(entry.id, "text")}
+            >
+              <CopyIcon size={16} aria-hidden />
+              Copy
+            </Button>
+          </div>
         )}
       </div>
       <div {...stylex.props(styles.actions, copied !== null && styles.shown)}>
@@ -164,14 +203,16 @@ const Row = memo(function Row({
             {copiedLabels[copied]}
           </span>
         )}
-        <Button
-          variant="icon"
-          aria-label={`Copy dictation ${named}`}
-          title="Copy"
-          onClick={() => onCopy(entry.id, "text")}
-        >
-          <CopyIcon size={15} />
-        </Button>
+        {!missed && (
+          <Button
+            variant="icon"
+            aria-label={`Copy dictation ${named}`}
+            title="Copy"
+            onClick={() => onCopy(entry.id, "text")}
+          >
+            <CopyIcon size={16} />
+          </Button>
+        )}
         {entry.raw !== entry.text && (
           <Button
             variant="icon"
@@ -179,7 +220,7 @@ const Row = memo(function Row({
             title="Copy raw transcript"
             onClick={() => onCopy(entry.id, "raw")}
           >
-            <FileTextIcon size={15} />
+            <FileTextIcon size={16} />
           </Button>
         )}
         <Button
@@ -188,7 +229,7 @@ const Row = memo(function Row({
           title="Delete"
           onClick={() => onDelete(entry.id)}
         >
-          <Trash2Icon size={15} />
+          <Trash2Icon size={16} />
         </Button>
       </div>
     </li>
@@ -207,11 +248,9 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
     },
   ]);
   return (
-    <div {...stylex.props(styles.search)}>
-      <SearchIcon size={14} aria-hidden="true" {...stylex.props(styles.searchIcon)} />
-      <input
+    <span {...stylex.props(styles.search)}>
+      <SearchField
         ref={input}
-        type="search"
         aria-label="Search history"
         autoComplete="off"
         spellCheck={false}
@@ -224,9 +263,8 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
           onChange("");
           event.currentTarget.blur();
         }}
-        {...stylex.props(styles.searchInput)}
       />
-    </div>
+    </span>
   );
 }
 
@@ -287,20 +325,26 @@ export const History = memo(function History({
       </div>
       {entries.length === 0 ? (
         <Card>
-          <p {...stylex.props(styles.empty)}>
-            Your dictations show up here, so you can copy one if it didn't land.
-          </p>
+          <EmptyState
+            icon={<HistoryIcon size={16} />}
+            title="No dictations yet"
+            description="Your dictations show up here, so you can copy one if it didn't land."
+          />
         </Card>
       ) : days.length === 0 ? (
         <Card>
-          <p {...stylex.props(styles.empty)}>No dictations match “{query.trim()}”.</p>
+          <EmptyState
+            icon={<SearchIcon size={16} />}
+            title={`No dictations match “${query.trim()}”`}
+            description="Search looks through the text and the raw transcript."
+          />
         </Card>
       ) : (
         <div {...stylex.props(styles.days)}>
           {days.map((day) => (
             <div key={day.day} {...stylex.props(styles.day)}>
               <h3 {...stylex.props(styles.dayLabel)}>{day.label}</h3>
-              <Card>
+              <Card style={styles.clip}>
                 <ul {...stylex.props(styles.list)}>
                   {day.entries.map((entry) => (
                     <Row
