@@ -35,12 +35,13 @@ const catalogNames = new Map<BundleId, string>(
 // Labels that name a build of the app, not the app.
 const BUILD_LABELS = new Set(["app", "client", "desktop", "mac", "macos", "osx"]);
 
+// Nothing on this Mac names the app, so it was usually uninstalled. Never show the raw id.
 function nameFromBundleId(bundleId: BundleId): string {
   const labels = bundleId.split(".");
-  if (labels.length > 1) labels.shift();
-  while (BUILD_LABELS.has(labels.at(-1) ?? "")) labels.pop();
-  const label = labels.at(-1) ?? "";
-  if (!/^[a-z]+(?:[-_][a-z]+)*$/.test(label)) return bundleId;
+  const label = (labels.length > 1 ? labels.slice(1) : labels).findLast(
+    (l) => /^[a-z]+(?:[-_][a-z]+)*$/.test(l) && !BUILD_LABELS.has(l),
+  );
+  if (label === undefined) return "Unknown app";
   return label
     .split(/[-_]/)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
