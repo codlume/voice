@@ -175,7 +175,7 @@ private func eventCases() -> [String: HelperEvent] {
         "microphone.test.started": .microphoneTestStarted(id: "t1"),
         "microphone.test.level": .microphoneTestLevel(id: "t1", level: 0.25),
         "microphone.test.ended": .microphoneTestEnded(id: "t1"),
-        "microphone.test.failed": .microphoneTestFailed(id: "t1", message: "Synthetic test failed"),
+        "microphone.test.failed": .microphoneTestFailed(id: "t1", reason: .device),
         "transcript": .transcript(Transcript(id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: 4.5,
                                              target: TranscriptTarget(bundleId: "com.apple.Safari", host: "MAIL.EXAMPLE.COM"))),
         "transcript.empty": .transcript(Transcript(id: "s1", text: "", audioMs: 40, asrMs: 0, speechMs: nil, relayMs: nil, target: nil)),

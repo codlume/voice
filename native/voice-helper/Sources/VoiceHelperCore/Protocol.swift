@@ -197,7 +197,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 20
+public let helperProtocolVersion = 21
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -221,7 +221,7 @@ public enum HelperEvent: Equatable, Sendable {
     case microphoneTestStarted(id: String)
     case microphoneTestLevel(id: String, level: Double)
     case microphoneTestEnded(id: String)
-    case microphoneTestFailed(id: String, message: String)
+    case microphoneTestFailed(id: String, reason: CaptureFailure)
     case transcript(Transcript)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
     case insertResult(id: String, outcome: InsertOutcome)
@@ -431,10 +431,10 @@ extension HelperEvent: Encodable {
         case .microphoneTestEnded(let id):
             try c.encode("microphone.test.ended", forKey: .type)
             try c.encode(id, forKey: .id)
-        case .microphoneTestFailed(let id, let message):
+        case .microphoneTestFailed(let id, let reason):
             try c.encode("microphone.test.failed", forKey: .type)
             try c.encode(id, forKey: .id)
-            try c.encode(message, forKey: .message)
+            try c.encode(reason, forKey: .reason)
         case .transcript(let transcript):
             try c.encode("transcript", forKey: .type)
             try c.encode(transcript.id, forKey: .id)

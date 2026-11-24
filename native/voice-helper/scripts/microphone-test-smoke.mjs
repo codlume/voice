@@ -73,7 +73,7 @@ await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: short } }, async (helper) => 
 
   helper.send({ type: "microphone.test.start", id: "t4", microphone: null });
   const busy = await helper.waitFor(forId("microphone.test.failed", "t4"), { label: "t4 failed" });
-  assert(busy.message === "Finish dictating, then test again.", `busy message: ${busy.message}`);
+  assert(busy.reason === "busy", `busy reason: ${busy.reason}`);
   helper.send({ type: "capture.cancel", id: "s1" });
   await helper.waitFor(forId("capture.cancelled", "s1"), { label: "s1 cancelled" });
   results.preempt = { endedAt: preempted, capturedAt: captured };

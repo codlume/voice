@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 20,
+  "protocolVersion": 21,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 19,
+      "version": 20,
       "compatible": false
     },
     {
-      "version": 20,
+      "version": 21,
       "compatible": true
     },
     {
-      "version": 21,
+      "version": 22,
       "compatible": false
     }
   ],
@@ -640,11 +640,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 20
+        "version": 21
       },
       "parsed": {
         "type": "ready",
-        "version": 20
+        "version": 21
       },
       "required": ["type", "version"]
     },
@@ -984,14 +984,14 @@
       "wire": {
         "type": "microphone.test.failed",
         "id": "t1",
-        "message": "Synthetic test failed"
+        "reason": "device"
       },
       "parsed": {
         "type": "microphone.test.failed",
         "id": "t1",
-        "message": "Synthetic test failed"
+        "reason": "device"
       },
-      "required": ["type", "id", "message"]
+      "required": ["type", "id", "reason"]
     },
     {
       "name": "transcript",

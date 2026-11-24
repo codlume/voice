@@ -283,7 +283,8 @@ final class Capture {
     func startTest(id: String, microphone: Microphone?) {
         if case .testing(let current, _) = state { stopTest(id: current) }
         guard case .idle = state else {
-            output.emit(.microphoneTestFailed(id: id, message: "Finish dictating, then test again."))
+            output.log(.info, "microphone.test.start \(id) refused: capture is busy with a session")
+            output.emit(.microphoneTestFailed(id: id, reason: .busy))
             return
         }
         adopt(microphone)
@@ -375,9 +376,9 @@ final class Capture {
             state = .testing(id: id, started: false)
             try mic.start(sink: sink)
         } catch let error as CaptureError {
-            failTest(id: id, message: error.message)
+            failTest(id: id, error)
         } catch {
-            failTest(id: id, message: "\(error)")
+            failTest(id: id, CaptureError(reason: .unknown, message: "\(error)"))
         }
     }
 
@@ -397,11 +398,12 @@ final class Capture {
         output.emit(.microphoneTestLevel(id: id, level: level))
     }
 
-    private func failTest(id: String, message: String) {
+    private func failTest(id: String, _ error: CaptureError) {
         disposeMic()
         stopSource()
         state = .idle
-        output.emit(.microphoneTestFailed(id: id, message: message))
+        output.log(.error, "microphone test \(id) failed (\(error.reason.rawValue)): \(error.message)")
+        output.emit(.microphoneTestFailed(id: id, reason: error.reason))
         prepareIdleMic()
     }
 
