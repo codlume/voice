@@ -15,6 +15,7 @@ import {
   type ReleaseNotes,
   type UpdateStatus,
 } from "../shared/api.ts";
+import type { VoiceApi } from "../shared/api.ts";
 import { parseBundleId, type BundleId } from "../shared/app-categories.ts";
 import { applyAssignmentEdit } from "../shared/style.ts";
 import type {
@@ -33,6 +34,7 @@ import { Notepad } from "./MeetingNotepad.tsx";
 import { fakeMeetingsMain } from "./testing/meetingsFake.ts";
 import { sampleMeetings, type MeetingFixtures } from "./testing/meetingsFixtures.ts";
 import { PillCapsule } from "./PillCapsule.tsx";
+import { PrimitivePreview, uiScenes } from "./previewPrimitives.tsx";
 import { useHistory } from "./useHistory.ts";
 import { usePillSnapshot, useSnapshot } from "./useSnapshot.ts";
 
@@ -205,7 +207,20 @@ type HubScene = Snapshot & {
   saveFailed?: boolean;
 };
 
+// The loading scenes hold a request open forever, to show what draws before it answers.
+const stalled = () => new Promise<never>(() => {});
+
 const hubScenes: Record<string, HubScene> = {
+  "restart-notice": {
+    ...ready,
+    restartNotice: {
+      key: 1,
+      id: sampleMeetings().state.meetings[0]!.id,
+      text: "Voice restarted during your meeting. The recording up to 10:42 is saved.",
+      actions: [],
+      dismissable: true,
+    },
+  },
   "microphone-test-failed": {
     ...ready,
     microphoneTest: {
@@ -828,6 +843,17 @@ function Gallery() {
     <div style={{ padding: 32, fontFamily: "system-ui", display: "grid", gap: 16 }}>
       <h1 style={{ margin: 0, fontSize: 18 }}>Voice preview</h1>
       <p style={{ margin: 0 }}>
+        Primitives:{" "}
+        {["all", ...Object.keys(uiScenes)].map((name) => (
+          <a key={name} href={`?ui=${name}`} style={{ marginRight: 12 }}>
+            {name}
+          </a>
+        ))}
+      </p>
+      <p style={{ margin: 0 }}>
+        Loading: <a href="?hub=loading">hub</a> <a href="?hub=meetings-loading">meetings</a>
+      </p>
+      <p style={{ margin: 0 }}>
         Hub:{" "}
         {Object.keys(hubScenes).map((name) => (
           <a key={name} href={`?hub=${name}`} style={{ marginRight: 12 }}>
@@ -883,6 +909,7 @@ const params = new URLSearchParams(location.search);
 const pill = params.get("pill");
 const hub = params.get("hub");
 const notepad = params.get("notepad");
+const ui = params.get("ui");
 const root = createRoot(document.getElementById("root")!);
 
 if (pill) {
@@ -897,8 +924,15 @@ if (pill) {
 } else if (notepad) {
   window.voice = fakeNotepad(notepadPrompts[notepad] ?? null);
   root.render(<Notepad />);
+} else if (ui) {
+  window.voice = fakeVoice(ready, false);
+  root.render(<PrimitivePreview scene={ui} />);
 } else if (hub) {
-  window.voice = fakeVoice(hubScenes[hub] ?? base, false);
+  const loading: Record<string, Partial<VoiceApi>> = {
+    loading: { getSnapshot: stalled },
+    "meetings-loading": { getMeetings: stalled },
+  };
+  window.voice = { ...fakeVoice(hubScenes[hub] ?? base, false), ...loading[hub] };
   root.render(<HubPreview initialPage={hub.startsWith("meetings") ? "meetings" : "home"} />);
 } else {
   window.voice = fakeVoice(ready, true);

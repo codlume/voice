@@ -1,34 +1,32 @@
 import * as stylex from "@stylexjs/stylex";
 
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, elevation, font, leading, motion, radius, space, text } from "./tokens.stylex.ts";
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-
-const easing = "cubic-bezier(0.2, 0, 0, 1)";
-
+// Adapted tooltip (MIT, see THIRD_PARTY_NOTICES.md): small, bordered, scaling from its anchor.
 const tooltip = stylex.create({
   positioner: { zIndex: 10 },
   popup: {
     whiteSpace: "nowrap",
-    paddingBlock: 5,
+    paddingBlock: space.xxs,
     paddingInline: space.sm,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.small,
-    backgroundColor: color.card,
+    backgroundColor: color.popover,
     color: color.foreground,
-    boxShadow: "0 2px 8px rgb(0 0 0 / 12%)",
+    boxShadow: elevation.md,
     fontFamily: font.sans,
-    fontSize: 12,
-    lineHeight: 1.4,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
     WebkitFontSmoothing: "antialiased",
     opacity: 1,
-    transitionProperty: "opacity",
-    transitionDuration: { default: "180ms", [reducedMotion]: "0s" },
-    transitionTimingFunction: easing,
+    transformOrigin: "var(--transform-origin)",
+    transitionProperty: "opacity, scale",
+    transitionDuration: { default: motion.base, [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.ease,
   },
-  hidden: { opacity: 0 },
+  hidden: { opacity: 0, scale: 0.98 },
   instant: { transitionDuration: "0s" },
 });
 

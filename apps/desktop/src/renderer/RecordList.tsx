@@ -39,7 +39,7 @@ export const styles = stylex.create({
   example: { color: color.mutedForeground },
   off: { opacity: 0.6 },
   rowActions: { display: "flex", flexShrink: 0, alignItems: "center", gap: 4 },
-  fields: { display: "flex", flexDirection: "column", gap: space.md, marginTop: space.lg },
+  fields: { display: "flex", flexDirection: "column", gap: space.base },
   field: { display: "flex", flexDirection: "column", gap: 6 },
   fieldHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
   counter: { fontVariantNumeric: "tabular-nums" },
@@ -56,7 +56,8 @@ export const styles = stylex.create({
     font: "inherit",
     fontSize: 13,
   },
-  invalid: { borderColor: { default: color.error, ":focus": color.error } },
+  // The focus outline sits over the border, so an invalid field draws it in the error color too.
+  invalid: { borderColor: color.error, outlineColor: color.error },
   saveError: { marginTop: space.md },
 });
 
@@ -391,7 +392,7 @@ export function CountedField({
   return (
     <Field.Root invalid={problem !== undefined} {...stylex.props(styles.field)}>
       <div {...stylex.props(styles.fieldHead)}>
-        <Field.Label {...stylex.props(settings.sectionLabel)}>{label}</Field.Label>
+        <Field.Label {...stylex.props(settings.rowTitle)}>{label}</Field.Label>
         <Field.Description {...stylex.props(settings.hint, styles.counter)}>
           {length}/{max}
         </Field.Description>

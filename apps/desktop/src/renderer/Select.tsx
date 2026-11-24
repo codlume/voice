@@ -2,8 +2,10 @@ import { Select as SelectPrimitive } from "@base-ui/react/select";
 import * as stylex from "@stylexjs/stylex";
 import { ChevronDownIcon } from "lucide-react";
 
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { color, font, leading, space, text } from "./tokens.stylex.ts";
 
+// Adapted select (MIT, see THIRD_PARTY_NOTICES.md): a 32px bordered trigger and a frosted list.
 const styles = stylex.create({
   trigger: {
     display: "inline-flex",
@@ -11,25 +13,19 @@ const styles = stylex.create({
     justifyContent: "space-between",
     flexShrink: 0,
     gap: space.sm,
-    minWidth: 110,
+    minWidth: 144,
     maxWidth: "min(240px, 48%)",
-    paddingBlock: 6,
-    paddingInline: 10,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: { default: color.card, ":hover": color.accent },
-    color: color.foreground,
+    height: 32,
+    paddingInline: 11,
     fontFamily: font.sans,
-    fontSize: 13,
-    lineHeight: 1.45,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     textAlign: "left",
     cursor: "pointer",
     userSelect: "none",
   },
   grouped: { flexShrink: 1, maxWidth: 240 },
-  disabled: { cursor: "default" },
+  disabled: { cursor: "default", opacity: 0.64 },
   value: {
     flexGrow: 1,
     minWidth: 0,
@@ -37,24 +33,12 @@ const styles = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  icon: { display: "flex", flexShrink: 0, color: color.mutedForeground },
+  icon: { display: "flex", flexShrink: 0, marginInlineEnd: -4, opacity: 0.7 },
   positioner: { zIndex: 10 },
   popup: {
     minWidth: "var(--anchor-width)",
     maxWidth: "var(--available-width)",
     overflow: "hidden",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    fontFamily: font.sans,
-    fontSize: 13,
-    lineHeight: 1.45,
-    WebkitFontSmoothing: "antialiased",
-    boxShadow: "0 12px 32px -8px rgb(0 0 0 / 25%)",
-    outline: "none",
   },
   list: {
     maxHeight: "min(320px, var(--available-height))",
@@ -62,19 +46,7 @@ const styles = stylex.create({
     overscrollBehavior: "contain",
     padding: 4,
   },
-  item: {
-    display: "flex",
-    alignItems: "center",
-    minHeight: 30,
-    paddingBlock: 5,
-    paddingInline: space.sm,
-    borderRadius: radius.small,
-    cursor: "pointer",
-    userSelect: "none",
-    outline: "none",
-  },
-  selected: { backgroundColor: color.segmentTrack },
-  highlighted: { backgroundColor: color.input },
+  selected: { backgroundColor: `color-mix(in srgb, ${color.foreground} 8%, transparent)` },
 });
 
 export function Select<T extends string>({
@@ -103,7 +75,12 @@ export function Select<T extends string>({
     >
       <SelectPrimitive.Trigger
         id={id}
-        {...stylex.props(styles.trigger, grouped && styles.grouped, disabled && styles.disabled)}
+        {...stylex.props(
+          surfaces.control,
+          styles.trigger,
+          grouped && styles.grouped,
+          disabled && styles.disabled,
+        )}
       >
         <SelectPrimitive.Value {...stylex.props(styles.value)} />
         <SelectPrimitive.Icon {...stylex.props(styles.icon)}>
@@ -117,7 +94,7 @@ export function Select<T extends string>({
           sideOffset={4}
           {...stylex.props(styles.positioner)}
         >
-          <SelectPrimitive.Popup {...stylex.props(styles.popup)}>
+          <SelectPrimitive.Popup {...stylex.props(surfaces.popup, styles.popup)}>
             <SelectPrimitive.List {...stylex.props(styles.list)}>
               {options.map((option) => (
                 <SelectPrimitive.Item
@@ -125,9 +102,9 @@ export function Select<T extends string>({
                   value={option.value}
                   className={({ selected, highlighted }) =>
                     stylex.props(
-                      styles.item,
+                      surfaces.item,
                       selected && styles.selected,
-                      highlighted && styles.highlighted,
+                      highlighted && surfaces.itemHighlighted,
                     ).className
                   }
                 >

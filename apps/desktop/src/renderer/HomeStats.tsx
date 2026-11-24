@@ -8,7 +8,7 @@ import { AppIcon } from "./AppIcon.tsx";
 import { Card } from "./Card.tsx";
 import { insightsView, usage, type InsightsView, type UsageView } from "./insightsView.ts";
 import { appNames } from "./styleView.ts";
-import { color, font, layout, space } from "./tokens.stylex.ts";
+import { color, layout, leading, space, text } from "./tokens.stylex.ts";
 import { useInsights } from "./useInsights.ts";
 import { useInstalledApps } from "./useInstalledApps.ts";
 
@@ -58,11 +58,10 @@ const styles = stylex.create({
   },
   stat: { display: "flex", alignItems: "baseline", gap: space.sm },
   statValue: {
-    fontFamily: font.serif,
-    fontSize: 28,
-    fontWeight: 400,
-    lineHeight: 1.1,
-    letterSpacing: "-0.02em",
+    fontSize: text.xxxl,
+    fontWeight: 600,
+    lineHeight: leading.xxxl,
+    letterSpacing: "-0.025em",
     fontVariantNumeric: "tabular-nums",
   },
   statLabel: { color: color.mutedForeground, fontSize: 14 },

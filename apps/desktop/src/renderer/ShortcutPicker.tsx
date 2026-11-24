@@ -102,7 +102,7 @@ export function ShortcutPicker({
   const notes = value === null ? [] : shortcutNotes(value, dictationKeys);
   return (
     <div {...stylex.props(form.field)}>
-      <span id={labelId} {...stylex.props(settings.sectionLabel)}>
+      <span id={labelId} {...stylex.props(settings.rowTitle)}>
         {label}
       </span>
       <div {...stylex.props(styles.row)}>

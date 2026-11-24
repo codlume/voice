@@ -2,15 +2,17 @@ import * as stylex from "@stylexjs/stylex";
 import type { ReactNode } from "react";
 
 import { helpAnchor, type HelpAnchor } from "./help.ts";
-import { color, radius } from "./tokens.stylex.ts";
+import { color, elevation, radius } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
+  // Adapted settings group card (MIT, see THIRD_PARTY_NOTICES.md).
   card: {
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: color.border,
+    borderColor: `color-mix(in srgb, ${color.border} 60%, transparent)`,
     borderRadius: radius.large,
-    backgroundColor: color.card,
+    backgroundColor: `color-mix(in srgb, ${color.card} 40%, transparent)`,
+    boxShadow: elevation.xs,
   },
 });
 

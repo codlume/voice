@@ -74,7 +74,7 @@ export function FolderDialog({
       >
         <div {...stylex.props(record.fields)}>
           <Field.Root invalid={nameMissing} {...stylex.props(record.field)}>
-            <Field.Label {...stylex.props(settings.sectionLabel)}>Name</Field.Label>
+            <Field.Label {...stylex.props(settings.rowTitle)}>Name</Field.Label>
             <Field.Control
               autoFocus
               value={name}
@@ -90,7 +90,7 @@ export function FolderDialog({
             )}
           </Field.Root>
           <Field.Root {...stylex.props(record.field)}>
-            <Field.Label {...stylex.props(settings.sectionLabel)}>Type</Field.Label>
+            <Field.Label {...stylex.props(settings.rowTitle)}>Type</Field.Label>
             <Segmented options={kinds} value={kind} onChange={setKind} />
             <Field.Description {...stylex.props(settings.hint)}>
               {kind === "manual"
@@ -100,7 +100,7 @@ export function FolderDialog({
           </Field.Root>
           {kind === "auto" && (
             <Field.Root invalid={keywordMissing} {...stylex.props(record.field)}>
-              <Field.Label {...stylex.props(settings.sectionLabel)}>Title contains</Field.Label>
+              <Field.Label {...stylex.props(settings.rowTitle)}>Title contains</Field.Label>
               <Field.Control
                 value={keyword}
                 placeholder="standup"

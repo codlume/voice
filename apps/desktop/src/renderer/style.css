@@ -11,13 +11,66 @@
     box-sizing: border-box;
   }
 
+  /* Focus outlines sit inside controls, so clipped and scrolled edges never cut them off. */
   :focus-visible {
     outline: 2px solid var(--ring);
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
 
   [tabindex="-1"]:focus {
     outline: none;
+  }
+
+  /* Lucide draws at 2px. A lighter stroke matches the system UI; an explicit size still wins. */
+  :where(svg.lucide[stroke-width="2"]) {
+    stroke-width: 1.75;
+  }
+
+  /* Electron inherits app-region. Children reset to initial, which adds no drag rectangle;
+     none would act as no-drag and break dragging. Controls opt out explicitly. */
+  [data-drag-region] > * {
+    -webkit-app-region: initial;
+  }
+}
+
+[data-drag-region] :is(button, input, textarea, select, a, [role="button"]) {
+  -webkit-app-region: no-drag;
+}
+
+/* A drag region beneath an open popup would swallow its clicks. */
+[data-base-ui-portal] {
+  -webkit-app-region: no-drag;
+}
+
+:where(:not(iframe))::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+:where(:not(iframe))::-webkit-scrollbar-track,
+:where(:not(iframe))::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:where(:not(iframe))::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--scrollbar-thumb);
+}
+
+:where(:not(iframe))::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* A backstop for motion a component forgot to gate. Durations stay above zero so
+   transitionend and animationend still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

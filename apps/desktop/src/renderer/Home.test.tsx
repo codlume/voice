@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 
 import type { HubApi } from "../shared/api.ts";
 import type { ChecklistRow } from "./checklist.ts";
-import { SetupChecklist } from "./Home.tsx";
+import { SetupChecklist } from "./SetupChecklist.tsx";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

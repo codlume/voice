@@ -4,7 +4,7 @@ import { CheckIcon } from "lucide-react";
 import { useId } from "react";
 
 import { settled, type ChecklistRow } from "./checklist.ts";
-import { runSetupCommand, setupFailure } from "./Home.tsx";
+import { runSetupCommand, setupFailure } from "./SetupChecklist.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";

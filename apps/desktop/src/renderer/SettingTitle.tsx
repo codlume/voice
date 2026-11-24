@@ -4,12 +4,12 @@ import * as stylex from "@stylexjs/stylex";
 import { Undo2Icon } from "lucide-react";
 import { useRef } from "react";
 
-import { color, radius } from "./tokens.stylex.ts";
+import { color, leading, radius, text } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const styles = stylex.create({
   line: { display: "flex", alignItems: "center", gap: 6, minHeight: 20 },
-  title: { display: "block", fontWeight: 500 },
+  title: { display: "block", fontSize: text.sm, fontWeight: 500, lineHeight: leading.sm },
   slot: { display: "grid", flexShrink: 0, width: 20, height: 20 },
   button: {
     display: "grid",

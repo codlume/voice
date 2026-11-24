@@ -68,7 +68,8 @@ import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { RestartNotice } from "./RestartNotice.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { hubApi } from "./voice.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { color, font, radius, space, text } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const appPageGroups = [
@@ -250,9 +251,8 @@ const styles = stylex.create({
     margin: 0,
     paddingInline: (navItemSize - brandIconVisibleSize) / 2,
     paddingBottom: space.lg,
-    fontFamily: font.serif,
-    fontSize: 20,
-    fontWeight: 500,
+    fontSize: text.base,
+    fontWeight: 600,
   },
   brandIcon: {
     flexShrink: 0,
@@ -414,7 +414,9 @@ const styles = stylex.create({
     maxWidth: 1100,
     maxHeight: 780,
     overflow: "hidden",
+    // Settings is a full page, so it stays opaque instead of frosted.
     backgroundColor: color.background,
+    backdropFilter: "none",
     fontSize: 14,
     lineHeight: 1.45,
     transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
@@ -435,9 +437,8 @@ const styles = stylex.create({
     margin: 0,
     paddingInline: (navItemSize - navIconSize) / 2,
     paddingBottom: space.lg,
-    fontFamily: font.serif,
-    fontSize: 20,
-    fontWeight: 500,
+    fontSize: text.base,
+    fontWeight: 600,
   },
   settingsContent: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column" },
   settingsHeader: { display: "flex", justifyContent: "flex-end", padding: space.md },
@@ -635,6 +636,7 @@ function SettingsModal({
             finalFocus={false}
             className={({ transitionStatus }) =>
               stylex.props(
+                surfaces.dialog,
                 dialogStyles.surface,
                 styles.settingsPopup,
                 transitionHidden(transitionStatus) && [
@@ -805,7 +807,10 @@ export function HubShell({
   const AppPageView = appPageViews[appPage];
   return (
     <div {...stylex.props(styles.shell, styles.pageAnimation(snapshot.settings.pageAnimationMs))}>
-      <div {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}>
+      <div
+        data-drag-region
+        {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}
+      >
         <button
           type="button"
           aria-label={toggleLabel}

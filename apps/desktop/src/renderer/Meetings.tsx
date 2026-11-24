@@ -20,7 +20,7 @@ import type { Snapshot } from "../shared/api.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { meetingsChecklist, summaryModelRow } from "./checklist.ts";
-import { SetupChecklist } from "./Home.tsx";
+import { SetupChecklist } from "./SetupChecklist.tsx";
 import { MeetingDetail } from "./MeetingDetail.tsx";
 import { MeetingFolders } from "./MeetingFolders.tsx";
 import { MeetingList } from "./MeetingList.tsx";

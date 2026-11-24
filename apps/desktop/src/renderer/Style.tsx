@@ -17,7 +17,7 @@ import { pageStyles } from "./pageStyles.ts";
 import { AddToCategory, AssignmentChip } from "./StyleAssignments.tsx";
 import { bannerApps, CATEGORY_LABELS, chips } from "./styleView.ts";
 import { Switch } from "./Switch.tsx";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, leading, radius, space, text } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useAction } from "./useAction.ts";
 import { useInstalledApps, type InstalledApps } from "./useInstalledApps.ts";
@@ -167,10 +167,8 @@ const styles = stylex.create({
   example: {
     display: "block",
     margin: 0,
-    fontFamily: font.serif,
-    fontSize: 18,
-    lineHeight: 1.35,
-    letterSpacing: "-0.01em",
+    fontSize: text.base,
+    lineHeight: leading.base,
     whiteSpace: "pre-line",
   },
 });

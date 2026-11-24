@@ -6,56 +6,40 @@ import { useId, type ReactNode } from "react";
 
 import type { SettingsPatch } from "../shared/api.ts";
 import { SettingTitle } from "./SettingTitle.tsx";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { segmentStyles } from "./ToggleGroup.tsx";
+import { color, leading, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
+// Adapted settings layout (MIT, see THIRD_PARTY_NOTICES.md): a semibold section title over a
+// group card whose rows put a medium title and a small muted description left of the control.
 export const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
-  section: { display: "flex", flexDirection: "column", gap: space.sm },
-  sectionLabel: { margin: 0, fontSize: 13, fontWeight: 600 },
+  section: { display: "flex", flexDirection: "column", gap: 10 },
+  sectionLabel: { margin: 0, fontSize: text.base, fontWeight: 600, lineHeight: leading.base },
   row: {
     display: "flex",
     alignItems: "center",
-    gap: space.lg,
-    paddingBlock: 14,
-    paddingInline: space.lg,
+    gap: space.xl,
+    paddingBlock: space.md,
+    paddingInline: space.base,
     borderTopWidth: { default: 1, ":first-child": 0 },
     borderTopStyle: "solid",
-    borderTopColor: color.border,
+    borderTopColor: `color-mix(in srgb, ${color.border} 50%, transparent)`,
   },
-  disabled: { opacity: 0.45 },
+  disabled: { opacity: 0.64 },
   rowText: { flexGrow: 1, minWidth: 0 },
-  rowTitle: { display: "block", fontWeight: 500 },
-  rowDetail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  segments: {
-    display: "grid",
-    gridAutoFlow: "column",
-    gridAutoColumns: "1fr",
-    gap: 2,
-    padding: 3,
-    borderRadius: radius.medium,
-    backgroundColor: color.segmentTrack,
-  },
-  segment: {
-    position: "relative",
-    paddingBlock: 6,
-    paddingInline: space.md,
-    borderRadius: 7,
+  rowTitle: { display: "block", fontSize: text.sm, fontWeight: 500, lineHeight: leading.sm },
+  rowDetail: {
+    margin: 0,
+    maxWidth: 672,
     color: color.mutedForeground,
-    fontSize: 13,
-    textAlign: "center",
-    cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
-  },
-  segmentOn: {
-    backgroundColor: color.segmentSelected,
-    color: color.foreground,
-    fontWeight: 500,
-    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+    fontSize: text.xs,
+    lineHeight: 1.5,
+    textWrap: "pretty",
   },
   actions: { display: "flex", gap: space.sm },
-  hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  hint: { margin: 0, color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
   link: { textDecoration: "underline" },
 });
 
@@ -136,7 +120,7 @@ export function Segmented<T extends string>({
 }) {
   const id = useId();
   return (
-    <RadioGroup<T> value={value} onValueChange={onChange} {...stylex.props(styles.segments)}>
+    <RadioGroup<T> value={value} onValueChange={onChange} {...stylex.props(segmentStyles.track)}>
       {options.map((option) => (
         // Inside a Field, Base UI labels each radio with the field's label, so each option points
         // at its own text to keep its name.
@@ -144,7 +128,7 @@ export function Segmented<T extends string>({
           key={option.value}
           value={option.value}
           aria-labelledby={`${id}-${option.value}`}
-          {...stylex.props(styles.segment, option.value === value && styles.segmentOn)}
+          {...stylex.props(segmentStyles.segment, option.value === value && segmentStyles.on)}
         >
           <span id={`${id}-${option.value}`}>{option.label}</span>
         </Radio.Root>

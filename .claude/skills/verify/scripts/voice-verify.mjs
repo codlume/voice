@@ -202,6 +202,28 @@ async function waitOn(page, expression, timeoutMs) {
   throw new Error(`timed out after ${timeoutMs} ms waiting for ${expression} (last ${show(last)})`);
 }
 
+// Resolves once no finite animation or transition runs, two frames later, so a shot never catches
+// a dialog or page halfway in.
+// Base UI starts enter transitions a frame after mount, so it takes two quiet frames in a row.
+// A covered window may stop sending frames, so each wait also ends on a timer.
+const SETTLE = `new Promise(async (resolve) => {
+  const frame = () => new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); });
+  const deadline = performance.now() + 3000;
+  let quiet = 0;
+  while (quiet < 2 && performance.now() < deadline) {
+    await frame();
+    const busy = document.getAnimations().filter((a) => a.playState === "running" && Number.isFinite(a.effect?.getComputedTiming().endTime));
+    if (busy.length === 0) quiet += 1;
+    else {
+      quiet = 0;
+      await Promise.race([Promise.all(busy.map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 500))]);
+    }
+  }
+  resolve(true);
+})`;
+const OPEN_POPUP =
+  'Boolean(document.querySelector(\'[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"], [data-app-modal][data-open]\'))';
+
 // Meeting fixtures play this many times faster than real time.
 const MEETING_FIXTURE_SPEED = 8;
 
@@ -479,6 +501,7 @@ const commands = {
         : await prepareUserData("voice-verify");
       ownsScratch = true;
       if (stopping) return;
+      if (args.includes("--seed")) (await import("./sweep.mjs")).seedUserData(userData);
       const fakeMicrophonePath = join(userData, "capture.wav");
       const meetingMicPath = join(userData, "meeting-mic.wav");
       const meetingSystemPath = join(userData, "meeting-system.wav");
@@ -1074,6 +1097,94 @@ const commands = {
     out({ video: output, frames: frames.length, seconds: +(stoppedAt - frames[0].at).toFixed(1) });
   },
 
+  async sweep() {
+    const dir = args.find((arg) => !arg.startsWith("--"));
+    const option = (name) => args.find((arg) => arg.startsWith(`--${name}=`))?.split("=")[1];
+    const theme = option("theme") ?? "both";
+    if (!dir || !["dark", "light", "both"].includes(theme))
+      fail("usage: sweep <dir> [--theme=dark|light|both] [--only=name,…]");
+    const only = option("only")?.split(",");
+    // Loaded here, not at the top: sweep data comes from the bench, and doctor must start cold.
+    const { SHOTS, SWEEP_SETTINGS, SWEEP_WINDOW } = await import("./sweep.mjs");
+    const shots = SHOTS.filter(({ name }) => !only || only.includes(name));
+    const state = requireInstance();
+    await evaluateInMain(
+      state.inspectPort,
+      `(() => {
+        const { app, BrowserWindow } = process.mainModule.require("electron");
+        const hub = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("hub.html"));
+        if (!hub) throw new Error("no Voice window; run reopen");
+        hub.setContentSize(${SWEEP_WINDOW.width}, ${SWEEP_WINDOW.height});
+        // Keeps painting and timers running when another window covers the hub.
+        hub.webContents.setBackgroundThrottling(false);
+        app.focus({ steal: true });
+        hub.show();
+        hub.focus();
+      })()`,
+    );
+    const hub = await connect("hub");
+    const settle = () => hub.evaluate(SETTLE);
+    const run = async ([step, ...rest]) => {
+      if (step === "click") {
+        const result = await waitOn(hub, clickExpression(rest[0]), 5000).catch(() =>
+          fail(`no enabled ${show(rest[0])} to click`),
+        );
+        if (result.ambiguous) fail(`${show(rest[0])} matches ${show(result.ambiguous)}`);
+      } else if (step === "key") {
+        for (const event of keyEvents(rest[0], rest.slice(1)))
+          await hub.call("Input.dispatchKeyEvent", event);
+      } else if (step === "type") {
+        await waitOn(
+          hub,
+          `document.querySelector(${show(rest[0].replace(/^css:/, ""))})?.focus() ?? true`,
+          5000,
+        );
+        await hub.call("Input.insertText", { text: rest[1] });
+      } else if (step === "eval") {
+        await hub.evaluate(rest[0]);
+      } else fail(`unknown sweep step ${step}`);
+      await settle();
+    };
+    // Escape closes the topmost popup, dialog, or Settings, as it does for a user.
+    const reset = async () => {
+      for (let i = 0; i < 5 && (await hub.evaluate(OPEN_POPUP)); i += 1)
+        await run(["key", "Escape"]);
+      await run(["click", "Home"]);
+      await hub.evaluate(
+        'document.querySelectorAll("main, main *").forEach((el) => el.scrollTop && (el.scrollTop = 0))',
+      );
+    };
+    const failed = [];
+    let saved = 0;
+    try {
+      await hub.evaluate(`window.voice.updateSettings(${show(SWEEP_SETTINGS)})`);
+      for (const mode of theme === "both" ? ["dark", "light"] : [theme]) {
+        await hub.evaluate(`window.voice.updateSettings({ theme: ${show(mode)} })`);
+        await waitOn(hub, `matchMedia("(prefers-color-scheme: ${mode})").matches`, 5000);
+        mkdirSync(join(dir, mode), { recursive: true });
+        for (const shot of shots) {
+          try {
+            await reset();
+            for (const step of shot.steps) await run(step);
+            const page = shot.page === "pill" ? await connect("pill") : hub;
+            const { data } = await page.call("Page.captureScreenshot", { format: "png" });
+            if (page !== hub) page.close();
+            writeFileSync(join(dir, mode, `${shot.name}.png`), Buffer.from(data, "base64"));
+            saved += 1;
+            for (const step of shot.after ?? []) await run(step);
+          } catch (error) {
+            failed.push({ theme: mode, shot: shot.name, error: error.message });
+          }
+        }
+      }
+    } finally {
+      await hub.evaluate('window.voice.updateSettings({ theme: "system" })').catch(() => {});
+      hub.close();
+    }
+    out({ dir, saved, failed });
+    if (failed.length > 0) process.exitCode = 1;
+  },
+
   async shot() {
     const [name, which = "hub"] = args;
     if (!name) fail("usage: shot <name> [hub|pill|notepad]");
@@ -1494,8 +1605,10 @@ const commands = {
   doctor                         read-only health report
   scenario <short-dictation|cleanup-failure|dictionary-word|snippet-expansion>
                                  launch, assert synthetic dictation, and tear down an owned instance
-  launch [--keep-user-data]      start this worktree's disposable instance (foreground; run in background);
-                                 the flag reuses the userData a stop --keep-user-data left
+  launch [--keep-user-data] [--seed]
+                                 start this worktree's disposable instance (foreground; run in background);
+                                 --keep-user-data reuses the userData a stop --keep-user-data left,
+                                 --seed writes synthetic history and insights first
   stop [--keep-user-data]        tear down this worktree's instance; evidence survives,
                                  and with the flag so does the scratch userData
   snapshot                       full app snapshot JSON
@@ -1514,6 +1627,8 @@ const commands = {
   wait <page> <expr> [ms]        poll a page expression until truthy
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
+  sweep <dir> [--theme=dark|light|both] [--only=name,…]
+                                 shoot every state in sweep.mjs into <dir>/<theme>/<name>.png
   note <name> <text...>          append text evidence
   clipboard save|restore         keep every type on the clipboard in a private file, then put it back
   dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle] [--app=<bundleId>[@host]]

@@ -1,26 +1,29 @@
 import * as stylex from "@stylexjs/stylex";
 
-import { color, font, radius } from "./tokens.stylex.ts";
+import { color, font, leading, radius, text } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
+  // Adapted kbd (MIT, see THIRD_PARTY_NOTICES.md).
   keycap: {
-    display: "inline-block",
-    minWidth: 22,
-    paddingInline: 6,
-    borderRadius: radius.small,
-    backgroundColor: `color-mix(in srgb, ${color.foreground} 8%, transparent)`,
-    color: color.foreground,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 20,
+    height: 20,
+    paddingInline: 4,
+    borderRadius: radius.xs,
+    backgroundColor: `color-mix(in srgb, ${color.foreground} 7%, transparent)`,
+    color: color.mutedForeground,
     fontFamily: font.sans,
-    fontSize: 12,
+    fontSize: text.xs,
     fontWeight: 500,
     fontVariantNumeric: "tabular-nums",
-    lineHeight: "18px",
-    textAlign: "center",
+    lineHeight: leading.xs,
     whiteSpace: "nowrap",
-    verticalAlign: "0.1em",
+    verticalAlign: "middle",
   },
   keys: { display: "flex", flexShrink: 0, gap: 4, fontFamily: "inherit" },
-  none: { flexShrink: 0, color: color.mutedForeground, fontSize: 12 },
+  none: { flexShrink: 0, color: color.mutedForeground, fontSize: text.xs },
 });
 
 export function Keycap({ children }: { children: string }) {
