@@ -104,6 +104,17 @@ describe("History", () => {
     expect(rows.find((text) => text.includes("Anna"))).not.toContain("Not inserted");
   });
 
+  test("a transcript that was not inserted keeps one labelled Copy in view", async () => {
+    await render(<History history={history} today={today} />);
+    const copies = [...row("dentist")!.querySelectorAll("button")].filter((b) =>
+      b.getAttribute("aria-label")?.startsWith("Copy dictation"),
+    );
+    expect(copies.map((b) => b.textContent)).toEqual(["Copy"]);
+    await click(copies[0]!);
+    expect(api.copyHistoryEntry).toHaveBeenCalledWith("missed", "text");
+    expect(copies[0]!.textContent).toBe("Copied");
+  });
+
   test("deletes one transcript", async () => {
     await render(<History history={history} today={today} />);
     await click(button(/^Delete dictation .*dentist/));
