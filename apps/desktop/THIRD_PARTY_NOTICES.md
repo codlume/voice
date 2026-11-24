@@ -8,13 +8,13 @@ Source: https://github.com/pingdotgg/t3code at commit `e9b227b0212d5e3e61d8da025
 
 What Voice adapts:
 
-- Design tokens from `apps/web/src/index.css`: the light and dark colour palettes, the indigo primary, glass and backdrop fills, shadows, radii, the type scale and the font stacks. They live in `src/renderer/tokens.stylex.ts`.
-- Component styling from `apps/web/src/components/ui/`, ported from Tailwind to StyleX:
+- Design tokens from [`apps/web/src/index.css`](https://github.com/pingdotgg/t3code/blob/e9b227b0212d5e3e61d8da02567e23ecb69284ec/apps/web/src/index.css): the light and dark colour palettes, the indigo primary, glass and backdrop fills, shadows, radii, the type scale and the font stacks. They live in [`src/renderer/tokens.stylex.ts`](src/renderer/tokens.stylex.ts).
+- Component styling from [`apps/web/src/components/ui/`](https://github.com/pingdotgg/t3code/tree/e9b227b0212d5e3e61d8da02567e23ecb69284ec/apps/web/src/components/ui), ported from Tailwind to StyleX:
   - `button`, `switch`, `badge`, `kbd`, `select`, `menu`, `popover`, `tooltip`, `dialog` and its shared dialog styles;
   - `input`, `toggle-group` and `toggle`, `skeleton`, `progress`, `empty` and `scroll-area`.
   - In Voice they are `Button`, `Switch`, `Badge`, `Keycap`, `Select`, `Menu`, `Popover`, `tooltip.ts`, `ConfirmDialog`, `surfaces.ts`, `Input`, `ToggleGroup`, `Skeleton`, `EmptyState` and `ScrollArea`.
-- The settings page layout (section labels, rows and row text) from `apps/web/src/components/settings/`. It lives in `src/renderer/settingsParts.tsx`.
-- The scrollbar, focus ring and drag-region rules in `src/renderer/style.css`.
+- The settings page layout (section labels, rows and row text) from [`apps/web/src/components/settings/`](https://github.com/pingdotgg/t3code/tree/e9b227b0212d5e3e61d8da02567e23ecb69284ec/apps/web/src/components/settings). It lives in [`src/renderer/settingsParts.tsx`](src/renderer/settingsParts.tsx).
+- The scrollbar, focus ring and drag-region rules in [`src/renderer/style.css`](src/renderer/style.css).
 
 ```text
 MIT License
