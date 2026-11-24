@@ -286,8 +286,8 @@ private func rightOptionUp(pointerPresses: UInt32) -> KeyEvent {
     #expect(hotkey.handle(escapeUp, activity: .idle) == .none)
 }
 
-// Transform shortcuts. Keycode 18 is the "1" position; 123 is Left Arrow, which sets the fn and
-// numeric-pad bits on its own.
+// Keycode 18 is the "1" position; 123 is Left Arrow, which sets the fn and numeric-pad bits on
+// its own.
 private let polish = TransformShortcut(id: "polish", keycode: 18, modifiers: [.option])
 private let optionShiftOne = TransformShortcut(id: "shout", keycode: 18, modifiers: [.option, .shift])
 private let optionLeft = TransformShortcut(id: "left", keycode: 123, modifiers: [.option])
@@ -404,7 +404,7 @@ private func release(_ keycode: Int64, flags: UInt64) -> KeyEvent {
     #expect(hotkey.handle(release(18, flags: leftOptionBits), activity: .idle) == .none)
 }
 
-// The meeting shortcut. Keycode 46 is the "M" position.
+// Keycode 46 is the "M" position.
 private let optionM = KeyCombo(keycode: 46, modifiers: [.option])
 private let meetingFires = HotkeyDecision(emit: .meeting, consume: true)
 

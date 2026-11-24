@@ -75,7 +75,6 @@ public struct TransformShortcut: Equatable, Sendable {
     }
 }
 
-/// A key with modifiers, as the meeting shortcut names it.
 public struct KeyCombo: Equatable, Sendable {
     public let keycode: Int64
     public let modifiers: [Modifier]

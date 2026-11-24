@@ -37,7 +37,6 @@ public final class PcmWriter {
     private let handle: FileHandle
     public private(set) var frames: Int
 
-    /// Opens for appending, creating the file owner-only.
     public init(url: URL) throws {
         if !FileManager.default.fileExists(atPath: url.path) {
             guard FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {

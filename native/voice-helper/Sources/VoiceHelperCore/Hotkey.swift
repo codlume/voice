@@ -122,7 +122,6 @@ public struct Hotkeys: Sendable {
         return hold.reconcile(flags: flags)
     }
 
-    /// At most one action per event.
     public mutating func handle(_ event: KeyEvent, activity: HelperActivity) -> HotkeyDecision {
         if event.kind == .keyDown, event.keycode == escapeKeycode {
             guard activity != .idle else {
