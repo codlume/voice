@@ -20,7 +20,10 @@ import { placeHelp, roomAbove } from "./helpPlacement.ts";
 import type { AppPage } from "./HubShell.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcuts, withShortcut } from "./shortcuts.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { Button } from "./Button.tsx";
+import { transitionHidden } from "./ConfirmDialog.tsx";
+import { surfaces } from "./surfaces.ts";
+import { color, elevation, leading, radius, space, text } from "./tokens.stylex.ts";
 
 export type HelpState =
   | { kind: "closed" }
@@ -42,20 +45,20 @@ const popupId = "view-help";
 const buttonId = (page: AppPage) => `view-help-${page}`;
 
 const styles = stylex.create({
-  row: { display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
+  row: { display: "flex", alignItems: "center", gap: space.xs, minWidth: 0 },
   button: {
     display: "grid",
     placeItems: "center",
     flexShrink: 0,
     width: 24,
     height: 24,
-    marginTop: 6,
+    marginTop: space.xs,
     padding: 0,
     borderWidth: 0,
-    borderRadius: radius.round,
+    borderRadius: radius.medium,
     backgroundColor: { default: "transparent", ":hover": color.accent },
     color: { default: color.mutedForeground, ":hover": color.foreground },
-    cursor: "default",
+    cursor: "pointer",
   },
   buttonOpen: { backgroundColor: color.accent, color: color.foreground },
   positioner: { zIndex: 10 },
@@ -67,36 +70,24 @@ const styles = stylex.create({
     width: "18rem",
     maxHeight: "calc(100vh - 16px)",
     overflowY: "auto",
-    padding: space.md,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    boxShadow: "0 8px 24px rgb(0 0 0 / 14%)",
-    fontFamily: font.sans,
-    fontSize: 13,
-    lineHeight: 1.45,
-    WebkitFontSmoothing: "antialiased",
-    outline: "none",
+    padding: space.base,
   },
   head: { display: "flex", alignItems: "flex-start", gap: space.sm },
-  heading: { flexGrow: 1, margin: 0, fontSize: 13, fontWeight: 600 },
+  heading: { flexGrow: 1, margin: 0, fontSize: text.sm, fontWeight: 600, lineHeight: leading.sm },
   close: {
     display: "grid",
     placeItems: "center",
     flexShrink: 0,
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     marginTop: -2,
     marginRight: -4,
     padding: 0,
     borderWidth: 0,
     borderRadius: radius.small,
     backgroundColor: { default: "transparent", ":hover": color.accent },
-    color: color.mutedForeground,
-    cursor: "default",
+    color: { default: color.mutedForeground, ":hover": color.foreground },
+    cursor: "pointer",
   },
   muted: { margin: 0, color: color.mutedForeground },
   srOnly: {
@@ -113,43 +104,31 @@ const styles = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: space.sm,
-    paddingBlock: 5,
+    paddingBlock: space.xs,
     borderTopWidth: 1,
     borderTopStyle: "solid",
     borderTopColor: color.border,
   },
   itemTitle: { flexGrow: 1, fontWeight: 500 },
+  // Button has no small size, so the popover's 24px buttons share its tokens instead.
   small: {
-    flexShrink: 0,
-    paddingBlock: 2,
-    paddingInline: 8,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.small,
-    backgroundColor: { default: color.card, ":hover": color.accent },
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 12,
-    cursor: "default",
-  },
-  footer: { display: "flex", alignItems: "center", gap: space.sm, marginTop: 2 },
-  count: { flexGrow: 1, color: color.mutedForeground, fontSize: 12 },
-  nav: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 4,
-    paddingBlock: 3,
-    paddingInline: 10,
+    justifyContent: "center",
+    gap: space.xxs,
+    flexShrink: 0,
+    height: 24,
+    paddingBlock: 0,
+    paddingInline: space.sm,
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.small,
-    backgroundColor: { default: color.card, ":hover": color.accent },
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 12,
-    cursor: "default",
+    borderRadius: radius.medium,
+    fontFamily: "inherit",
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
+    whiteSpace: "nowrap",
+    cursor: "pointer",
   },
   primary: {
     borderColor: color.primary,
@@ -158,16 +137,13 @@ const styles = stylex.create({
       ":hover": `color-mix(in srgb, ${color.primary} 90%, transparent)`,
     },
     color: color.primaryForeground,
+    boxShadow: {
+      default: `${elevation.highlight}, ${elevation.primary}`,
+      ":active": elevation.pressed,
+    },
   },
-  link: {
-    padding: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: { default: color.mutedForeground, ":hover": color.foreground },
-    font: "inherit",
-    fontSize: 12,
-    cursor: "default",
-  },
+  footer: { display: "flex", alignItems: "center", gap: space.sm, marginTop: 2 },
+  count: { flexGrow: 1, color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
 });
 
 const scrolls = (element: Element) => {
@@ -404,7 +380,14 @@ export function HelpPopover({
               else return;
               event.preventDefault();
             }}
-            {...stylex.props(styles.popup)}
+            className={({ transitionStatus }) =>
+              stylex.props(
+                surfaces.popup,
+                surfaces.popupMotion,
+                styles.popup,
+                transitionHidden(transitionStatus) && surfaces.popupHidden,
+              ).className
+            }
           >
             <p role="status" {...stylex.props(styles.srOnly)}>
               {step &&
@@ -450,7 +433,7 @@ function Head({ children }: { children: ReactNode }) {
         {children}
       </h2>
       <Popover.Close aria-label="Close help" {...stylex.props(styles.close)}>
-        <XIcon size={14} aria-hidden="true" />
+        <XIcon size={16} aria-hidden="true" />
       </Popover.Close>
     </div>
   );
@@ -485,7 +468,7 @@ function List({
               // VoiceOver reads the button help opens on, not the dialog's description.
               aria-describedby={index === focused ? `${popupId}-text` : undefined}
               onClick={() => onShow(index)}
-              {...stylex.props(styles.small)}
+              {...stylex.props(styles.small, surfaces.control)}
             >
               Show me
             </button>
@@ -522,35 +505,35 @@ function Step({
         {item.body}
       </p>
       <div {...stylex.props(styles.footer)}>
-        <button type="button" onClick={onList} {...stylex.props(styles.link)}>
+        <Button variant="text" onClick={onList}>
           All tips
-        </button>
+        </Button>
         <span {...stylex.props(styles.count)}>
           {index + 1} of {help.items.length}
         </span>
         {onTry && (
-          <button type="button" onClick={onTry} {...stylex.props(styles.link)}>
+          <Button variant="text" onClick={onTry}>
             Try it
-          </button>
+          </Button>
         )}
         {index > 0 && (
           <button
             type="button"
             aria-label="Back"
             onClick={() => onGo(index - 1)}
-            {...stylex.props(styles.nav)}
+            {...stylex.props(styles.small, surfaces.control)}
           >
-            <ArrowLeftIcon size={13} aria-hidden="true" />
+            <ArrowLeftIcon size={14} aria-hidden="true" />
           </button>
         )}
         <button
           ref={focusRef}
           type="button"
           onClick={last ? onDone : () => onGo(index + 1)}
-          {...stylex.props(styles.nav, styles.primary)}
+          {...stylex.props(styles.small, styles.primary)}
         >
           {last ? "Done" : "Next"}
-          {!last && <ArrowRightIcon size={13} aria-hidden="true" />}
+          {!last && <ArrowRightIcon size={14} aria-hidden="true" />}
         </button>
       </div>
     </>

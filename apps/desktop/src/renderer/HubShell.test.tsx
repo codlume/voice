@@ -291,9 +291,9 @@ describe("the sidebar", () => {
     expect(expanded()).toBe("true");
   });
 
-  test("still collapses for a click on its own empty space", async () => {
+  test("stays as it was for a click on its own empty space", async () => {
     await render(null);
     await act(async () => document.querySelector("aside")?.click());
-    expect(expanded()).toBe("false");
+    expect(expanded()).toBe("true");
   });
 });

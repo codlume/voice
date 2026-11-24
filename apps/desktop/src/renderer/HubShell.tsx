@@ -1,5 +1,4 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import {
   BookAIcon,
@@ -8,8 +7,10 @@ import {
   HouseIcon,
   KeyboardIcon,
   MonitorIcon,
+  PanelLeftCloseIcon,
   PanelLeftIcon,
   PenLineIcon,
+  SettingsIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
   TextQuoteIcon,
@@ -42,6 +43,7 @@ import { Dictionary } from "./Dictionary.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
+import { Keycap } from "./Keycap.tsx";
 import { helpFor } from "./help.ts";
 import { HelpContext, helpClosed, HelpPopover, type HelpState } from "./HelpPopover.tsx";
 import { Meetings } from "./Meetings.tsx";
@@ -59,6 +61,7 @@ import {
   type Shortcut,
 } from "./shortcuts.ts";
 import { ShortcutsSettings } from "./ShortcutsSettings.tsx";
+import { Skeleton } from "./Skeleton.tsx";
 import { Snippets } from "./Snippets.tsx";
 import { Style } from "./Style.tsx";
 import { SystemSettings } from "./SystemSettings.tsx";
@@ -68,9 +71,7 @@ import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { RestartNotice } from "./RestartNotice.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { hubApi } from "./voice.ts";
-import { surfaces } from "./surfaces.ts";
-import { color, font, radius, space, text } from "./tokens.stylex.ts";
-import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
+import { color, elevation, font, leading, motion, radius, space, text } from "./tokens.stylex.ts";
 
 const appPageGroups = [
   [
@@ -188,21 +189,21 @@ const settingsPageViews: Record<SettingsPage, (view: PageView) => ReactNode> = {
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
 const sidebarId = "hub-sidebar";
 
-const sidebarPadding = 12;
-const sidebarWidth = 196;
-const navItemSize = 36;
-const navIconSize = 18;
-const navGap = 2;
+// The sidebar, rows and Settings frame follow an adapted app shell (MIT, see THIRD_PARTY_NOTICES.md).
+const sidebarWidth = 256;
+const sidebarInset = 8;
+const navItemSize = 32;
+const navIconSize = 16;
+const navGap = 4;
 const navDividerHeight = 1;
-const railWidth = navItemSize + 2 * sidebarPadding;
-const settingsMargin = 16;
+const titlebarControlSize = 28;
 
-const brandIconVisibleSize = 24;
+const brandIconVisibleSize = 16;
 const macIconGridMargin = 100 / 1024;
 const brandIconSize = brandIconVisibleSize / (1 - 2 * macIconGridMargin);
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-const easing = "cubic-bezier(0.2, 0, 0, 1)";
+const dark = "@media (prefers-color-scheme: dark)";
+const wide = "@media (min-width: 1024px)";
 
 const styles = stylex.create({
   shell: {
@@ -213,16 +214,15 @@ const styles = stylex.create({
     backgroundColor: color.sidebar,
     color: color.foreground,
     fontFamily: font.sans,
-    fontSize: 14,
-    lineHeight: 1.45,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     WebkitFontSmoothing: "antialiased",
   },
   titlebar: {
     gridColumn: "1 / -1",
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingRight: 12,
+    paddingRight: space.md,
     WebkitAppRegion: "drag",
   },
   pageAnimation: (ms: number) => ({ "--page-animation": `${ms}ms` }),
@@ -230,35 +230,45 @@ const styles = stylex.create({
     height: TITLEBAR_HEIGHT,
     paddingLeft: trafficLightsInset(zoomLevel),
   }),
-  sidebar: {
-    gridRow: "2 / -1",
-    width: sidebarWidth,
-    overflow: "hidden",
-    whiteSpace: "nowrap",
-    paddingBlock: space.lg,
-    paddingInline: sidebarPadding,
-    display: "flex",
-    flexDirection: "column",
-    transitionProperty: "width",
-    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
-    transitionTimingFunction: easing,
-  },
-  sidebarCollapsed: { width: railWidth },
   brand: {
     display: "flex",
     alignItems: "center",
     gap: space.sm,
     margin: 0,
-    paddingInline: (navItemSize - brandIconVisibleSize) / 2,
-    paddingBottom: space.lg,
-    fontSize: text.base,
-    fontWeight: 600,
+    marginLeft: space.md,
+    fontWeight: 500,
+    letterSpacing: "-0.01em",
+    transitionProperty: "opacity, visibility",
+    transitionDuration: { default: "var(--page-animation)", [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.drawer,
   },
+  brandHidden: { opacity: 0, visibility: "hidden" },
   brandIcon: {
     flexShrink: 0,
     width: brandIconSize,
     height: brandIconSize,
     margin: -(brandIconSize - brandIconVisibleSize) / 2,
+  },
+  toggleSpacer: { flexShrink: 0, width: titlebarControlSize },
+  accountSlot: { marginLeft: "auto" },
+  // Collapsing slides the sidebar off the canvas; its content keeps its width so nothing reflows.
+  sidebar: {
+    gridRow: "2 / -1",
+    width: sidebarWidth,
+    overflow: "hidden",
+    transitionProperty: "width",
+    transitionDuration: { default: "var(--page-animation)", [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.drawer,
+  },
+  sidebarCollapsed: { width: 0 },
+  sidebarContent: {
+    display: "flex",
+    flexDirection: "column",
+    width: sidebarWidth,
+    height: "100%",
+    padding: sidebarInset,
+    paddingTop: 0,
+    whiteSpace: "nowrap",
   },
   // Without isolation the highlight shows only while the nav's entrance animation runs, then
   // drops behind the sidebar background.
@@ -276,12 +286,12 @@ const styles = stylex.create({
       insetInline: 0,
       zIndex: -1,
       height: navItemSize,
-      borderRadius: radius.small,
+      borderRadius: radius.medium,
       backgroundColor: color.sidebarRowSelected,
       transform: `translateY(calc(var(--nav-row) * ${navItemSize + navGap}px + var(--nav-dividers) * (${navGap + navDividerHeight}px + 2 * ${space.sm})))`,
       transitionProperty: "transform",
-      transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
-      transitionTimingFunction: easing,
+      transitionDuration: { default: "var(--page-animation)", [motion.reduced]: "0s" },
+      transitionTimingFunction: motion.drawer,
     },
   },
   navHighlightAt: (row: number, dividers: number) => ({
@@ -293,190 +303,167 @@ const styles = stylex.create({
     height: navDividerHeight,
     borderWidth: 0,
     marginBlock: space.sm,
-    marginInline: (navItemSize - navIconSize) / 2,
+    marginInline: 10,
     backgroundColor: color.border,
   },
   navItem: {
+    "--nav-icon": {
+      default: `color-mix(in srgb, ${color.mutedForeground} 85%, ${color.sidebar})`,
+      ":hover": color.foreground,
+    },
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    overflow: "hidden",
+    gap: space.sm,
+    flexShrink: 0,
+    width: "100%",
     height: navItemSize,
-    padding: 0,
-    paddingInline: (navItemSize - navIconSize) / 2,
+    paddingBlock: 6,
+    paddingInline: 10,
     borderWidth: 0,
-    borderRadius: radius.small,
+    borderRadius: radius.medium,
     backgroundColor: { default: "transparent", ":hover": color.sidebarRowHover },
-    color: color.mutedForeground,
-    font: "inherit",
+    color: {
+      default: `color-mix(in srgb, ${color.mutedForeground} 80%, transparent)`,
+      ":hover": color.foreground,
+    },
+    fontFamily: "inherit",
+    fontSize: text.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
     textAlign: "left",
     cursor: "pointer",
   },
   navItemCurrent: {
+    "--nav-icon": color.foreground,
     backgroundColor: { default: "transparent", ":hover": "transparent" },
     color: color.foreground,
-    fontWeight: 500,
   },
-  icon: { flexShrink: 0 },
-  label: {
-    transitionProperty: "opacity",
-    transitionDuration: { default: "calc(var(--page-animation) * 0.75)", [reducedMotion]: "0s" },
-    transitionTimingFunction: easing,
-  },
-  labelHidden: { opacity: 0 },
-  badge: { display: "flex", flexShrink: 0 },
-  labelBesideHint: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
-  shortcutHint: {
-    flexShrink: 0,
-    marginLeft: "auto",
-    paddingInline: 6,
-    borderRadius: radius.round,
-    backgroundColor: color.segmentTrack,
-    color: color.mutedForeground,
-    fontFamily: "inherit",
-    fontSize: 11,
-    fontWeight: 400,
-    lineHeight: "18px",
-  },
+  icon: { flexShrink: 0, color: "var(--nav-icon)" },
+  label: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
+  trailing: { display: "flex", flexShrink: 0, marginLeft: "auto" },
   footer: {
     display: "flex",
-    alignItems: "center",
-    gap: space.sm,
-    width: sidebarWidth - 2 * sidebarPadding,
+    flexDirection: "column",
+    gap: navGap,
     marginTop: "auto",
-    paddingTop: space.lg,
-    whiteSpace: "normal",
-  },
-  footerButton: {
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    width: 32,
-    height: 32,
-    paddingInline: 0,
-    borderRadius: radius.round,
-  },
-  footerUpdates: {
-    marginLeft: "auto",
-    transitionProperty: "opacity, visibility",
-    transitionDuration: { default: "calc(var(--page-animation) * 0.75)", [reducedMotion]: "0s" },
-    transitionTimingFunction: easing,
-  },
-  footerHidden: { opacity: 0, visibility: "hidden" },
-  tooltipGlide: {
-    width: "var(--positioner-width)",
-    height: "var(--positioner-height)",
-    transitionProperty: "left, right, top, bottom",
-    transitionDuration: { default: "180ms", [reducedMotion]: "0s" },
-    transitionTimingFunction: easing,
-  },
-  tooltipResize: {
-    width: "var(--popup-width)",
-    height: "var(--popup-height)",
-    overflow: "hidden",
-    transitionProperty: "opacity, width, height",
+    paddingTop: space.xxs,
   },
   main: {
     gridColumn: "2",
     gridRow: "2",
     minWidth: 0,
     overflow: "auto",
-    marginRight: 8,
-    marginBottom: 8,
+    marginRight: sidebarInset,
+    marginBottom: sidebarInset,
     paddingBlock: space.xxl,
     paddingInline: space.xxl,
-    backgroundColor: color.background,
+    backgroundColor: { default: color.card, [dark]: color.background },
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: color.border,
+    borderColor: {
+      default: `color-mix(in srgb, ${color.border} 60%, transparent)`,
+      [dark]: color.border,
+    },
     borderRadius: radius.large,
+    boxShadow: { default: elevation.sm, [dark]: "none" },
+    transitionProperty: "margin-left",
+    transitionDuration: { default: "var(--page-animation)", [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.drawer,
   },
+  mainBesideCollapsed: { marginLeft: sidebarInset },
   mainWide: { paddingBlock: 0, paddingRight: 0, containerType: "size" },
   column: { maxWidth: 800, marginInline: "auto" },
   columnWide: { maxWidth: 1120 },
   sidebarSlot: { marginTop: space.lg },
+  skeletonNav: { display: "flex", flexDirection: "column", gap: navGap },
+  skeletonRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.sm,
+    height: navItemSize,
+    paddingInline: 10,
+  },
+  skeletonPage: { display: "flex", flexDirection: "column", gap: space.base },
+  skeletonHeadline: { paddingBottom: space.base },
   settingsViewport: {
     position: "fixed",
     inset: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    paddingInline: settingsMargin,
-    paddingBottom: settingsMargin,
+    paddingInline: { default: 24, [wide]: 40 },
+    paddingBottom: { default: 24, [wide]: 40 },
   },
   // Dynamic because StyleX reads imported constants only from .stylex files, and main shares
   // TITLEBAR_HEIGHT.
   belowTitlebar: (titlebarHeight: number) => ({ paddingTop: titlebarHeight }),
+  // Settings is a full page, so it stays opaque instead of frosted.
   settingsPopup: {
     display: "flex",
     width: "100%",
     height: "100%",
-    maxWidth: 1100,
-    maxHeight: 780,
+    maxWidth: 1280,
+    maxHeight: 960,
     overflow: "hidden",
-    // Settings is a full page, so it stays opaque instead of frosted.
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: color.border,
+    borderRadius: radius.xl,
     backgroundColor: color.background,
-    backdropFilter: "none",
-    fontSize: 14,
-    lineHeight: 1.45,
-    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
+    boxShadow: "0 25px 50px -12px rgb(0 0 0 / 40%)",
+    color: color.foreground,
+    fontFamily: font.sans,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
+    WebkitFontSmoothing: "antialiased",
+    outline: "none",
+    transitionDuration: { default: motion.base, [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.easeOut,
   },
-  settingsPopupHidden: { transform: "scale(0.96)" },
+  settingsPopupHidden: { transform: "scale(0.985)" },
   settingsNav: {
     flexShrink: 0,
-    width: sidebarWidth,
+    width: 240,
     overflowY: "auto",
-    paddingBlock: space.lg,
-    paddingInline: sidebarPadding,
-    backgroundColor: color.sidebar,
+    padding: sidebarInset,
+    backgroundColor: { default: color.sidebar, [dark]: color.card },
     borderRightWidth: 1,
     borderRightStyle: "solid",
     borderRightColor: color.border,
   },
-  settingsTitle: {
-    margin: 0,
-    paddingInline: (navItemSize - navIconSize) / 2,
-    paddingBottom: space.lg,
-    fontSize: text.base,
-    fontWeight: 600,
-  },
   settingsContent: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column" },
-  settingsHeader: { display: "flex", justifyContent: "flex-end", padding: space.md },
+  settingsHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.md,
+    flexShrink: 0,
+    height: 48,
+    paddingLeft: space.lg,
+    paddingRight: space.sm,
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: color.border,
+  },
+  breadcrumb: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.md,
+    flexGrow: 1,
+    minWidth: 0,
+    margin: 0,
+    fontSize: text.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
+  },
+  breadcrumbParent: { color: color.mutedForeground },
   settingsScroller: {
     flex: 1,
     overflow: "auto",
     paddingInline: space.xl,
+    paddingTop: space.xl,
     paddingBottom: space.xxl,
   },
 });
-
-function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
-  return (
-    <Tooltip.Provider delay={0} closeDelay={100}>
-      <Tooltip.Root<string> disabled={!collapsed}>
-        {({ payload }) => (
-          <>
-            {children}
-            <Tooltip.Portal>
-              <Tooltip.Positioner
-                side="right"
-                align="center"
-                sideOffset={10}
-                className={tooltipPositionerClass(styles.tooltipGlide)}
-              >
-                <Tooltip.Popup className={tooltipPopupClass(styles.tooltipResize)}>
-                  <Tooltip.Viewport className="sidebar-tooltip-viewport">
-                    {payload}
-                  </Tooltip.Viewport>
-                </Tooltip.Popup>
-              </Tooltip.Positioner>
-            </Tooltip.Portal>
-          </>
-        )}
-      </Tooltip.Root>
-    </Tooltip.Provider>
-  );
-}
 
 function NavItem({
   label,
@@ -484,7 +471,6 @@ function NavItem({
   badge,
   shortcut,
   current,
-  collapsed,
   showShortcut,
   onClick,
 }: {
@@ -493,15 +479,12 @@ function NavItem({
   badge: string | undefined;
   shortcut: Shortcut | undefined;
   current: boolean;
-  collapsed: boolean;
   showShortcut: boolean;
   onClick: () => void;
 }) {
   const showHint = showShortcut && shortcut !== undefined;
-  const showBadge = badge !== undefined && !showHint;
   return (
-    <Tooltip.Trigger
-      payload={shortcut === undefined ? label : withShortcut(label, shortcut)}
+    <button
       type="button"
       aria-label={badge === undefined ? undefined : `${label}, ${badge}`}
       aria-current={current ? "page" : undefined}
@@ -509,39 +492,30 @@ function NavItem({
       {...stylex.props(styles.navItem, current && styles.navItemCurrent)}
     >
       <Icon size={navIconSize} {...stylex.props(styles.icon)} />
-      <span
-        {...stylex.props(
-          styles.label,
-          collapsed && styles.labelHidden,
-          showHint && styles.labelBesideHint,
-        )}
-      >
-        {label}
-      </span>
-      {showBadge && (
-        <span {...stylex.props(styles.label, styles.badge, collapsed && styles.labelHidden)}>
-          <Badge>{badge}</Badge>
+      <span {...stylex.props(styles.label)}>{label}</span>
+      {showHint ? (
+        <span aria-hidden="true" {...stylex.props(styles.trailing)}>
+          <Keycap>{shortcut.hint}</Keycap>
         </span>
+      ) : (
+        badge !== undefined && (
+          <span {...stylex.props(styles.trailing)}>
+            <Badge>{badge}</Badge>
+          </span>
+        )
       )}
-      {showHint && (
-        <kbd aria-hidden="true" {...stylex.props(styles.shortcutHint)}>
-          {shortcut.hint}
-        </kbd>
-      )}
-    </Tooltip.Trigger>
+    </button>
   );
 }
 
 function NavItems<Id extends string>({
   groups,
   current,
-  collapsed,
   showShortcut,
   onSelect,
 }: {
   groups: readonly (readonly { id: Id; label: string; icon: LucideIcon; badge?: string }[])[];
   current: Id;
-  collapsed: boolean;
   showShortcut: boolean;
   onSelect: (id: Id) => void;
 }) {
@@ -557,7 +531,6 @@ function NavItems<Id extends string>({
           badge={badge}
           shortcut={jumpShortcuts[index++]}
           current={current === id}
-          collapsed={collapsed}
           showShortcut={showShortcut}
           onClick={() => onSelect(id)}
         />
@@ -576,7 +549,75 @@ function navHighlightAt<Id extends string>(
   );
 }
 
+const readCollapsed = () => localStorage.getItem(sidebarCollapsedKey) === "true";
+
+function Brand({ hidden }: { hidden: boolean }) {
+  return (
+    <p {...stylex.props(styles.brand, hidden && styles.brandHidden)}>
+      <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
+      Voice
+    </p>
+  );
+}
+
+function Titlebar({ zoomLevel, children }: { zoomLevel: number; children: ReactNode }) {
+  return (
+    <div data-drag-region {...stylex.props(styles.titlebar, styles.titlebarGeometry(zoomLevel))}>
+      {children}
+    </div>
+  );
+}
+
+/** What the Voice window draws until the first snapshot and history arrive. */
+export function HubShellSkeleton({ collapsed = readCollapsed() }: { collapsed?: boolean }) {
+  return (
+    <div {...stylex.props(styles.shell)}>
+      <Titlebar zoomLevel={0}>
+        <span {...stylex.props(styles.toggleSpacer)} />
+        <Brand hidden={collapsed} />
+      </Titlebar>
+      <div {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}>
+        <div {...stylex.props(styles.sidebarContent)}>
+          <div {...stylex.props(styles.skeletonNav)}>
+            {appPages.map(({ id, label }) => (
+              <span key={id} {...stylex.props(styles.skeletonRow)}>
+                <Skeleton width={`${navIconSize}px`} height={`${navIconSize}px`} />
+                <Skeleton width={`${label.length * 7 + 16}px`} height="12px" />
+              </span>
+            ))}
+          </div>
+          <div {...stylex.props(styles.footer)}>
+            <span {...stylex.props(styles.skeletonRow)}>
+              <Skeleton width={`${navIconSize}px`} height={`${navIconSize}px`} />
+              <Skeleton width="64px" height="12px" />
+            </span>
+          </div>
+        </div>
+      </div>
+      <main
+        aria-busy="true"
+        aria-label="Loading"
+        {...stylex.props(styles.main, collapsed && styles.mainBesideCollapsed)}
+      >
+        <div {...stylex.props(styles.column, styles.skeletonPage)}>
+          <div {...stylex.props(styles.skeletonHeadline)}>
+            <Skeleton width="40%" height="32px" />
+          </div>
+          <Skeleton width="64%" height="14px" />
+          <Skeleton shape="card" height="120px" />
+          <Skeleton shape="card" height="56px" />
+          <Skeleton shape="card" height="56px" />
+          <Skeleton shape="card" height="56px" />
+        </div>
+      </main>
+    </div>
+  );
+}
+
 type SettingsModalState = { open: boolean; section: SettingsPage };
+
+const sectionLabel = (id: SettingsPage) =>
+  settingsPages.find((page) => page.id === id)?.label ?? "";
 
 function jumpBindings<Id extends string>(
   pages: readonly { id: Id }[],
@@ -636,7 +677,6 @@ function SettingsModal({
             finalFocus={false}
             className={({ transitionStatus }) =>
               stylex.props(
-                surfaces.dialog,
                 dialogStyles.surface,
                 styles.settingsPopup,
                 transitionHidden(transitionStatus) && [
@@ -647,27 +687,30 @@ function SettingsModal({
             }
           >
             <div {...stylex.props(styles.settingsNav)}>
-              <Dialog.Title {...stylex.props(styles.settingsTitle)}>Settings</Dialog.Title>
-              <SidebarTooltip collapsed={false}>
-                <nav
-                  aria-label="Settings"
-                  {...stylex.props(styles.nav, navHighlightAt(settingsPageGroups, state.section))}
-                >
-                  <NavItems
-                    groups={settingsPageGroups}
-                    current={state.section}
-                    collapsed={false}
-                    showShortcut={commandHeld}
-                    onSelect={view.openSettingsPage}
-                  />
-                </nav>
-              </SidebarTooltip>
+              <nav
+                aria-label="Settings"
+                {...stylex.props(styles.nav, navHighlightAt(settingsPageGroups, state.section))}
+              >
+                <NavItems
+                  groups={settingsPageGroups}
+                  current={state.section}
+                  showShortcut={commandHeld}
+                  onSelect={view.openSettingsPage}
+                />
+              </nav>
             </div>
             <div {...stylex.props(styles.settingsContent)}>
               <div {...stylex.props(styles.settingsHeader)}>
+                <Dialog.Title render={<h2 />} {...stylex.props(styles.breadcrumb)}>
+                  <span {...stylex.props(styles.breadcrumbParent)}>Settings</span>
+                  <span aria-hidden="true" {...stylex.props(styles.breadcrumbParent)}>
+                    /
+                  </span>
+                  <span>{sectionLabel(state.section)}</span>
+                </Dialog.Title>
                 <Dialog.Close
                   aria-label="Close settings"
-                  title="Close settings"
+                  title="Close settings (Esc)"
                   {...stylex.props(titlebar.button)}
                 >
                   <XIcon size={navIconSize} />
@@ -759,9 +802,7 @@ export function HubShell({
     setShownAccountKind(accountKind);
     if (accountKind === "error") openSettings("account");
   }
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(sidebarCollapsedKey) === "true",
-  );
+  const [collapsed, setCollapsed] = useState(readCollapsed);
 
   function toggleSidebar() {
     const next = !collapsed;
@@ -794,7 +835,6 @@ export function HubShell({
   const commandHeld = useCommandHeld(snapshot.settings);
 
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
-  const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
   const view: PageView = {
     snapshot,
     history,
@@ -807,10 +847,7 @@ export function HubShell({
   const AppPageView = appPageViews[appPage];
   return (
     <div {...stylex.props(styles.shell, styles.pageAnimation(snapshot.settings.pageAnimationMs))}>
-      <div
-        data-drag-region
-        {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}
-      >
+      <Titlebar zoomLevel={snapshot.settings.zoomLevel}>
         <button
           type="button"
           aria-label={toggleLabel}
@@ -820,29 +857,26 @@ export function HubShell({
           onClick={toggleSidebar}
           {...stylex.props(titlebar.button)}
         >
-          <PanelLeftIcon size={navIconSize} />
+          {collapsed ? (
+            <PanelLeftIcon size={navIconSize} />
+          ) : (
+            <PanelLeftCloseIcon size={navIconSize} />
+          )}
         </button>
-        <TitlebarAccount account={snapshot.account} onOpenAccount={() => openSettings("account")} />
-      </div>
-      <SidebarTooltip collapsed={collapsed}>
-        <aside
-          id={sidebarId}
-          onClick={(event) => {
-            // React bubbles clicks from the update dialog and popover, which portal out of the aside.
-            if (
-              !(event.target instanceof Element) ||
-              !event.currentTarget.contains(event.target) ||
-              event.target.closest("button")
-            )
-              return;
-            toggleSidebar();
-          }}
-          {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}
-        >
-          <p {...stylex.props(styles.brand)}>
-            <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
-            <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
-          </p>
+        <Brand hidden={collapsed} />
+        <div {...stylex.props(styles.accountSlot)}>
+          <TitlebarAccount
+            account={snapshot.account}
+            onOpenAccount={() => openSettings("account")}
+          />
+        </div>
+      </Titlebar>
+      <aside
+        id={sidebarId}
+        inert={collapsed}
+        {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}
+      >
+        <div {...stylex.props(styles.sidebarContent)}>
           <nav
             aria-label="Voice"
             {...stylex.props(styles.nav, navHighlightAt(appPageGroups, appPage))}
@@ -850,37 +884,41 @@ export function HubShell({
             <NavItems
               groups={appPageGroups}
               current={appPage}
-              collapsed={collapsed}
               showShortcut={commandHeld && !collapsed && !settings.open}
               onSelect={selectAppPage}
             />
           </nav>
           {!collapsed && <div ref={setSidebarSlot} {...stylex.props(styles.sidebarSlot)} />}
           <div {...stylex.props(styles.footer)}>
-            <Tooltip.Trigger
-              payload={settingsLabel}
+            <SidebarUpdates
+              updates={snapshot.updates}
+              session={snapshot.session}
+              history={history}
+              rowStyle={styles.navItem}
+            />
+            <button
               type="button"
               aria-label="Settings"
-              title={collapsed ? undefined : settingsLabel}
               onClick={() => openSettings("general")}
-              {...stylex.props(styles.navItem, styles.footerButton)}
+              {...stylex.props(styles.navItem)}
             >
-              <SlidersHorizontalIcon size={navIconSize} />
-            </Tooltip.Trigger>
-            <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
-              <SidebarUpdates
-                updates={snapshot.updates}
-                session={snapshot.session}
-                history={history}
-              />
-            </div>
+              <SettingsIcon size={navIconSize} {...stylex.props(styles.icon)} />
+              <span {...stylex.props(styles.label)}>Settings</span>
+              <span aria-hidden="true" {...stylex.props(styles.trailing)}>
+                <Keycap>{shortcuts.openSettings.hint}</Keycap>
+              </span>
+            </button>
           </div>
-        </aside>
-      </SidebarTooltip>
+        </div>
+      </aside>
       <main
         ref={mainRef}
         tabIndex={-1}
-        {...stylex.props(styles.main, widePages.has(appPage) && styles.mainWide)}
+        {...stylex.props(
+          styles.main,
+          collapsed && styles.mainBesideCollapsed,
+          widePages.has(appPage) && styles.mainWide,
+        )}
       >
         <div
           key={appPage}

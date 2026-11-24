@@ -4,42 +4,29 @@ import { ExternalLinkIcon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import type { PendingUpdate } from "../shared/api.ts";
+import { transitionHidden } from "./ConfirmDialog.tsx";
+import { surfaces } from "./surfaces.ts";
 import { releaseCardTitle, type UpdateCard } from "./updateStatus.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, leading, radius, space, text } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
-
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
 const styles = stylex.create({
   positioner: { zIndex: 10 },
   card: {
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: space.xs,
     width: "22rem",
     maxWidth: "var(--available-width)",
     maxHeight: "min(28rem, var(--available-height))",
-    padding: space.md,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    boxShadow: "0 8px 24px rgb(0 0 0 / 12%)",
-    fontFamily: font.sans,
-    fontSize: 12,
-    lineHeight: 1.45,
-    WebkitFontSmoothing: "antialiased",
-    opacity: 1,
-    transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    padding: space.base,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
   },
-  cardHidden: { opacity: 0 },
-  cardTitle: { margin: 0, fontSize: 13, fontWeight: 600 },
+  cardTitle: { margin: 0, fontSize: text.sm, fontWeight: 600, lineHeight: leading.sm },
   errorTitle: { color: color.errorForeground },
   errorMessage: { margin: 0, color: color.mutedForeground, overflowWrap: "anywhere" },
-  notesHeading: { margin: 0, marginTop: 6, fontSize: 12, fontWeight: 600 },
+  notesHeading: { margin: 0, marginTop: space.xs, fontSize: text.xs, fontWeight: 600 },
   notes: {
     flexShrink: 1,
     minHeight: 0,
@@ -48,25 +35,28 @@ const styles = stylex.create({
     color: color.mutedForeground,
     overflowWrap: "anywhere",
   },
-  release: { marginTop: { default: 6, ":first-child": 0 } },
-  releaseVersion: { margin: 0, color: color.foreground, fontSize: 12, fontWeight: 500 },
-  noteList: { margin: 0, paddingLeft: 16 },
+  release: { marginTop: { default: space.xs, ":first-child": 0 } },
+  releaseVersion: { margin: 0, color: color.foreground, fontSize: text.xs, fontWeight: 500 },
+  noteList: { margin: 0, paddingLeft: space.base },
   note: { marginBlock: 2 },
-  more: { margin: 0, marginTop: 6 },
+  more: { margin: 0, marginTop: space.xs },
   releaseLink: {
     display: "inline-flex",
     alignItems: "center",
     alignSelf: "flex-start",
-    gap: 4,
+    gap: space.xxs,
     flexShrink: 0,
-    marginTop: 6,
+    marginTop: space.xs,
     padding: 0,
     borderWidth: 0,
     borderRadius: radius.small,
     backgroundColor: "transparent",
     color: { default: color.mutedForeground, ":hover": color.foreground },
     fontFamily: "inherit",
-    fontSize: 12,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
+    textDecoration: { default: "none", ":hover": "underline" },
+    textUnderlineOffset: 2,
     cursor: "pointer",
   },
 });
@@ -155,9 +145,10 @@ function CardPopup({ children }: { children: ReactNode }) {
           initialFocus={false}
           className={({ transitionStatus }) =>
             stylex.props(
+              surfaces.popup,
+              surfaces.popupMotion,
               styles.card,
-              (transitionStatus === "starting" || transitionStatus === "ending") &&
-                styles.cardHidden,
+              transitionHidden(transitionStatus) && surfaces.popupHidden,
             ).className
           }
         >

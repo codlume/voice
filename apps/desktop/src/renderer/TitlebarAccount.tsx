@@ -6,9 +6,11 @@ import { useRef } from "react";
 import type { AccountState } from "../shared/api.ts";
 import { accountName } from "./accountView.ts";
 import { Avatar } from "./Avatar.tsx";
+import { transitionHidden } from "./ConfirmDialog.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
+import { surfaces } from "./surfaces.ts";
 import { titlebar } from "./titlebar.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, leading, radius, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
@@ -18,10 +20,8 @@ const buttonLabels: Record<Exclude<AccountState["kind"], "unavailable" | "signed
   error: "Account, sign-in failed",
 };
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-
 const styles = stylex.create({
-  open: { backgroundColor: color.sidebarRowHover },
+  open: { backgroundColor: color.accent, color: color.foreground },
   errorDot: {
     position: "absolute",
     top: 3,
@@ -38,62 +38,45 @@ const styles = stylex.create({
   popup: {
     width: "16rem",
     maxWidth: "var(--available-width)",
-    padding: 4,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    boxShadow: "0 8px 24px rgb(0 0 0 / 12%)",
-    fontFamily: font.sans,
-    fontSize: 13,
-    lineHeight: 1.45,
-    WebkitFontSmoothing: "antialiased",
-    outline: "none",
+    padding: space.xxs,
+    // Electron's drag hit-testing ignores z-index, so a popup over the titlebar opts out itself.
     WebkitAppRegion: "no-drag",
-    opacity: 1,
-    transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
   },
-  popupHidden: { opacity: 0 },
-  header: { display: "flex", alignItems: "center", gap: 10, padding: space.sm },
+  header: { display: "flex", alignItems: "center", gap: space.md, padding: space.sm },
   identity: { display: "flex", flexDirection: "column", minWidth: 0 },
   name: { fontWeight: 600 },
   email: {
     alignSelf: "flex-start",
     maxWidth: "calc(100% + 8px)",
     marginInline: -4,
-    paddingInline: 4,
-    borderRadius: radius.small,
+    paddingInline: space.xxs,
+    borderRadius: radius.xs,
     color: color.mutedForeground,
-    fontSize: 12,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
     cursor: "pointer",
     outline: "none",
   },
   truncate: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  separator: { height: 1, marginBlock: 4, backgroundColor: color.border },
-  item: {
-    display: "flex",
-    alignItems: "center",
-    minHeight: 30,
-    paddingBlock: 5,
-    paddingInline: space.sm,
-    borderRadius: radius.small,
-    cursor: "pointer",
-    userSelect: "none",
-    outline: "none",
-  },
-  highlighted: { backgroundColor: color.input },
-  disabled: { color: color.mutedForeground, cursor: "default" },
   error: {
     margin: 0,
-    paddingBlock: 4,
+    paddingBlock: space.xxs,
     paddingInline: space.sm,
     color: color.errorForeground,
-    fontSize: 12,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
   },
 });
+
+const itemClassName = ({ highlighted, disabled }: Menu.Item.State) =>
+  stylex.props(
+    surfaces.item,
+    highlighted && surfaces.itemHighlighted,
+    disabled && surfaces.itemDisabled,
+  ).className;
+
+const emailClassName = ({ highlighted }: Menu.Item.State) =>
+  stylex.props(styles.email, highlighted && surfaces.itemHighlighted).className;
 
 function SignedInMenu({
   account,
@@ -109,11 +92,6 @@ function SignedInMenu({
   const openAccountOnClose = useRef(false);
   const title = accountName(account);
   const label = `Account, ${title}`;
-  const itemClassName = ({ highlighted, disabled }: Menu.Item.State) =>
-    stylex.props(styles.item, highlighted && styles.highlighted, disabled && styles.disabled)
-      .className;
-  const emailClassName = ({ highlighted }: Menu.Item.State) =>
-    stylex.props(styles.email, highlighted && styles.highlighted).className;
   return (
     <Menu.Root
       onOpenChange={(open) => {
@@ -146,9 +124,10 @@ function SignedInMenu({
             finalFocus={!pending}
             className={({ transitionStatus }) =>
               stylex.props(
+                surfaces.popup,
+                surfaces.popupMotion,
                 styles.popup,
-                (transitionStatus === "starting" || transitionStatus === "ending") &&
-                  styles.popupHidden,
+                transitionHidden(transitionStatus) && surfaces.popupHidden,
               ).className
             }
           >
@@ -162,7 +141,7 @@ function SignedInMenu({
                 />
               </div>
             </div>
-            <Menu.Separator {...stylex.props(styles.separator)} />
+            <Menu.Separator {...stylex.props(surfaces.separator)} />
             <Menu.Item
               onClick={() => {
                 openAccountOnClose.current = true;
