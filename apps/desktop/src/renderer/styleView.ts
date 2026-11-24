@@ -32,6 +32,22 @@ const catalogNames = new Map<BundleId, string>(
   BUILT_IN_APPS.map(({ bundleId, name }) => [bundleId, name]),
 );
 
+// Labels that name a build of the app, not the app.
+const BUILD_LABELS = new Set(["app", "client", "desktop", "mac", "macos", "osx"]);
+
+// Nothing on this Mac names the app, so it was usually uninstalled. Never show the raw id.
+function nameFromBundleId(bundleId: BundleId): string {
+  const labels = bundleId.split(".");
+  const label = (labels.length > 1 ? labels.slice(1) : labels).findLast(
+    (l) => /^[a-z]+(?:[-_][a-z]+)*$/.test(l) && !BUILD_LABELS.has(l),
+  );
+  if (label === undefined) return "Unknown app";
+  return label
+    .split(/[-_]/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export function appNames(
   assignments: readonly Assignment[],
   installed: readonly InstalledApp[],
@@ -44,7 +60,7 @@ export function appNames(
     assigned.get(bundleId) ??
     catalogNames.get(bundleId) ??
     installedNames.get(bundleId) ??
-    bundleId;
+    nameFromBundleId(bundleId);
 }
 
 export function bannerApps(
