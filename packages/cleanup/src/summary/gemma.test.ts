@@ -2,7 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import type { GenerateRequest, GenerateResult } from "../transform/engine.ts";
 import {
-  chunkLines,
+  balancedLineChunks,
   cleanTitle,
   createGemmaSummaryProvider,
   estimateTokens,
@@ -48,7 +48,6 @@ const part = (fields: Partial<Record<string, unknown>> = {}) =>
 
 const ok = (text: string, truncated = false): GenerateResult => ({ ok: true, text, truncated });
 
-/** Answers by step kind, the way the engine would, and records every step. */
 function fakeModel(answers: {
   part?: (step: Step, index: number) => GenerateResult;
   pair?: (step: Step) => GenerateResult;
@@ -191,14 +190,12 @@ describe("summarize", () => {
     const partSteps = model.steps.filter((step) => isPart(step));
     expect(partSteps.length).toBeGreaterThan(2);
     expect(partSteps[0]!.user).toContain(`part 1 of ${partSteps.length}`);
-    // Only a single-part meeting asks for its overview in the extraction.
     expect(partSteps[0]!.jsonSchema?.properties).not.toHaveProperty("overview");
     expect(result).toMatchObject({
       ok: true,
       summary: {
         overview: "Launch is on November 17.",
         decisions: ["Launch moves to Tuesday, November 17."],
-        // The later part gives the task to a new owner, which the pair step confirms.
         nextSteps: [{ owner: "you", task: "Take the Brightline volume tier call." }],
         title: "Hotfix Release Plan",
       },
@@ -497,17 +494,17 @@ describe("cleanTitle", () => {
 
 const tokens = (line: string) => line.length;
 
-describe("chunkLines", () => {
+describe("balancedLineChunks", () => {
   test("packs whole lines into the fewest chunks of about equal size", () => {
     const lines = Array.from({ length: 10 }, () => "x".repeat(99));
 
-    expect(chunkLines(lines, tokens, 450).map((chunk) => chunk.length)).toEqual([3, 3, 4]);
+    expect(balancedLineChunks(lines, tokens, 450).map((chunk) => chunk.length)).toEqual([3, 3, 4]);
   });
 
   test("never leaves a few lines over as a chunk of their own", () => {
     const lines = Array.from({ length: 61 }, () => "x".repeat(99));
 
-    const chunks = chunkLines(lines, tokens, 1000);
+    const chunks = balancedLineChunks(lines, tokens, 1000);
 
     expect(chunks).toHaveLength(Math.ceil((61 * 100) / 1000));
     expect(chunks.flat()).toEqual(lines);

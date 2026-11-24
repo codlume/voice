@@ -84,8 +84,8 @@ for (const { name, styling, context, ms, generations } of rows) {
       rejected++;
     }
     chunks++;
-    const { recall, head, tail } = wordSurvival(chunk, output);
-    const scores = [recall, head, tail].map((n) => n.toFixed(2)).join("/");
+    const { multisetRecall, headRecall, tailRecall } = wordSurvival(chunk, output);
+    const scores = [multisetRecall, headRecall, tailRecall].map((n) => n.toFixed(2)).join("/");
     const part = generations.length > 1 ? ` ${i + 1}/${generations.length}` : "";
     console.log(
       `${scores}\t${name}${part}\t${styling}\t${context}\t${ms} ms\t${verdict}\n\t${JSON.stringify(output)}`,

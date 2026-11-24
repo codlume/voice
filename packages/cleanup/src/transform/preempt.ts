@@ -1,14 +1,13 @@
 type Signalled = { signal: AbortSignal };
 
 /**
- * Transforms go first on the one loaded model. A Transform aborts the generate step that is
- * running, such as a meeting summary step, and the step runs again from the start once no
- * Transform is waiting. So a Transform waits only as long as the model takes to stop a step, not
- * for the step to finish. Steps must be safe to repeat.
+ * A Transform aborts the generate step that is running, such as a meeting summary step, and the
+ * step runs again from the start once no Transform is waiting. So a Transform waits only as long
+ * as the model takes to stop a step, not for the step to finish.
  */
 export function transformsFirst<T extends Signalled, TR, G extends Signalled, GR>(
   transform: (request: T) => Promise<TR>,
-  generate: (request: G) => Promise<GR>,
+  repeatableGenerate: (request: G) => Promise<GR>,
 ): { transform: (request: T) => Promise<TR>; generate: (request: G) => Promise<GR> } {
   const steps = new Set<AbortController>();
   let transforms = 0;
@@ -36,7 +35,7 @@ export function transformsFirst<T extends Signalled, TR, G extends Signalled, GR
         const step = new AbortController();
         steps.add(step);
         try {
-          return await generate({
+          return await repeatableGenerate({
             ...request,
             signal: AbortSignal.any([request.signal, step.signal]),
           });

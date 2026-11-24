@@ -258,6 +258,13 @@ describe("assertPlausibleCleanup", () => {
     },
   );
 
+  test.each(["okay", "yes", "thanks"])(
+    "rejects an empty output for the one-word reply %j, which is not filler",
+    (input) => {
+      expect(() => assertPlausibleCleanup(input, "", false)).toThrow("empty");
+    },
+  );
+
   test.each([".", ",", "...", "?!", "—"])(
     "accepts an empty output for bare punctuation %j",
     (input) => {

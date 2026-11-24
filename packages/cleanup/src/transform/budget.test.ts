@@ -3,10 +3,9 @@ import { expect, test } from "vite-plus/test";
 import { budget } from "./budget.ts";
 
 const model = { contextSize: 8192, maxWords: 1000 };
-// The measured fixed prompt, without the text.
-const FIXED = 364;
+const FIXED_PROMPT_TOKENS = 364;
 const plan = (words: number, textTokens: number) =>
-  budget({ words, textTokens, promptTokens: FIXED + textTokens }, model);
+  budget({ words, textTokens, promptTokens: FIXED_PROMPT_TOKENS + textTokens }, model);
 
 test("a fitting text may produce twice its tokens plus the margin", () => {
   expect(plan(150, 180)).toEqual({ ok: true, maxTokens: 2 * 180 + 256 });
@@ -16,7 +15,7 @@ test("1,000 words of Polish fit, and the output cap stays inside the context", (
   const result = plan(1000, 1980);
 
   expect(result).toEqual({ ok: true, maxTokens: 2 * 1980 + 256 });
-  expect(FIXED + 1980 + (result.ok ? result.maxTokens : 0)).toBeLessThanOrEqual(8192);
+  expect(FIXED_PROMPT_TOKENS + 1980 + (result.ok ? result.maxTokens : 0)).toBeLessThanOrEqual(8192);
 });
 
 test("one word over the cap is too long, and the limit is the cap when the tokens would fit", () => {
@@ -24,7 +23,7 @@ test("one word over the cap is too long, and the limit is the cap when the token
 });
 
 test("the token limit refuses a text that leaves no room for its rewrite, exactly at the context", () => {
-  // FIXED + 3 × 2524 + 256 = 8192.
+  // FIXED_PROMPT_TOKENS + 3 × 2524 + 256 = 8192.
   expect(plan(900, 2524)).toEqual({ ok: true, maxTokens: 2 * 2524 + 256 });
   expect(plan(900, 2525).ok).toBe(false);
 });

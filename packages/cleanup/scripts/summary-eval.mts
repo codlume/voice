@@ -136,7 +136,6 @@ function print(
   return result;
 }
 
-// The fixtures' labels as the app's speaker ids: You is "you", Speaker N is "sN".
 const idOf = (label: string) => (label === "You" ? "you" : label.replace(/^Speaker (\d+)$/, "s$1"));
 const labelOf = (id: string) => (id === "you" ? "You" : id.replace(/^s(\d+)$/, "Speaker $1"));
 

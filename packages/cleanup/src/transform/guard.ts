@@ -36,7 +36,7 @@ export function guard(
   if (
     dictation &&
     dictation.instructionKeepsWords &&
-    wordSurvival(input, text).head < MIN_DICTATION_HEAD
+    wordSurvival(input, text).headRecall < MIN_DICTATION_HEAD
   ) {
     return { ok: false, reason: "lostOpening" };
   }
