@@ -49,7 +49,6 @@ import {
   transformLogLine,
 } from "./transforms.mjs";
 import { scenarioNamed, scenarioPrerequisites, scenarioSettings } from "./scenarios.mjs";
-import { seedUserData, SHOTS, SWEEP_SETTINGS, SWEEP_WINDOW } from "./sweep.mjs";
 import {
   claimScratch,
   electronDependency,
@@ -502,7 +501,7 @@ const commands = {
         : await prepareUserData("voice-verify");
       ownsScratch = true;
       if (stopping) return;
-      if (args.includes("--seed")) seedUserData(userData);
+      if (args.includes("--seed")) (await import("./sweep.mjs")).seedUserData(userData);
       const fakeMicrophonePath = join(userData, "capture.wav");
       const meetingMicPath = join(userData, "meeting-mic.wav");
       const meetingSystemPath = join(userData, "meeting-system.wav");
@@ -1105,6 +1104,8 @@ const commands = {
     if (!dir || !["dark", "light", "both"].includes(theme))
       fail("usage: sweep <dir> [--theme=dark|light|both] [--only=name,…]");
     const only = option("only")?.split(",");
+    // Loaded here, not at the top: sweep data comes from the bench, and doctor must start cold.
+    const { SHOTS, SWEEP_SETTINGS, SWEEP_WINDOW } = await import("./sweep.mjs");
     const shots = SHOTS.filter(({ name }) => !only || only.includes(name));
     const state = requireInstance();
     await evaluateInMain(
