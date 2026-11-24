@@ -20,7 +20,7 @@ import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import type { ChecklistRow } from "./checklist.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
-import { SetupChecklist } from "./Home.tsx";
+import { SetupChecklist } from "./SetupChecklist.tsx";
 import { FolderMenu } from "./MeetingList.tsx";
 import { MeetingNotices } from "./MeetingNotices.tsx";
 import {
