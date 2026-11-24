@@ -89,7 +89,6 @@ async function waitForModels(port) {
 
 // ps %cpu is a decaying average over up to a minute, so it would still carry model loading.
 // CPU here is the growth in cumulative CPU time between the first and last sample of a process.
-// Samples the tree now, every everyMs, and once more when the returned function is called.
 export function watchTree(rootPid, everyMs = intervalMs) {
   const seen = new Map();
   const record = () => {

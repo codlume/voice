@@ -75,7 +75,6 @@ test(
   { skip: process.platform !== "darwin" },
   (t) => {
     const { stock, devDir, bin } = fixture(t);
-    // Stops right after the Info.plist edits, which leaves the staged copy to read.
     failingCommand(t, bin, "codesign");
     devElectronPath(stock, devDir);
     const plist = join(devDir, "staging/Voice Dev.app/Contents/Info.plist");

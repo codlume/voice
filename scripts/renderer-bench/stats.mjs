@@ -10,8 +10,7 @@ export const spread = (values) => ({
   max: Math.max(...values),
 });
 
-/** Least-squares growth per step of evenly spaced samples. */
-export function slope(values) {
+export function leastSquaresSlope(values) {
   const meanX = (values.length - 1) / 2;
   const meanY = values.reduce((sum, value) => sum + value, 0) / values.length;
   const rise = values.reduce((sum, value, x) => sum + (x - meanX) * (value - meanY), 0);
@@ -19,13 +18,11 @@ export function slope(values) {
   return rise / run;
 }
 
-/** The methods one of the app's preloads (apps/desktop/src/preload/*.ts) puts on `window.voice`. */
 export function bridgeMethods(preloadSource) {
   const bridge = /^const voice: \w+ = \{\n(.*?)^\};/ms.exec(preloadSource)?.[1] ?? "";
   return Array.from(bridge.matchAll(/^ {2}(\w+): \(/gm), ([, name = ""]) => name);
 }
 
-/** The JS and CSS files a built page loads before it runs: its script, preloads and stylesheets. */
 export function entryAssets(html) {
   const tags = html.match(/<(?:script|link)\b[^>]*>/g) ?? [];
   const files = tags.flatMap((tag) => {
@@ -52,10 +49,6 @@ const range = (side) =>
     ? format(side.median)
     : `${format(side.median)} (${format(side.min)}–${format(side.max)})`;
 
-/**
- * One markdown row per metric: its median, its range over the runs, and the build it came from.
- * A metric is named `scenario | metric`, which fills the first two columns.
- */
 export function table(metrics) {
   const rows = Object.entries(metrics).map(
     ([name, { build, values }]) => `| ${name} | ${range(spread(values))} | ${build} |`,

@@ -51,7 +51,6 @@ try {
       .catch((error) => {
         throw new Error(`${error.message}: ${JSON.stringify(snapshots.items.at(-1)?.models)}`);
       });
-  // Rechecks `condition`, a page expression, after every DOM change until it holds.
   const untilPage = async (condition, label) => {
     const met = await page.evaluate(`new Promise((resolve) => {
       const observer = new MutationObserver(() => check());

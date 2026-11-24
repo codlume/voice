@@ -222,7 +222,6 @@ const longMeeting = {
 // that has heard nothing yet takes a lone knock for a voice.
 const knocks = { prefix: "meeting-knocks", seconds: 60 };
 
-/** A 16 kHz mono 16-bit WAV of `samples`. */
 function wav(samples) {
   const header = Buffer.alloc(44);
   header.write("RIFF", 0);
@@ -243,7 +242,6 @@ function wav(samples) {
   return Buffer.concat([header, Buffer.from(pcm.buffer)]);
 }
 
-// Seeded, so every run generates the same samples.
 function generateKnocks({ prefix, seconds }) {
   const rate = 16000;
   let seed = 7;
@@ -262,7 +260,6 @@ function generateKnocks({ prefix, seconds }) {
     for (let i = 0; i < length * rate && start + i < samples.length; i++)
       samples[start + i] = (samples[start + i] ?? 0) + sound(i / rate);
   };
-  // A low tone that dies in 80 ms, with a click where the foot lands.
   const footstep = (at, level) => {
     const hz = 70 + 80 * (random() + 0.5);
     add(
@@ -274,7 +271,6 @@ function generateKnocks({ prefix, seconds }) {
           0.6 * random() * Math.exp(-t / 0.006)),
     );
   };
-  // Two or three raps, each a band of noise that dies in 25 ms.
   const knock = (at, level, raps) => {
     for (let rap = 0; rap < raps; rap++) {
       let band = 0;
@@ -287,7 +283,6 @@ function generateKnocks({ prefix, seconds }) {
       });
     }
   };
-  // A stretch of noise with soft edges.
   const drag = (at, level) => {
     const length = 0.15 + 0.2 * (random() + 0.5);
     add(at, length, (t) => level * random() * Math.min(1, t / 0.01, (length - t) / 0.05));

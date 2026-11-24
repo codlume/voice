@@ -103,7 +103,6 @@ test("the launcher runs Electron in the smoke environment and tracks it for the 
     process.env = previous;
     rmSync(dir, { recursive: true, force: true });
   });
-  // A stand-in Electron that reports what it was started with, then waits to be stopped.
   const electron = join(dir, "electron");
   writeFileSync(
     electron,
@@ -231,7 +230,6 @@ test(
       socket.write(
         `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
       );
-      // The first request ends the connection unanswered, as when the app exits mid-call.
       socket.once("data", () => socket.destroy());
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(undefined)));
