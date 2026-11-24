@@ -14,6 +14,8 @@ What Voice adapts:
   - `input`, `toggle-group` and `toggle`, `skeleton`, `progress`, `empty` and `scroll-area`.
   - In Voice they are `Button`, `Switch`, `Badge`, `Keycap`, `Select`, `Menu`, `Popover`, `tooltip.ts`, `ConfirmDialog`, `surfaces.ts`, `Input`, `ToggleGroup`, `Skeleton`, `EmptyState` and `ScrollArea`.
 - The settings page layout (section labels, rows and row text) from [`apps/web/src/components/settings/`](https://github.com/pingdotgg/t3code/tree/e9b227b0212d5e3e61d8da02567e23ecb69284ec/apps/web/src/components/settings). It lives in [`src/renderer/settingsParts.tsx`](src/renderer/settingsParts.tsx).
+- The app shell from [`apps/web/src/components/ui/sidebar.tsx`](https://github.com/pingdotgg/t3code/blob/e9b227b0212d5e3e61d8da02567e23ecb69284ec/apps/web/src/components/ui/sidebar.tsx) and [`apps/web/src/components/AppRouteModal.tsx`](https://github.com/pingdotgg/t3code/blob/e9b227b0212d5e3e61d8da02567e23ecb69284ec/apps/web/src/components/AppRouteModal.tsx): the sidebar width, nav rows, inset main panel and the settings modal frame. They live in [`src/renderer/HubShell.tsx`](src/renderer/HubShell.tsx).
+- The topbar height and traffic-light position from [`apps/desktop/src/window/DesktopWindow.ts`](https://github.com/pingdotgg/t3code/blob/e9b227b0212d5e3e61d8da02567e23ecb69284ec/apps/desktop/src/window/DesktopWindow.ts). They live in [`src/shared/titlebar.ts`](src/shared/titlebar.ts).
 - The scrollbar, focus ring and drag-region rules in [`src/renderer/style.css`](src/renderer/style.css).
 
 ```text
