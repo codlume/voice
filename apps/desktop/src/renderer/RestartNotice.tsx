@@ -3,7 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import type { MeetingBanner } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
-import { color, space } from "./tokens.stylex.ts";
+import { color, leading, space, text } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
@@ -13,12 +13,19 @@ const styles = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: space.md,
-    marginRight: 8,
-    marginBottom: 8,
-    paddingBlock: 10,
-    paddingInline: space.md,
+    marginRight: space.sm,
+    marginBottom: space.sm,
+    paddingBlock: space.sm,
+    paddingLeft: space.base,
+    paddingRight: space.sm,
   },
-  text: { margin: 0, flexGrow: 1, fontSize: 13.5, color: color.foreground },
+  text: {
+    margin: 0,
+    flexGrow: 1,
+    color: color.foreground,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
+  },
 });
 
 export function RestartNotice({ notice }: { notice: MeetingBanner | null }) {
@@ -28,7 +35,7 @@ export function RestartNotice({ notice }: { notice: MeetingBanner | null }) {
       <p role="status" {...stylex.props(styles.text)}>
         {notice.text}
       </p>
-      <Button variant="text" onClick={() => void hubApi().dismissMeetingNotice(notice.key)}>
+      <Button variant="secondary" onClick={() => void hubApi().dismissMeetingNotice(notice.key)}>
         Dismiss
       </Button>
     </Card>
