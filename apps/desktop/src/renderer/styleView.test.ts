@@ -236,8 +236,11 @@ describe("appNames", () => {
     ["com.obsproject.obs-studio", "Obs Studio"],
     ["com.microsoft.vscode", "Vscode"],
     ["vscode", "Vscode"],
-    ["com.todesktop.230313mzl4w4u92", "com.todesktop.230313mzl4w4u92"],
-    ["com.sublimetext.4", "com.sublimetext.4"],
+    ["com.todesktop.230313mzl4w4u92", "Todesktop"],
+    ["com.sublimetext.4", "Sublimetext"],
+    ["com.github.electron", "Electron"],
+    ["com.4", "Unknown app"],
+    ["com.app", "Unknown app"],
   ])("names %s, which is not installed, as %s", (id, expected) => {
     expect(appNames([], [])(app(id, "").bundleId)).toBe(expected);
   });
