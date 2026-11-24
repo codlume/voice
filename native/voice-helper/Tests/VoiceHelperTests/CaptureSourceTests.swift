@@ -14,8 +14,8 @@ struct CaptureSourceTests {
         #expect(CaptureSource.resolve(environment: ["VOICE_HELPER_TEST": "1", "VOICE_HELPER_TEST_AUDIO": "/missing.wav"]) == .fixture("/missing.wav"))
     }
 
-    @Test(arguments: [CaptureSource.disabled, .fixture("/nonexistent/voice-test.wav")])
-    @MainActor func unavailableTestAudioNeverProbesMicrophone(source: CaptureSource) async throws {
+    @Test(arguments: zip([CaptureSource.disabled, .fixture("/nonexistent/voice-test.wav")], [CaptureFailure.device, .unknown]))
+    @MainActor func unavailableTestAudioNeverProbesMicrophone(source: CaptureSource, reason: CaptureFailure) async throws {
         let lines = EmittedLines()
         let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
         let devices = AudioInputDevices(output: output)
@@ -38,6 +38,10 @@ struct CaptureSourceTests {
         #expect(!capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil))
         capture.startTest(id: "m1", microphone: nil)
         let events = try await lines.wait(for: "microphone.test.failed")
+        let failed = try #require(events.first { $0["type"] as? String == "microphone.test.failed" })
+        #expect(failed["reason"] as? String == reason.rawValue)
+        #expect(failed["message"] == nil)
+        #expect(events.contains { $0["type"] as? String == "log" && $0["level"] as? String == "error" && ($0["message"] as? String ?? "").contains("microphone test m1 failed") })
         #expect(events.contains { $0["type"] as? String == "capture.failed" })
         #expect(!events.contains { ["capture.started", "microphone.test.started"].contains($0["type"] as? String ?? "") })
         #expect(!capture.isActive)

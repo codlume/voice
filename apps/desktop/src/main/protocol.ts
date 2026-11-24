@@ -15,7 +15,7 @@ import type { Target } from "../shared/style.ts";
 import type { HelperShortcut, Shortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 20;
+export const HELPER_PROTOCOL_VERSION = 21;
 
 export type HelperCommand =
   | {
@@ -231,7 +231,7 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("microphone.test.failed"),
     id: Schema.String,
-    message: Schema.String,
+    reason: Schema.Literals(["permission", "device", "busy", "unknown"]),
   }),
   Schema.Struct({
     type: Schema.Literal("transcript"),
