@@ -7,6 +7,17 @@ import type { Store } from "./store.ts";
 
 export const MICROPHONE_TEST_MAX_MS = 30_000;
 
+type FailureReason = Extract<HelperEvent, { type: "microphone.test.failed" }>["reason"];
+
+const FAILURE_MESSAGES: Record<FailureReason, string> = {
+  permission:
+    "Voice does not have microphone access. Turn it on in System Settings > Privacy & Security > Microphone, then test again.",
+  device:
+    "Voice could not open this microphone. Choose another microphone, or check that it is connected.",
+  busy: "Finish dictating, then test again.",
+  unknown: "The microphone test failed. Test again, or choose another microphone.",
+};
+
 export type MicrophoneTest = {
   start(): void;
   stop(): void;
@@ -77,7 +88,7 @@ export function createMicrophoneTest(options: {
       case "microphone.test.failed":
         if (event.id !== id) return;
         clear();
-        show({ kind: "failed", message: event.message });
+        show({ kind: "failed", message: FAILURE_MESSAGES[event.reason] });
         return;
     }
   }

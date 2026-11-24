@@ -12,6 +12,7 @@ import {
   streaks,
   usage,
 } from "./insightsView.ts";
+import { appNames } from "./styleView.ts";
 
 vi.hoisted(() => {
   process.env.TZ = "America/Los_Angeles";
@@ -317,6 +318,28 @@ describe("usage", () => {
       ["work", 0.1],
       ["personal", 0],
       ["email", 0],
+    ]);
+  });
+
+  test("Top apps names apps that are not installed, never by bundle id", () => {
+    const words = {
+      "com.tinyspeck.slackmacgap": 51,
+      "com.spotify.client": 34,
+      "md.obsidian": 33,
+      "com.obsproject.obs-studio": 17,
+      "com.todesktop.230313mzl4w4u92": 16,
+    };
+    const apps = Object.fromEntries(Object.entries(words).map(([key, n]) => [id(key), n]));
+    const view = usage(
+      used({ categories: categories({ other: { words: 151, sessions: 9 } }), apps }),
+      appNames([], []),
+    );
+    expect(view.topApps.map(({ name }) => name)).toEqual([
+      "Slack",
+      "Spotify",
+      "Obsidian",
+      "Obs Studio",
+      "Todesktop",
     ]);
   });
 });

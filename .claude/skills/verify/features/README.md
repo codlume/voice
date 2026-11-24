@@ -154,7 +154,7 @@ Recipes: [settings.md](./settings.md#driving-it-with-voice-verify).
 | -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
 | Switches, selects, reset   | **Toggle a switch**, **Pick from a select**, **Reset**                  | `apps/desktop/src/main/settings.test.ts`, `apps/desktop/src/main/settings-queue.test.ts`, `apps/desktop/src/main/dock.test.ts` | `settings.json` value, shot |
 | Sliders                    | **Set the Reduce volume by slider**, **Set the Page animations slider** | `apps/desktop/src/renderer/CommitSlider.test.tsx`                                                                              | `settings.json` value       |
-| Microphone test            | No live recipe. It fails by design in the verify instance.              | `apps/desktop/src/main/microphone-test.test.ts`, `apps/desktop/src/renderer/microphoneTestView.test.ts`                        | Test output                 |
+| Microphone test            | **Test the microphone** (fails by design; shows the fallback sentence)  | `apps/desktop/src/main/microphone-test.test.ts`, `apps/desktop/src/renderer/microphoneTestView.test.ts`                        | Test output                 |
 | Lower audio on real output | `node native/voice-helper/scripts/output-lowering-smoke.mjs`            | `swift: OutputSuppressionTests`                                                                                                | Smoke output                |
 
 ### Account

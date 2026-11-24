@@ -99,12 +99,32 @@ describe("microphone test", () => {
     expect(h.levels).toEqual([]);
   });
 
-  test("a failed test shows the helper's message and can start again", () => {
+  test.each([
+    [
+      "permission",
+      "Voice does not have microphone access. Turn it on in System Settings > Privacy & Security > Microphone, then test again.",
+    ],
+    [
+      "device",
+      "Voice could not open this microphone. Choose another microphone, or check that it is connected.",
+    ],
+    ["busy", "Finish dictating, then test again."],
+    ["unknown", "The microphone test failed. Test again, or choose another microphone."],
+  ] as const)(
+    "a test that fails for the %s reason tells the user what to do",
+    (reason, message) => {
+      const h = harness();
+      h.test.start();
+      h.test.onHelperEvent({ type: "microphone.test.failed", id: h.id(), reason });
+      expect(h.state()).toEqual({ kind: "failed", message });
+    },
+  );
+
+  test("a failed test can start again", () => {
     const h = harness();
     h.test.start();
-    const message = "Finish dictating, then test again.";
-    h.test.onHelperEvent({ type: "microphone.test.failed", id: h.id(), message });
-    expect(h.state()).toEqual({ kind: "failed", message });
+    h.test.onHelperEvent({ type: "microphone.test.failed", id: h.id(), reason: "busy" });
+    expect(h.state().kind).toBe("failed");
     h.test.start();
     expect(h.commands.filter((command) => command.type === "microphone.test.start")).toHaveLength(
       2,
@@ -120,7 +140,7 @@ describe("microphone test", () => {
     h.test.start();
     h.test.onHelperEvent({ type: "microphone.test.started", id: h.id() });
     h.test.onHelperEvent({ type: "microphone.test.ended", id: first });
-    h.test.onHelperEvent({ type: "microphone.test.failed", id: first, message: "old" });
+    h.test.onHelperEvent({ type: "microphone.test.failed", id: first, reason: "device" });
     expect(h.state()).toEqual({ kind: "listening", episode: 1 });
   });
 
@@ -228,7 +248,7 @@ describe("microphone test", () => {
     expect(h.state()).toEqual({ kind: "off" });
 
     h.test.start();
-    h.test.onHelperEvent({ type: "microphone.test.failed", id: h.id(), message: "No microphone." });
+    h.test.onHelperEvent({ type: "microphone.test.failed", id: h.id(), reason: "device" });
     const sent = h.commands.length;
     h.test.stop();
     expect(h.commands).toHaveLength(sent);
