@@ -205,7 +205,7 @@ describe("pickerRows", () => {
 });
 
 describe("appNames", () => {
-  test("names an app as the Style page does, then by catalog, then installed, then its id", () => {
+  test("names an app as the Style page does, then by catalog, then installed, then from its id", () => {
     const apps = [
       app("com.tinyspeck.slackmacgap", "Slack.app"),
       app("com.apple.mail", "Mail.app"),
@@ -225,8 +225,24 @@ describe("appNames", () => {
       "Slack for work",
       "Mail",
       "Notes Pro",
-      "com.example.unknown",
+      "Unknown",
     ]);
+  });
+
+  test.each([
+    ["com.spotify.client", "Spotify"],
+    ["com.figma.desktop", "Figma"],
+    ["md.obsidian", "Obsidian"],
+    ["com.obsproject.obs-studio", "Obs Studio"],
+    ["com.microsoft.vscode", "Vscode"],
+    ["vscode", "Vscode"],
+    ["com.todesktop.230313mzl4w4u92", "Todesktop"],
+    ["com.sublimetext.4", "Sublimetext"],
+    ["com.github.electron", "Electron"],
+    ["com.4", "Unknown app"],
+    ["com.app", "Unknown app"],
+  ])("names %s, which is not installed, as %s", (id, expected) => {
+    expect(appNames([], [])(app(id, "").bundleId)).toBe(expected);
   });
 });
 
