@@ -301,7 +301,7 @@ private final class Leg {
         _ = try leg.capture.start()
         watching.withLock { $0 = true }
 
-        let deadline = ContinuousClock.now + .seconds(120)
+        let deadline = ContinuousClock.now + hangBound
         while leg.losses.isEmpty, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
 
         #expect(leg.losses == [AudioLoss(source: .mic, reason: .permission)])

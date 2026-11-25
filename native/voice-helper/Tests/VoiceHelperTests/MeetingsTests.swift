@@ -79,7 +79,7 @@ private final class Harness {
     }
 
     func waitForFixtures(count: Int) async throws {
-        let deadline = ContinuousClock.now + .seconds(5)
+        let deadline = ContinuousClock.now + hangBound
         while ContinuousClock.now < deadline {
             let ended = lines.snapshot().filter { ($0["message"] as? String)?.hasPrefix("meeting fixture ended") == true }
             if ended.count >= count { return }
@@ -89,7 +89,7 @@ private final class Harness {
     }
 
     func waitForDrained(count: Int = 1) async throws {
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + hangBound
         while ContinuousClock.now < deadline {
             if events("meeting.drained").count >= count { return }
             try await Task.sleep(for: .milliseconds(20))

@@ -73,9 +73,9 @@ private struct Harness {
     }
 
     func waitUntil(_ condition: @MainActor () -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + hangBound
         while !condition() {
-            guard ContinuousClock.now < deadline else { throw ProtocolError("condition not met within 10 s") }
+            guard ContinuousClock.now < deadline else { throw ProtocolError("condition not met within \(hangBound)") }
             try await Task.sleep(for: .milliseconds(20))
         }
     }

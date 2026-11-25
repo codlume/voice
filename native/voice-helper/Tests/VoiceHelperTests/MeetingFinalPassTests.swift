@@ -38,7 +38,7 @@ private func write(_ samples: [Float], _ source: MeetingSource, in dir: URL) thr
 }
 
 private func until(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + hangBound
     while !condition() {
         guard ContinuousClock.now < deadline else { throw ProtocolError("the condition never held") }
         try await Task.sleep(for: .milliseconds(5))
