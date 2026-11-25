@@ -1,6 +1,14 @@
 import { Tabs } from "@base-ui/react/tabs";
+import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
-import { AudioLinesIcon, CircleDotIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import {
+  AudioLinesIcon,
+  CircleAlertIcon,
+  CircleDotIcon,
+  SearchIcon,
+  SettingsIcon,
+  SparklesIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -19,8 +27,10 @@ import {
 import type { Snapshot } from "../shared/api.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
-import { meetingsChecklist, summaryModelRow } from "./checklist.ts";
-import { SetupChecklist } from "./SetupChecklist.tsx";
+import { meetingsChecklist, summaryModelRow, type ChecklistRow } from "./checklist.ts";
+import { EmptyState } from "./EmptyState.tsx";
+import { SearchField } from "./Input.tsx";
+import { runSetupCommand, setupFailure } from "./SetupChecklist.tsx";
 import { MeetingDetail } from "./MeetingDetail.tsx";
 import { MeetingFolders } from "./MeetingFolders.tsx";
 import { MeetingList } from "./MeetingList.tsx";
@@ -43,14 +53,23 @@ import { HelpTitle } from "./HelpPopover.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcutLabel } from "./shortcutCapture.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
-import { color, layout, radius, space } from "./tokens.stylex.ts";
+import { ProgressBar, Skeleton } from "./Skeleton.tsx";
+import {
+  color,
+  font,
+  layout,
+  leading,
+  motion,
+  radius,
+  space,
+  text as size,
+} from "./tokens.stylex.ts";
+import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useAction } from "./useAction.ts";
 import { useKeyboardLayout } from "./useKeyboardLayout.ts";
 import { useMeetingsRead } from "./useMeetings.ts";
 import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
-
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
 const styles = stylex.create({
   container: { containerType: "inline-size" },
@@ -70,67 +89,60 @@ const styles = stylex.create({
   },
   mainAlone: { paddingRight: space.xxl },
   detail: { paddingBlock: space.xxl, paddingRight: space.xxl },
-  header: { display: "flex", alignItems: "center", gap: space.sm },
+  header: { display: "flex", alignItems: "center", gap: space.sm, minHeight: 32 },
   headline: { flexGrow: 1 },
-  notice: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  tabs: { display: "flex", flexDirection: "column", gap: space.lg },
-  search: { position: "relative", display: "flex", alignItems: "center", marginLeft: "auto" },
-  searchIcon: {
-    position: "absolute",
-    left: 10,
-    color: color.mutedForeground,
-    pointerEvents: "none",
-  },
-  searchInput: {
-    width: 240,
-    height: 30,
-    paddingLeft: 30,
-    paddingRight: space.sm,
+  notice: { margin: 0, color: color.mutedForeground, fontSize: size.xs, lineHeight: leading.xs },
+  // A one-line notice: hairline border on the muted fill, its action at the right.
+  modelNotice: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: space.sm,
+    rowGap: space.xxs,
+    minHeight: 40,
+    paddingBlock: space.xxs,
+    paddingInlineStart: space.md,
+    paddingInlineEnd: space.xxs,
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: { default: color.border, ":focus": color.input },
+    borderColor: color.border,
     borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 13,
+    backgroundColor: color.muted,
   },
+  modelIcon: { flexShrink: 0, color: color.mutedForeground },
+  modelText: { flexGrow: 1, minWidth: 0, margin: 0, fontSize: size.sm, lineHeight: leading.sm },
+  modelStatus: {
+    color: color.mutedForeground,
+    fontSize: size.xs,
+    lineHeight: leading.xs,
+    fontVariantNumeric: "tabular-nums",
+  },
+  modelFailed: { color: color.errorForeground },
+  modelProgress: { width: 96 },
+  tabs: { display: "flex", flexDirection: "column", gap: space.lg },
+  search: { display: "flex", width: 220, flexShrink: 0, marginInlineStart: "auto" },
   panel: {
     outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
     outlineOffset: 3,
   },
-  empty: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: space.sm,
-    paddingBlock: space.xxl,
-    paddingInline: space.lg,
-    textAlign: "center",
-  },
-  emptyIcon: { color: color.mutedForeground },
-  emptyTitle: { margin: 0, fontSize: 17, fontWeight: 500 },
-  emptyBody: { margin: 0, maxWidth: 400, color: color.mutedForeground },
-  emptyAction: { marginTop: space.sm },
-  noMatches: { margin: 0, padding: space.lg, color: color.mutedForeground },
   live: {
     display: "flex",
     alignItems: "center",
     gap: space.md,
     paddingBlock: space.md,
-    paddingInline: space.lg,
+    paddingInline: space.base,
   },
   dot: {
     flexShrink: 0,
-    width: 10,
-    height: 10,
+    width: 8,
+    height: 8,
     borderRadius: radius.round,
     backgroundColor: color.mutedForeground,
   },
   dotRecording: {
     backgroundColor: color.error,
     animationName: stylex.keyframes({ "50%": { opacity: 0.35 } }),
-    animationDuration: { default: "1.6s", [reducedMotion]: "0s" },
+    animationDuration: { default: "1.6s", [motion.reduced]: "0s" },
     animationIterationCount: "infinite",
   },
   liveText: { display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0 },
@@ -139,15 +151,22 @@ const styles = stylex.create({
     borderWidth: 0,
     backgroundColor: "transparent",
     color: color.foreground,
-    font: "inherit",
+    fontFamily: font.sans,
+    fontSize: size.sm,
     fontWeight: 500,
+    lineHeight: leading.sm,
     textAlign: "left",
     cursor: "pointer",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  liveMeta: { color: color.mutedForeground, fontSize: 13, fontVariantNumeric: "tabular-nums" },
+  liveMeta: {
+    color: color.mutedForeground,
+    fontSize: size.xs,
+    lineHeight: leading.xs,
+    fontVariantNumeric: "tabular-nums",
+  },
   aside: {
     display: { default: "flex", [layout.narrow]: "none" },
     flexDirection: "column",
@@ -164,12 +183,18 @@ const styles = stylex.create({
   },
   asideTitle: {
     margin: 0,
-    fontSize: 18,
+    fontSize: size.lg,
     fontWeight: 600,
-    lineHeight: 1.3,
+    lineHeight: leading.lg,
     overflowWrap: "anywhere",
   },
-  asideWhen: { margin: 0, color: color.mutedForeground, fontSize: 13.5 },
+  asideWhen: {
+    margin: 0,
+    color: color.mutedForeground,
+    fontSize: size.sm,
+    lineHeight: leading.sm,
+    fontVariantNumeric: "tabular-nums",
+  },
   asideRule: {
     width: "100%",
     height: 1,
@@ -180,13 +205,27 @@ const styles = stylex.create({
   overviewLabel: {
     margin: 0,
     color: color.mutedForeground,
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.075em",
-    textTransform: "uppercase",
+    fontSize: size.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
   },
-  overview: { margin: 0, fontSize: 14.5, lineHeight: 1.65 },
-  overviewEmpty: { margin: 0, color: color.mutedForeground },
+  overview: { margin: 0, fontSize: size.sm, lineHeight: leading.sm },
+  overviewEmpty: { margin: 0, color: color.mutedForeground, fontSize: size.sm },
+  days: { display: "flex", flexDirection: "column", gap: space.lg },
+  day: { display: "flex", flexDirection: "column", gap: space.sm },
+  clip: { overflow: "hidden" },
+  skeletonRow: {
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: space.xs,
+    minHeight: 44,
+    paddingBlock: space.sm,
+    paddingInline: space.base,
+    borderTopWidth: { default: 1, ":first-child": 0 },
+    borderTopStyle: "solid",
+    borderTopColor: `color-mix(in srgb, ${color.border} 50%, transparent)`,
+  },
 });
 
 const SEARCH_DELAY_MS = 150;
@@ -218,56 +257,114 @@ function useSearch(query: string): SearchAnswer | null {
 
 function Search({ query, onChange }: { query: string; onChange: (query: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
-  const shown = open || query !== "";
-  const label = withShortcut("Search meetings", shortcuts.searchHistory);
   useShortcuts([
     {
       shortcut: shortcuts.searchHistory,
       run: () => {
-        setOpen(true);
         input.current?.focus();
         input.current?.select();
       },
     },
   ]);
-  if (!shown) {
-    return (
-      <div {...helpAnchor("meetings.search")} {...stylex.props(styles.search)}>
-        <Button
-          variant="icon"
-          aria-label="Search meetings"
-          title={label}
-          onClick={() => setOpen(true)}
-        >
-          <SearchIcon size={17} />
-        </Button>
-      </div>
-    );
-  }
   return (
-    <div {...helpAnchor("meetings.search")} {...stylex.props(styles.search)}>
-      <SearchIcon size={14} aria-hidden="true" {...stylex.props(styles.searchIcon)} />
-      <input
+    <span {...helpAnchor("meetings.search")} {...stylex.props(styles.search)}>
+      <SearchField
         ref={input}
-        autoFocus
-        type="search"
         aria-label="Search meetings"
         autoComplete="off"
         spellCheck={false}
-        placeholder={label}
+        placeholder={withShortcut("Search", shortcuts.searchHistory)}
         value={query}
         onChange={(event) => onChange(event.target.value)}
-        onBlur={() => setOpen(false)}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           event.preventDefault();
           onChange("");
           event.currentTarget.blur();
         }}
-        {...stylex.props(styles.searchInput)}
       />
-    </div>
+    </span>
+  );
+}
+
+function Header({ actions }: { actions?: ReactNode }) {
+  return (
+    <header {...stylex.props(styles.header)}>
+      <HelpTitle page="meetings" style={styles.headline}>
+        Meetings
+      </HelpTitle>
+      {actions}
+    </header>
+  );
+}
+
+function SettingsButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger
+        render={
+          <Button
+            variant="icon"
+            aria-label="Meeting settings"
+            {...helpAnchor("meetings.settings")}
+            onClick={onOpen}
+          >
+            <SettingsIcon size={16} />
+          </Button>
+        }
+      />
+      <Tooltip.Portal>
+        <Tooltip.Positioner side="bottom" sideOffset={4} className={tooltipPositionerClass()}>
+          <Tooltip.Popup className={tooltipPopupClass()}>Meeting settings</Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
+/** The summary model's download, as one line under the header. */
+function SummaryModelNotice({ row }: { row: ChecklistRow }) {
+  const { status } = row;
+  const setupAction = useAction();
+  return (
+    <>
+      <div {...stylex.props(styles.modelNotice)}>
+        <SparklesIcon size={16} aria-hidden {...stylex.props(styles.modelIcon)} />
+        <p {...stylex.props(styles.modelText)}>{row.subtitle}</p>
+        {status.kind !== "needed" && (
+          <span
+            {...stylex.props(styles.modelStatus, status.kind === "failed" && styles.modelFailed)}
+          >
+            {status.text}
+          </span>
+        )}
+        {status.kind === "busy" && status.progress !== undefined && (
+          <span {...stylex.props(styles.modelProgress)}>
+            <ProgressBar label={`${row.title} download`} value={status.progress * 100} />
+          </span>
+        )}
+        {row.actions.map((action) => (
+          <Button
+            key={action.label}
+            variant="secondary"
+            aria-label={`${action.label} ${row.title}`}
+            onClick={() =>
+              void setupAction.run(
+                () => runSetupCommand(action.command),
+                setupFailure(action.label, row.title),
+              )
+            }
+          >
+            {action.label}
+          </Button>
+        ))}
+      </div>
+      {setupAction.error && (
+        <p role="alert" {...stylex.props(pageStyles.error)}>
+          {setupAction.error}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -333,6 +430,33 @@ function OverviewPanel({ meeting }: { meeting: Meeting }) {
   );
 }
 
+const SKELETON_DAYS = [0, 1];
+const SKELETON_ROWS = [0, 1, 2];
+
+/** The page while the meetings are read: the header over two days of placeholder rows. */
+function LoadingPage() {
+  return (
+    <div aria-busy="true" {...stylex.props(styles.main, styles.mainAlone)}>
+      <Header />
+      <div {...stylex.props(styles.days)}>
+        {SKELETON_DAYS.map((day) => (
+          <div key={day} {...stylex.props(styles.day)}>
+            <Skeleton width="72px" height="12px" />
+            <Card style={styles.clip}>
+              {SKELETON_ROWS.map((row) => (
+                <div key={row} {...stylex.props(styles.skeletonRow)}>
+                  <Skeleton width="40%" height="14px" />
+                  <Skeleton width="24%" height="12px" />
+                </div>
+              ))}
+            </Card>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type PageTab = "notes" | "folders";
 const pageTabs = [
   { value: "notes", label: "Past notes" },
@@ -354,19 +478,17 @@ export function Meetings({
 }) {
   const meetings = useMeetingsRead();
   const today = useToday();
-  if (meetings.kind === "reading") return null;
+  if (meetings.kind === "reading") return <LoadingPage />;
   if (meetings.kind === "failed") {
     return (
       <div {...stylex.props(styles.main, styles.mainAlone)}>
+        <Header />
         <Card>
-          <div {...stylex.props(styles.empty)}>
-            <p {...stylex.props(styles.emptyTitle)}>Could not load your meetings.</p>
-            <div {...stylex.props(styles.emptyAction)}>
-              <Button variant="secondary" onClick={meetings.retry}>
-                Try again
-              </Button>
-            </div>
-          </div>
+          <EmptyState icon={<CircleAlertIcon size={16} />} title="Could not load your meetings.">
+            <Button variant="secondary" onClick={meetings.retry}>
+              Try again
+            </Button>
+          </EmptyState>
         </Card>
       </div>
     );
@@ -487,7 +609,7 @@ function MeetingsPage({
       onClick={startMeeting}
       {...(variant === "primary" && helpAnchor("meetings.start"))}
     >
-      <CircleDotIcon size={15} aria-hidden="true" />
+      <CircleDotIcon size={16} aria-hidden="true" />
       Start meeting
     </Button>
   );
@@ -495,23 +617,24 @@ function MeetingsPage({
   const notes =
     meetings.length === 0 ? (
       <Card>
-        <div {...stylex.props(styles.empty)}>
-          <AudioLinesIcon size={28} aria-hidden="true" {...stylex.props(styles.emptyIcon)} />
-          <p {...stylex.props(styles.emptyTitle)}>No meetings yet</p>
-          <p {...stylex.props(styles.emptyBody)}>
-            Start a meeting and Voice writes down what you and the others say, on this Mac. You get
-            a summary when you stop.
-          </p>
-          <div {...stylex.props(styles.emptyAction)}>{startButton("secondary")}</div>
-        </div>
+        <EmptyState
+          icon={<AudioLinesIcon size={16} />}
+          title="No meetings yet"
+          description="Start a meeting and Voice writes down what you and the others say, on this Mac. You get a summary when you stop."
+        >
+          {startButton("secondary")}
+        </EmptyState>
       </Card>
     ) : search === "failed" ? (
       <Card>
-        <p {...stylex.props(styles.noMatches)}>Could not search your meetings.</p>
+        <EmptyState icon={<SearchIcon size={16} />} title="Could not search your meetings." />
       </Card>
     ) : results?.length === 0 ? (
       <Card>
-        <p {...stylex.props(styles.noMatches)}>No meetings match “{query.trim()}”.</p>
+        <EmptyState
+          icon={<SearchIcon size={16} />}
+          title={`No meetings match “${query.trim()}”.`}
+        />
       </Card>
     ) : (
       <MeetingList
@@ -528,21 +651,15 @@ function MeetingsPage({
     <div {...stylex.props(styles.container)}>
       <div {...stylex.props(styles.layout, !selected && styles.layoutAlone)}>
         <div {...stylex.props(styles.main, !selected && styles.mainAlone)}>
-          <div {...stylex.props(styles.header)}>
-            <HelpTitle page="meetings" style={styles.headline}>
-              Meetings
-            </HelpTitle>
-            <Button
-              variant="icon"
-              aria-label="Meeting settings"
-              title="Meeting settings"
-              {...helpAnchor("meetings.settings")}
-              onClick={() => settings.setOpen(true)}
-            >
-              <SettingsIcon size={17} />
-            </Button>
-            {startButton("primary")}
-          </div>
+          <Header
+            actions={
+              <>
+                <SettingsButton onOpen={() => settings.setOpen(true)} />
+                {startButton("primary")}
+              </>
+            }
+          />
+          {summaryModel && <SummaryModelNotice row={summaryModel} />}
           {notice && (
             <p role="status" {...stylex.props(styles.notice)}>
               {notice}
@@ -561,9 +678,6 @@ function MeetingsPage({
           />
           {live && <LiveCard meeting={live} onOpen={() => setOpenId(live.id)} />}
           {!sidebar && setupCard}
-          {summaryModel && (
-            <SetupChecklist title="Summaries" rows={[summaryModel]} counted={false} />
-          )}
           <MeetingTabs
             tabs={pageTabs}
             value={tab}

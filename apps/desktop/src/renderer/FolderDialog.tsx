@@ -6,6 +6,7 @@ import { useState, type KeyboardEvent } from "react";
 import type { Folder, FolderDraft } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
 import { DialogFrame } from "./ConfirmDialog.tsx";
+import { Input } from "./Input.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as record } from "./RecordList.tsx";
 import { Segmented, styles as settings } from "./settingsParts.tsx";
@@ -75,13 +76,13 @@ export function FolderDialog({
         <div {...stylex.props(record.fields)}>
           <Field.Root invalid={nameMissing} {...stylex.props(record.field)}>
             <Field.Label {...stylex.props(settings.rowTitle)}>Name</Field.Label>
-            <Field.Control
+            <Input
               autoFocus
               value={name}
               placeholder="Weekly standup"
+              invalid={nameMissing}
               onChange={(event) => setName(event.target.value)}
               onKeyDown={saveOnEnter}
-              {...stylex.props(record.input, nameMissing && record.invalid)}
             />
             {nameMissing && (
               <Field.Error match {...stylex.props(pageStyles.error)}>
@@ -101,12 +102,12 @@ export function FolderDialog({
           {kind === "auto" && (
             <Field.Root invalid={keywordMissing} {...stylex.props(record.field)}>
               <Field.Label {...stylex.props(settings.rowTitle)}>Title contains</Field.Label>
-              <Field.Control
+              <Input
                 value={keyword}
                 placeholder="standup"
+                invalid={keywordMissing}
                 onChange={(event) => setKeyword(event.target.value)}
                 onKeyDown={saveOnEnter}
-                {...stylex.props(record.input, keywordMissing && record.invalid)}
               />
               {keywordMissing && (
                 <Field.Error match {...stylex.props(pageStyles.error)}>
