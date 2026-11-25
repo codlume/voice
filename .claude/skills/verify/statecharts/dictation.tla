@@ -3,6 +3,10 @@
 \* with the helper's capture and insertion (native/voice-helper) reduced to the events they send.
 \* A helper event and main's reaction to it are one step, and so are a command and the helper's
 \* reaction, except an insertion: main can give up on it while the helper still works on it.
+\* The helper starts no write later than 4 s after it received the insert (InsertDeadline),
+\* and main waits 6.5 s (INSERT_TIMEOUT_MS), longer than the helper's worst-case answer for an
+\* insert that wrote (insertMaxMs in test-fixtures/helper-protocol.json). So once main gave
+\* up, the helper can only refuse.
 
 VARIABLES
     phase,            \* main's session phase
@@ -229,7 +233,8 @@ AppRefusesText ==
     /\ onClipboard' \in BOOLEAN
     /\ UNCHANGED <<released, short, intent, mic, inApp, heard>>
 
-\* The 5 s insert watchdog. No command stops the helper's insertion.
+\* The 6.5 s insert watchdog. The helper's write deadline passed before it, so the helper
+\* writes nothing from here on.
 InsertTimesOut ==
     /\ phase = "inserting"
     /\ phase' = "done"
@@ -238,14 +243,8 @@ InsertTimesOut ==
     /\ onClipboard' \in BOOLEAN
     /\ UNCHANGED <<released, short, intent, mic, helperInserting, inApp, heard>>
 
-\* A late insert.result: main logs it and changes nothing, but the text is in the app.
-LateInsertLands ==
-    /\ phase # "inserting"
-    /\ helperInserting
-    /\ helperInserting' = FALSE
-    /\ inApp' = TRUE
-    /\ UNCHANGED <<phase, released, short, intent, mic, onClipboard, history, heard, outcome>>
-
+\* A late insert.result is a refusal, for example after a clipboard save that outlasted the
+\* write deadline. Main logs it and changes nothing.
 LateInsertRefused ==
     /\ phase # "inserting"
     /\ helperInserting
@@ -297,7 +296,6 @@ Next ==
     \/ AppTakesText
     \/ AppRefusesText
     \/ InsertTimesOut
-    \/ LateInsertLands
     \/ LateInsertRefused
     \/ HelperCrashes
     \/ FlowBarClears

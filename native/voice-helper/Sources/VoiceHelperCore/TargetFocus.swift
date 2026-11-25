@@ -113,11 +113,18 @@ public enum CapturedFocus<Element: Equatable>: Equatable {
     }
 }
 
-/// Why a paste keystroke posted now could miss the target the insert checked.
+/// Why a paste keystroke must not be posted now: it could miss the target the insert checked,
+/// or the insert ran out of time.
 public enum KeystrokeRefusal: String, Equatable, Sendable {
-    case inputMoved, notFrontmost, secureInput
+    case inputMoved, notFrontmost, secureInput, tooLate
 
-    public var failure: InsertFailure { self == .secureInput ? .secureInput : .focusChanged }
+    public var failure: InsertFailure {
+        switch self {
+        case .inputMoved, .notFrontmost: .focusChanged
+        case .secureInput: .secureInput
+        case .tooLate: .failed
+        }
+    }
 }
 
 /// Where a Cmd+V posted now would go. The system delivers it to whichever app is frontmost at
@@ -153,12 +160,14 @@ public enum PasteAttempt<Write> {
 extension PasteAttempt: Equatable where Write: Equatable {}
 
 /// The order of a paste. Saving the user's clipboard can block for as long as its owner takes
-/// to provide the data, so `refusal` is asked after the save, and a target that moved gets no
-/// keystroke and no clipboard write.
+/// to provide the data, so the deadline and `refusal` are asked after the save. An insert that
+/// ran out of time, or a target that moved, gets no keystroke and no clipboard write.
 public func pasteKeystroke<Saved, Write>(
-    save: () -> Saved, refusal: () -> KeystrokeRefusal?, write: (Saved) -> Write, post: () -> Void
+    save: () -> Saved, deadlinePassed: () -> Bool, refusal: () -> KeystrokeRefusal?, write: (Saved) -> Write,
+    post: () -> Void
 ) -> PasteAttempt<Write> {
     let saved = save()
+    if deadlinePassed() { return .refused(.tooLate) }
     if let refusal = refusal() { return .refused(refusal) }
     let write = write(saved)
     post()

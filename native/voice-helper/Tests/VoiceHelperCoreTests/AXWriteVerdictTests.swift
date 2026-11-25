@@ -77,3 +77,38 @@ private func neverRead() -> AXTextState {
     #expect(AXWritePlan(answer: .succeeded, before: helloWorld, after: { afterTheWrite }) == .inserted(.direct))
     #expect(AXWritePlan(answer: .succeeded, before: helloWorld, after: { helloWorld }) == .reread)
 }
+
+private func attemptWrite(readOutlastsTheDeadline: Bool) -> (attempt: AXWriteAttempt, steps: [String]) {
+    var deadlinePassed = false
+    var steps: [String] = []
+    let attempt = accessibilityWrite(
+        before: {
+            steps.append("read")
+            deadlinePassed = readOutlastsTheDeadline
+            return helloWorld
+        },
+        deadlinePassed: { deadlinePassed },
+        write: {
+            steps.append("write")
+            return .succeeded
+        },
+        after: {
+            steps.append("read")
+            return afterTheWrite
+        })
+    return (attempt, steps)
+}
+
+@Suite struct AccessibilityWriteTests {
+    @Test func aReadBeforeTheWriteThatOutlastsTheInsertDeadlineSendsNoWrite() {
+        let (attempt, steps) = attemptWrite(readOutlastsTheDeadline: true)
+        #expect(steps == ["read"])
+        #expect(attempt == .tooLate)
+    }
+
+    @Test func anInsertWithinItsDeadlineWritesAndReportsWhatTheElementShowsAfter() {
+        let (attempt, steps) = attemptWrite(readOutlastsTheDeadline: false)
+        #expect(steps == ["read", "write", "read"])
+        #expect(attempt == .wrote(.inserted(.direct), before: helloWorld))
+    }
+}

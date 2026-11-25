@@ -3,6 +3,10 @@
 \* transforms.ts) and the helper's read, write, and clipboard work
 \* (native/voice-helper SelectionReader, Insertion, Pasteboard). The helper runs its
 \* commands in the order they arrive, so a run's read waits behind an earlier run's write.
+\* The helper starts no write later than 4 s after it received the insert (InsertDeadline),
+\* and main waits 6.5 s (INSERT_TIMEOUT_MS), longer than the helper's worst-case answer for an
+\* insert that wrote (insertMaxMs in test-fixtures/helper-protocol.json). So once main gave
+\* up on a write, the helper can only refuse it.
 EXTENDS Naturals
 
 CONSTANT MaxRuns
@@ -16,7 +20,7 @@ VARIABLES
     writeText,      \* what the helper was told to write
     helperRead,     \* the run whose selection read the helper has yet to start
     copyRun,        \* the run whose Cmd+C the helper posted and is waiting on
-    helperWrite,    \* the run whose write the helper has yet to do
+    helperWrite,    \* the run whose write the helper can still do
     clip,           \* what the clipboard holds
     restorePending, \* a paste's restore of the clipboard is scheduled
     escaped,        \* you pressed Escape during the run the pill shows
@@ -169,33 +173,33 @@ RewriteFails ==
     /\ UNCHANGED <<on, cur, text, writeText, helperRead, copyRun, helperWrite, clip,
                    restorePending, escaped, kept>>
 
-\* transform.end does not stop a write the helper already holds.
+\* The helper can write only while the desktop run still waits for it, so the answer always
+\* reaches a run that is replacing.
 HelperWriteLands ==
     /\ helperWrite # 0
     /\ helperWrite' = 0
     /\ text' = writeText
     /\ \/ UNCHANGED <<clip, restorePending>>
        \/ clip' = "rewrite" /\ restorePending' = TRUE
-    /\ IF phase = "replacing" /\ cur = helperWrite
-       THEN End("replaced")
-       ELSE UNCHANGED <<phase, outcome>>
+    /\ End("replaced")
     /\ UNCHANGED <<on, cur, writeText, helperRead, copyRun, escaped, kept>>
 
 \* Focus moved, the selection changed, a secure field, or no editable target.
 HelperWriteRefused ==
     /\ helperWrite # 0
     /\ helperWrite' = 0
-    /\ IF phase = "replacing" /\ cur = helperWrite
-       THEN End("notReplaced")
-       ELSE UNCHANGED <<phase, outcome>>
+    /\ End("notReplaced")
     /\ UNCHANGED <<on, cur, text, writeText, helperRead, copyRun, clip,
                    restorePending, escaped, kept>>
 
+\* The 6.5 s insert watchdog. The helper's write deadline passed before it, so the helper
+\* can no longer write. A refusal it still sends reaches a run that is over, and main drops it.
 WriteTimesOut ==
     /\ phase = "replacing"
     /\ End("notReplaced")
-    /\ UNCHANGED <<on, cur, text, writeText, helperRead, copyRun, helperWrite, clip,
-                   restorePending, escaped, kept>>
+    /\ helperWrite' = 0
+    /\ UNCHANGED <<on, cur, text, writeText, helperRead, copyRun, clip, restorePending,
+                   escaped, kept>>
 
 HelperRestoresClipboard ==
     /\ restorePending

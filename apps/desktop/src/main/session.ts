@@ -121,7 +121,9 @@ const send = (command: Command): Effect => ({ type: "send", command });
 const MIN_HOLD_MS = 250;
 export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
-export const INSERT_TIMEOUT_MS = 5000;
+// Longer than the helper's slowest answer for an insert that wrote, `insertMaxMs` in
+// test-fixtures/helper-protocol.json, so a timeout means the text did not reach the app.
+export const INSERT_TIMEOUT_MS = 6500;
 export const COPY_TIMEOUT_MS = 2000;
 export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
