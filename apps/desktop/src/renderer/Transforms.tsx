@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { Trash2Icon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import type { ModelStatus, Settings, SettingsPatch } from "../shared/api.ts";
@@ -20,7 +21,7 @@ import { Select } from "./Select.tsx";
 import { styles as settingsStyles } from "./settingsParts.tsx";
 import { meetingShortcutHolder, shortcutKeys } from "./shortcutCapture.ts";
 import { Switch } from "./Switch.tsx";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { color, font, leading, motion, radius, space, text } from "./tokens.stylex.ts";
 import { TransformFields } from "./TransformFields.tsx";
 import {
   askToDelete,
@@ -48,44 +49,54 @@ const styles = stylex.create({
   subtitle: { margin: 0, color: color.mutedForeground },
   sectionHead: { display: "flex", alignItems: "center", gap: space.sm },
   sectionTitle: { flexGrow: 1 },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: {
-      default: "repeat(2, minmax(0, 1fr))",
-      "@media (max-width: 780px)": "minmax(0, 1fr)",
-    },
-    gap: space.md,
+  // Adapted list row (MIT, see THIRD_PARTY_NOTICES.md): hairline-divided rows that tint on hover,
+  // each one button that opens the editor.
+  list: {
+    margin: 0,
+    padding: 0,
+    overflow: "hidden",
+    borderRadius: `calc(${radius.large} - 1px)`,
+    listStyle: "none",
   },
-  card: {
+  item: {
+    borderTopWidth: { default: 1, ":first-child": 0 },
+    borderTopStyle: "solid",
+    borderTopColor: `color-mix(in srgb, ${color.border} 50%, transparent)`,
+  },
+  row: {
     display: "flex",
-    flexDirection: "column",
-    alignItems: "stretch",
-    gap: space.sm,
-    minHeight: 96,
+    alignItems: "center",
+    gap: space.base,
+    width: "100%",
+    minHeight: 44,
     paddingBlock: space.md,
-    paddingInline: space.lg,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.border, ":hover": color.input },
-    borderRadius: radius.large,
-    backgroundColor: { default: color.card, ":hover": color.accent },
+    paddingInline: space.base,
+    borderWidth: 0,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
     color: color.foreground,
-    font: "inherit",
+    fontFamily: font.sans,
     textAlign: "left",
     cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
-    outlineOffset: 3,
+    outlineOffset: -2,
+    transitionProperty: "background-color",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
   },
-  cardHeader: { display: "flex", alignItems: "center", gap: space.sm },
-  cardTitle: { flexGrow: 1, minWidth: 0, fontWeight: 600, overflowWrap: "anywhere" },
-  instruction: {
-    display: "-webkit-box",
-    margin: 0,
+  rowText: { display: "flex", flexDirection: "column", gap: 2, flexGrow: 1, minWidth: 0 },
+  rowTitle: {
+    overflow: "hidden",
+    fontSize: text.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  rowDetail: {
     overflow: "hidden",
     color: color.mutedForeground,
-    fontSize: 12.5,
-    WebkitBoxOrient: "vertical",
-    WebkitLineClamp: 2,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   last: {
     display: "grid",
@@ -102,8 +113,8 @@ const styles = stylex.create({
     maxHeight: 200,
     margin: 0,
     overflowY: "auto",
-    fontSize: 13,
-    lineHeight: 1.45,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
@@ -246,25 +257,28 @@ export function Transforms({
             </p>
           </Card>
         ) : (
-          <div {...stylex.props(styles.grid)}>
-            {items.map((transform) => (
-              <button
-                key={transform.id}
-                type="button"
-                aria-label={`Edit ${transform.name}`}
-                onClick={() => edit("edit", transform)}
-                {...stylex.props(styles.card)}
-              >
-                <span {...stylex.props(styles.cardHeader)}>
-                  <span {...stylex.props(styles.cardTitle)}>{transform.name}</span>
-                  <Keys keys={transform.shortcut && shortcutKeys(transform.shortcut, layout)} />
-                </span>
-                <span {...stylex.props(styles.instruction)}>
-                  {firstLine(transform.instruction)}
-                </span>
-              </button>
-            ))}
-          </div>
+          <Card>
+            <ul {...stylex.props(styles.list)}>
+              {items.map((transform) => (
+                <li key={transform.id} {...stylex.props(styles.item)}>
+                  <button
+                    type="button"
+                    aria-label={`Edit ${transform.name}`}
+                    onClick={() => edit("edit", transform)}
+                    {...stylex.props(styles.row)}
+                  >
+                    <span {...stylex.props(styles.rowText)}>
+                      <span {...stylex.props(styles.rowTitle)}>{transform.name}</span>
+                      <span {...stylex.props(styles.rowDetail)}>
+                        {firstLine(transform.instruction)}
+                      </span>
+                    </span>
+                    <Keys keys={transform.shortcut && shortcutKeys(transform.shortcut, layout)} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
       </section>
 
@@ -299,7 +313,8 @@ export function Transforms({
           renderFooter={() =>
             modal.kind === "edit" && (
               <>
-                <Button variant="text" onClick={() => changeEditor(askToDelete)}>
+                <Button variant="ghostDestructive" onClick={() => changeEditor(askToDelete)}>
+                  <Trash2Icon size={16} aria-hidden />
                   Delete transform
                 </Button>
                 <ConfirmDialog
@@ -411,7 +426,7 @@ function LastTransformPanel() {
           <div {...stylex.props(styles.last)}>
             <LastColumn
               title="Before"
-              text={last.before}
+              body={last.before}
               copyLabel="Copy original"
               onCopy={() =>
                 void copy.run(
@@ -422,7 +437,7 @@ function LastTransformPanel() {
             />
             <LastColumn
               title={`After ${last.name}`}
-              text={last.after}
+              body={last.after}
               copyLabel="Copy result"
               onCopy={() =>
                 void copy.run(
@@ -445,19 +460,19 @@ function LastTransformPanel() {
 
 function LastColumn({
   title,
-  text,
+  body,
   copyLabel,
   onCopy,
 }: {
   title: string;
-  text: string;
+  body: string;
   copyLabel: string;
   onCopy: () => void;
 }) {
   return (
     <div {...stylex.props(styles.lastColumn)}>
       <span {...stylex.props(settingsStyles.rowTitle)}>{title}</span>
-      <p {...stylex.props(styles.lastText)}>{text}</p>
+      <p {...stylex.props(styles.lastText)}>{body}</p>
       <div>
         <Button variant="secondary" onClick={onCopy}>
           {copyLabel}
