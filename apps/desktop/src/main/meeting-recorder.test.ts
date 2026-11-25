@@ -187,6 +187,17 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
   return h;
 }
 
+async function finishedMeeting(h: ReturnType<typeof harness>) {
+  const id = await h.start();
+  await h.segment(id, "mic", 0, TEN_WORDS);
+  await h.recorder.stop(id);
+  await h.finish(id);
+  return id;
+}
+
+const audioFilesIn = (folder: string) =>
+  AUDIO.filter((name) => existsSync(NodePath.join(folder, name)));
+
 async function quitBeforeAudioDelete(recordedMs: number) {
   const h = harness();
   const id = await h.start();
@@ -934,6 +945,41 @@ describe("meeting recorder", () => {
     await h.settle();
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 90_000 });
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+  });
+
+  test("a resume that fails to start leaves the finished meeting without audio files", async () => {
+    const h = harness();
+    const id = await finishedMeeting(h);
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
+
+    expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    await writeFile(NodePath.join(h.folder(id), "mic.pcm"), "");
+    h.emit({ type: "meeting.failed", id, message: "the microphone could not be opened" });
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(h.notices.at(-1)).toBe("resumeFailed");
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
+  });
+
+  test("a resume stopped before it records leaves no audio files, also when the helper opens the devices late", async () => {
+    const h = harness();
+    const id = await finishedMeeting(h);
+
+    await h.recorder.resume(id);
+    await h.settle();
+    await writeFile(NodePath.join(h.folder(id), "mic.pcm"), "");
+    expect(await h.recorder.stop(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
+
+    await h.audio(id);
+    h.emit({ type: "meeting.started", id, atMs: 2000, mic: "active", system: "active" });
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
   });
 
   test("deleting a meeting that records stops its capture, its timers and its folder", async () => {
@@ -1824,6 +1870,42 @@ describe("meeting recorder", () => {
     });
     expect(summarized).toEqual([id]);
     for (const name of AUDIO) expect(existsSync(NodePath.join(dir, id, name)), name).toBe(false);
+  });
+
+  test("a relaunch deletes the empty audio files a resume that never recorded left on a finished meeting", async () => {
+    const first = harness();
+    const id = await finishedMeeting(first);
+    await first.recorder.resume(id);
+    await first.settle();
+    await writeFile(NodePath.join(first.folder(id), "mic.pcm"), "");
+    disk.nextAudioDelete = "throws";
+    first.emit({ type: "meeting.failed", id, message: "the microphone could not be opened" });
+    await first.settle();
+    expect(await first.onDisk(id)).toMatchObject({ status: { kind: "ready" } });
+    expect(audioFilesIn(first.folder(id))).toEqual(["mic.pcm", "audio.json"]);
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
+    expect(h.sentTypes()).toEqual([]);
+  });
+
+  test("a relaunch after Voice quit while a finished meeting resumed leaves no audio files", async () => {
+    const first = harness();
+    const id = await finishedMeeting(first);
+    await first.recorder.resume(id);
+    await first.settle();
+    expect((await first.onDisk(id)).status).toEqual({ kind: "starting", from: "ready" });
+    expect(audioFilesIn(first.folder(id))).toEqual(["audio.json"]);
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
+    expect(h.sentTypes()).toEqual([]);
   });
 
   test("live lines that arrive after the meeting finished are not appended", async () => {
