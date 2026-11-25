@@ -101,8 +101,12 @@ const tones = stylex.create({
   },
 });
 
+const dot = (tone: SpeakerTone) => (
+  <span aria-hidden="true" {...stylex.props(styles.dot, tones[tone])} />
+);
+
 export function SpeakerDot({ tone }: { tone: SpeakerTone }) {
-  return <span aria-hidden="true" {...stylex.props(styles.dot, tones[tone])} />;
+  return dot(tone);
 }
 
 type TabOption<T extends string> = { value: T; label: string };
@@ -201,7 +205,8 @@ const Speech = memo(function Speech({
     <li {...stylex.props(styles.turn, continues && styles.turnContinued)}>
       {!continues && (
         <div {...stylex.props(styles.speakerLine)}>
-          <SpeakerDot tone={tone} />
+          {/* A plain span, not <SpeakerDot>: a long transcript renders one per turn. */}
+          {dot(tone)}
           <p {...stylex.props(styles.speaker)}>{speaker}</p>
           <span {...stylex.props(styles.time)}>{time}</span>
         </div>

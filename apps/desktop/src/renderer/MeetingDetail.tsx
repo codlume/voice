@@ -9,6 +9,7 @@ import {
   CopyIcon,
   DownloadIcon,
   FolderIcon,
+  FolderPlusIcon,
   MoreHorizontalIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -146,7 +147,7 @@ const styles = stylex.create({
   },
   chipInput: {
     fieldSizing: "content",
-    minWidth: "4ch",
+    minWidth: "1ch",
     padding: 0,
     borderWidth: 0,
     backgroundColor: "transparent",
@@ -499,9 +500,12 @@ function FolderSubmenu({
           </MenuPrimitive.CheckboxItem>
         ))}
         <MenuSeparator />
-        <MenuItem icon={<span />} onClick={onCreate}>
-          New folder…
-        </MenuItem>
+        <MenuPrimitive.Item onClick={onCreate} className={menuItemClass}>
+          <span {...stylex.props(styles.menuCheck)}>
+            <FolderPlusIcon size={16} aria-hidden="true" />
+          </span>
+          <span {...stylex.props(styles.menuLabel)}>New folder…</span>
+        </MenuPrimitive.Item>
       </MenuPopup>
     </MenuPrimitive.SubmenuRoot>
   );
