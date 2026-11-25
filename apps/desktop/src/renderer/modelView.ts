@@ -44,7 +44,7 @@ export function modelView(
           status.progress === undefined
             ? "Downloading"
             : `Downloading ${Math.round(status.progress * 100)}%`,
-        actions: model.cancelableDownload ? [cancel] : [],
+        actions: [cancel],
       };
     case "loading":
       return { text: status.preparing ? PREPARING_TEXT : "Loading", actions: [] };

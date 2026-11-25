@@ -12,15 +12,20 @@ private func destination(
     KeystrokeDestination(presses: presses, frontmostPid: frontmostPid, secureInput: secureInput)
 }
 
-private func paste(duringSave: (inout KeystrokeDestination) -> Void) -> (attempt: PasteAttempt<Int>, steps: [String]) {
+private func paste(
+    saveOutlastsTheDeadline: Bool = false, duringSave: (inout KeystrokeDestination) -> Void = { _ in }
+) -> (attempt: PasteAttempt<Int>, steps: [String]) {
     var now = destination()
+    var deadlinePassed = false
     var steps: [String] = []
     let attempt = pasteKeystroke(
         save: {
             steps.append("save")
             duringSave(&now)
+            deadlinePassed = saveOutlastsTheDeadline
             return "user clipboard"
         },
+        deadlinePassed: { deadlinePassed },
         refusal: { now.refusal(target: target, checked: checked) },
         write: { saved in
             steps.append("write over \(saved)")
@@ -70,8 +75,18 @@ private func paste(duringSave: (inout KeystrokeDestination) -> Void) -> (attempt
         #expect(attempt == .refused(.inputMoved))
     }
 
+    @Test func aClipboardSaveThatOutlastsTheInsertDeadlineSendsNoKeystrokeAndLeavesTheClipboardAlone() {
+        let (attempt, steps) = paste(saveOutlastsTheDeadline: true)
+        #expect(steps == ["save"])
+        #expect(attempt == .refused(.tooLate))
+    }
+
+    @Test func anInsertThatRanOutOfTimeReportsFailedNotAMovedTarget() {
+        #expect(KeystrokeRefusal.tooLate.failure == .failed)
+    }
+
     @Test func anUnmovedTargetGetsTheSavedClipboardWrittenOverThenOneKeystroke() {
-        let (attempt, steps) = paste { _ in }
+        let (attempt, steps) = paste()
         #expect(steps == ["save", "write over user clipboard", "post"])
         #expect(attempt == .posted(8))
     }

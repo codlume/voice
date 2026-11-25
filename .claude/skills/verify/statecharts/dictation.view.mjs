@@ -20,9 +20,7 @@ export function state(v) {
       return [PROCESSING, "Inserting"];
   }
   if (v.outcome === "inserted") return [RESULT, "Inserted or Pasted"];
-  if (v.outcome === "notInserted") {
-    return [RESULT, v.inApp ? "Not inserted, yet the text is in the app" : "Not inserted"];
-  }
+  if (v.outcome === "notInserted") return [RESULT, "Not inserted"];
   return [RESULT, "Too short, Nothing heard, or an error"];
 }
 
@@ -85,9 +83,7 @@ export function step(action, from) {
     case "AppRefusesText":
       return "the app refuses the text";
     case "InsertTimesOut":
-      return "5 s pass with no answer";
-    case "LateInsertLands":
-      return "the helper's insert lands late";
+      return "6.5 s pass with no answer";
     case "LateInsertRefused":
       return "the helper's insert fails late";
     case "HelperCrashes":

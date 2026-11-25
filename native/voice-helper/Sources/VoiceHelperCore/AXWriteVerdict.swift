@@ -83,3 +83,20 @@ public enum AXWritePlan: Equatable, Sendable {
         }
     }
 }
+
+public enum AXWriteAttempt: Equatable, Sendable {
+    case wrote(AXWritePlan, before: AXTextState)
+    /// The insert's deadline passed before the write, so the app was sent nothing.
+    case tooLate
+}
+
+/// The order of an accessibility write. Reading the element first can take the app's whole
+/// messaging timeout per attribute, so the deadline is asked after that read, and an insert
+/// that ran out of time sends no write.
+public func accessibilityWrite(
+    before: () -> AXTextState, deadlinePassed: () -> Bool, write: () -> AXWriteAnswer, after: () -> AXTextState
+) -> AXWriteAttempt {
+    let before = before()
+    if deadlinePassed() { return .tooLate }
+    return .wrote(AXWritePlan(answer: write(), before: before, after: after), before: before)
+}
