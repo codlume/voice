@@ -17,7 +17,8 @@ import { pageStyles } from "./pageStyles.ts";
 import { AddToCategory, AssignmentChip } from "./StyleAssignments.tsx";
 import { bannerApps, CATEGORY_LABELS, chips } from "./styleView.ts";
 import { Switch } from "./Switch.tsx";
-import { color, leading, radius, space, text } from "./tokens.stylex.ts";
+import { segmentStyles } from "./ToggleGroup.tsx";
+import { color, elevation, leading, motion, radius, space, text } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useAction } from "./useAction.ts";
 import { useInstalledApps, type InstalledApps } from "./useInstalledApps.ts";
@@ -51,67 +52,48 @@ const styles = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: space.lg,
-    paddingBlock: 14,
-    paddingInline: space.lg,
+    paddingBlock: space.md,
+    paddingInline: space.base,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.large,
     backgroundColor: color.card,
+    boxShadow: elevation.xs,
   },
   cleanupText: { flexGrow: 1, minWidth: 0 },
   tabs: { display: "flex", flexDirection: "column", gap: space.md },
-  tabList: {
-    display: "grid",
-    gridAutoFlow: "column",
-    gridAutoColumns: "1fr",
-    gap: 2,
-    padding: 3,
-    borderRadius: radius.medium,
-    backgroundColor: color.segmentTrack,
-  },
-  tab: {
-    paddingBlock: 6,
-    paddingInline: space.md,
-    borderWidth: 0,
-    borderRadius: 7,
-    backgroundColor: "transparent",
-    color: color.mutedForeground,
-    fontFamily: "inherit",
-    fontSize: 13,
-    textAlign: "center",
-    cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
-  },
-  tabOn: {
-    backgroundColor: color.segmentSelected,
-    color: color.foreground,
-    fontWeight: 500,
-    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
-  },
-  panel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: space.md,
-    borderRadius: radius.medium,
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
-    outlineOffset: 3,
-  },
+  // Base UI renders each tab as a <button>; the segment look supplies everything else.
+  tab: { borderWidth: 0, fontFamily: "inherit" },
+  panel: { display: "flex", flexDirection: "column", gap: space.base, borderRadius: radius.medium },
   banner: {
     display: "flex",
     flexWrap: "wrap",
     alignItems: "center",
     columnGap: space.sm,
-    rowGap: 4,
+    rowGap: space.xxs,
     minHeight: 24,
   },
-  apps: { display: "flex", alignItems: "center", gap: 4 },
+  apps: { display: "flex", alignItems: "center", gap: space.xxs },
   appCell: { display: "grid", placeItems: "center", width: 24, height: 24 },
-  more: { paddingInline: 2, color: color.mutedForeground, fontSize: 12, fontWeight: 500 },
+  more: {
+    paddingInline: 2,
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+  },
   title: { display: "block", fontWeight: 500 },
-  detail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  detail: { margin: 0, color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
   fieldset: { minWidth: 0, margin: 0, padding: 0, borderWidth: 0 },
-  legend: { padding: 0, marginBottom: space.md, fontSize: 13, fontWeight: 600 },
+  legend: {
+    padding: 0,
+    marginBottom: space.sm,
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
+  },
   grid: {
     display: "grid",
     gridTemplateColumns: {
@@ -120,55 +102,57 @@ const styles = stylex.create({
     },
     gap: space.md,
   },
+  // Adapted option card (MIT, see THIRD_PARTY_NOTICES.md): a hairline ring instead of a border, and
+  // a 2px accent ring over a faint accent fill once picked.
   card: {
     position: "relative",
     display: "flex",
     flexDirection: "column",
     gap: space.md,
     minHeight: 128,
-    paddingBlock: space.md,
-    paddingInline: space.lg,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.border, ":hover": color.input },
-    borderRadius: radius.large,
-    backgroundColor: { default: color.card, ":hover": color.accent },
+    padding: space.md,
+    borderRadius: radius.medium,
+    backgroundColor: {
+      default: color.card,
+      ":hover": "oklch(98.5% 0 0)",
+      [motion.dark]: { default: "rgb(255 255 255 / 3%)", ":hover": "rgb(255 255 255 / 5%)" },
+    },
+    boxShadow: {
+      default: "0 0 0 1px rgb(0 0 0 / 5%)",
+      [motion.dark]: "0 0 0 1px rgb(255 255 255 / 5%)",
+    },
+    color: color.mutedForeground,
+    textAlign: "start",
     cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
-    outlineOffset: 3,
+    transitionProperty: "background-color, box-shadow",
+    transitionDuration: { default: motion.base, [motion.reduced]: "0s" },
   },
   selected: {
-    borderColor: { default: color.primary, ":hover": color.primary },
     backgroundColor: {
-      default: `color-mix(in srgb, ${color.primary} 7%, ${color.card})`,
-      ":hover": `color-mix(in srgb, ${color.primary} 10%, ${color.card})`,
+      default: `color-mix(in oklab, ${color.primary} 8%, transparent)`,
+      [motion.dark]: `color-mix(in oklab, ${color.primary} 15%, transparent)`,
     },
+    boxShadow: `inset 0 0 0 2px ${color.primary}`,
+    color: color.foreground,
   },
-  disabled: { opacity: 0.5, cursor: "default" },
-  cardHeader: { display: "flex", alignItems: "center", gap: space.sm },
-  cardTitle: { flexGrow: 1, fontWeight: 600 },
+  disabled: { opacity: 0.64, cursor: "not-allowed" },
+  cardHeader: { display: "flex", alignItems: "center", gap: space.sm, minHeight: 20 },
+  cardTitle: { flexGrow: 1, color: color.foreground, fontSize: text.sm, fontWeight: 500 },
   mark: {
     display: "grid",
     placeItems: "center",
     flexShrink: 0,
-    width: 18,
-    height: 18,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.input,
+    width: 20,
+    height: 20,
     borderRadius: radius.round,
-    color: "transparent",
-  },
-  markSelected: {
-    borderColor: color.primary,
     backgroundColor: color.primary,
     color: color.primaryForeground,
   },
   example: {
     display: "block",
     margin: 0,
-    fontSize: text.base,
-    lineHeight: leading.base,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     whiteSpace: "pre-line",
   },
 });
@@ -225,12 +209,16 @@ export function Style({ settings }: { settings: SettingsValue }) {
         }}
         {...stylex.props(styles.tabs)}
       >
-        <Tabs.List {...stylex.props(styles.tabList)}>
+        <Tabs.List {...stylex.props(segmentStyles.track)}>
           {CATEGORIES.map((value) => (
             <Tabs.Tab
               key={value}
               value={value}
-              {...stylex.props(styles.tab, value === category && styles.tabOn)}
+              {...stylex.props(
+                segmentStyles.segment,
+                styles.tab,
+                value === category && segmentStyles.on,
+              )}
             >
               {CATEGORY_LABELS[value]}
             </Tabs.Tab>
@@ -410,12 +398,11 @@ function StyleCards({
                   <span id={labelId} {...stylex.props(styles.cardTitle)}>
                     {label}
                   </span>
-                  <span
-                    aria-hidden="true"
-                    {...stylex.props(styles.mark, selected && styles.markSelected)}
-                  >
-                    <CheckIcon size={12} strokeWidth={3} />
-                  </span>
+                  {selected && (
+                    <span aria-hidden="true" {...stylex.props(styles.mark)}>
+                      <CheckIcon size={14} />
+                    </span>
+                  )}
                 </span>
                 <span id={ruleId} {...stylex.props(styles.detail)}>
                   {rule}
