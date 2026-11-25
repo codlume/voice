@@ -420,7 +420,12 @@ describe("meeting lifecycle", () => {
 
       const deleted = step(meeting, { type: "deleteAudio" }, T0 + 40 * MIN, config);
       expect(deleted.meeting).toEqual({ ...meeting, finalPassFailed: null });
-      expect(deleted.effects).toEqual([{ type: "deleteAudio" }]);
+      expect(deleted.effects).toEqual([{ type: "deleteAudio", keptFor: meeting!.finalPassFailed }]);
+
+      const reason = meeting!.finalPassFailed!;
+      const kept = step(deleted.meeting, { type: "audioDeleteFailed", reason }, T0, config);
+      expect(kept.meeting).toEqual(meeting);
+      expect(notices(kept.effects)).toEqual(["finalPassFailed"]);
     }
     const fine = meetingAt({ kind: "ready" });
     expect(step(fine, { type: "retryFinalPass" }, T0, config).effects).toEqual([]);
@@ -640,7 +645,7 @@ describe("meeting lifecycle", () => {
       const meeting = meetingAt(status);
       expect(step(meeting, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual({
         meeting,
-        effects: transcribed ? [{ type: "deleteAudio" }] : [],
+        effects: transcribed ? [{ type: "deleteAudio", keptFor: null }] : [],
       });
       const kept = meetingAt(status, { finalPassFailed: "other" });
       expect(step(kept, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual({
