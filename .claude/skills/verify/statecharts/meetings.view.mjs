@@ -1,6 +1,10 @@
 // View for meetings.tla: the meeting recording flow in the words of the user and maintainer.
 const ready = (v) => {
-  if (v.failed) return "Ready, final pass failed, audio kept";
+  if (v.failed) {
+    return v.partial
+      ? "Ready, final pass failed, part of the audio deleted"
+      : "Ready, final pass failed, audio kept";
+  }
   if (!v.final) {
     return v.audio === "kept"
       ? "Ready, audio without a final transcript left on disk"
