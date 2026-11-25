@@ -18,6 +18,11 @@ export function accountRow(state: Exclude<AccountState, { kind: "signedIn" }>): 
   switch (state.kind) {
     case "unavailable":
       return { title: "Accounts are unavailable", detail: state.reason };
+    case "restoring":
+      return {
+        title: "Checking your sign-in",
+        detail: "Voice is restoring the Google account you signed in with.",
+      };
     case "signedOut":
       return {
         title: "Google account",

@@ -207,6 +207,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       case "startCapture": {
         if (meeting === null) return;
         heardWhole.delete(id);
+        if (!(await clearLeftoverAudio(meeting))) {
+          const message = "Voice could not clear this meeting's old audio. Try again.";
+          background("start", dispatch(id, { type: "captureFailed", leg: effect.leg, message }));
+          return;
+        }
         const { language, microphone } = deps.capture();
         const length = await audioLength(id);
         const baseMs = await audioBase(meeting);
@@ -439,6 +444,25 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       AUDIO_FILES.map((name) => rm(NodePath.join(folder(id), name), { force: true })),
     );
     await rm(NodePath.join(folder(id), "audio.json"), { force: true });
+  }
+
+  /**
+   * A finished meeting keeps audio only after a failed final pass. Audio it still has otherwise is
+   * left over from a failed delete or a quit, and a resume that adds to it would transcribe that
+   * leg again, so the resume starts new files instead.
+   */
+  async function clearLeftoverAudio(meeting: Meeting): Promise<boolean> {
+    const { status, finalPassFailed } = meeting;
+    if (status.kind !== "starting" || status.from !== "ready" || finalPassFailed !== null) {
+      return true;
+    }
+    return deleteAudio(meeting.id).then(
+      () => true,
+      (error) => {
+        log(`meetings: ${meeting.id} leftover audio could not be deleted (${String(error)})`);
+        return false;
+      },
+    );
   }
 
   function arm(id: MeetingId, watch: Watch) {

@@ -1,7 +1,11 @@
 // View for meetings.tla: the meeting recording flow in the words of the user and maintainer.
 const ready = (v) => {
   if (v.failed) return "Ready, final pass failed, audio kept";
-  if (!v.final) return "Ready, live transcript only, audio deleted";
+  if (!v.final) {
+    return v.audio === "kept"
+      ? "Ready, resume cancelled, its first audio on disk"
+      : "Ready, live transcript only, audio deleted";
+  }
   return v.audio === "kept" ? "Ready, audio left on disk" : "Ready, audio deleted";
 };
 
@@ -9,6 +13,7 @@ const labels = {
   none: "No meeting",
   starting: "Starting",
   resuming: "Resuming",
+  reopening: "Resuming a finished meeting",
   recording: "Recording",
   paused: "Paused",
   finishing: "Catching up the live transcript",
@@ -22,7 +27,9 @@ const labels = {
 export const state = (v) => (v.status === "ready" ? ready(v) : labels[v.status]);
 
 export const group = (v) => {
-  if (["starting", "resuming", "recording", "paused"].includes(v.status)) return "Capture";
+  if (["starting", "resuming", "reopening", "recording", "paused"].includes(v.status)) {
+    return "Capture";
+  }
   if (["finishing", "draining", "confirming", "finalizing", "deletingAudio"].includes(v.status)) {
     return "Finishing";
   }
@@ -52,9 +59,15 @@ export function step(action, from, to) {
       return "you press Pause, or the audio stops";
     case "YouResume":
       return "you press Resume";
+    case "LeftoverDeleted":
+      return "the audio left on disk is deleted";
+    case "LeftoverStays":
+      return "the audio left on disk cannot be deleted, so the resume fails";
     case "ResumeFails":
     case "YouPauseWhileResuming":
-      return "the resume fails, or you press Pause";
+      return from.status === "reopening"
+        ? "the resume fails, or you press Pause or Stop"
+        : "the resume fails, or you press Pause";
     case "YouStop":
       return from.status === "recording" ? stopOrLimit : `you press Stop, or ${restart}`;
     case "TimeLimit":
@@ -82,7 +95,7 @@ export function step(action, from, to) {
     case "VoiceRestarts":
       if (to.status === "gone")
         return "the start fails, you press Stop, or Voice closes before any audio";
-      if (["ready", "deletingAudio"].includes(from.status)) return restart;
+      if (["ready", "deletingAudio", "reopening"].includes(from.status)) return restart;
       if (["paused", "resuming"].includes(from.status)) return `you press Stop, or ${restart}`;
       if (from.status === "recording") return stopOrLimit;
       if (from.status === "starting")

@@ -2,8 +2,9 @@
 \* Settings > Account: Google sign-in, restore, sign out, and deletion.
 \* Modeled from apps/desktop/src/main/account.ts and account-client.ts.
 
-\* page is what the Account page shows. "launching" is the signedOut state a new process
-\* starts in before restore() runs, and "waiting" and "finishing" are the two phases of signingIn.
+\* page is what the Account page shows. A new process starts in "restoring" when an auth session
+\* is stored and in "launching", the signedOut state before restore() runs, when none is.
+\* "waiting" and "finishing" are the two phases of signingIn.
 \* cookie is the stored auth session: "live" while the server accepts it, "ended" once the
 \* server expired or revoked it without Voice knowing yet.
 \* queue is the encrypted retired_auth_sessions list. "ending" means a drain runs in this process,
@@ -25,12 +26,13 @@ Init ==
 
 \* restore(): the cached identity shows signed in before the server answers. Queued sign-outs drain.
 Restore ==
-  /\ page = "launching"
-  /\ page' = IF cookie # "none" THEN "signedIn" ELSE "signedOut"
+  /\ page \in {"restoring", "launching"}
+  /\ page' = IF page = "restoring" THEN "signedIn" ELSE "signedOut"
   /\ queue' = IF queue = "empty" THEN "empty" ELSE "ending"
   /\ UNCHANGED <<cookie, online, attempted>>
 
-\* signIn() from signedOut, or from error through Retry. A fresh sign-in retires any stored cookie.
+\* signIn() from signedOut, or from error through Retry. restoring offers no button and signIn()
+\* ignores it. A fresh sign-in retires any stored cookie.
 SignInStarts ==
   /\ page' = "waiting"
   /\ attempted' = TRUE
@@ -140,7 +142,7 @@ DeletionFails ==
 \* dispose() and a new process. Drains in flight die, and the queue stays on disk.
 YouRestart ==
   /\ page \notin {"unavailable", "finishing", "deleting"}
-  /\ page' = "launching"
+  /\ page' = IF cookie # "none" THEN "restoring" ELSE "launching"
   /\ attempted' = FALSE
   /\ queue' = IF queue = "empty" THEN "empty" ELSE "waiting"
   /\ UNCHANGED <<cookie, online>>
@@ -194,8 +196,8 @@ CancelReturnsToSignedOut ==
   page \in SigningIn => ENABLED (YouCancel /\ page' = "signedOut" /\ cookie' = "none")
 
 OfflineNeverSignsOut ==
-  [][(~online /\ cookie # "none" /\ page \in ShownSignedIn \cup {"launching"})
-      => (page' \in ShownSignedIn \cup {"launching"} \/ YouSignOut \/ YouClickSignIn)]_vars
+  [][(~online /\ cookie # "none" /\ page \in ShownSignedIn \cup {"restoring"})
+      => (page' \in ShownSignedIn \cup {"restoring"} \/ YouSignOut \/ YouClickSignIn)]_vars
 
 NoStuckSigningIn == page \in SigningIn ~> page \notin SigningIn
 

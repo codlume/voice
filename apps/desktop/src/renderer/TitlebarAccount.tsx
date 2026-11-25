@@ -15,6 +15,7 @@ import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
 const buttonLabels: Record<Exclude<AccountState["kind"], "unavailable" | "signedIn">, string> = {
+  restoring: "Account, checking sign-in",
   signedOut: "Account, signed out",
   signingIn: "Account, signing in",
   error: "Account, sign-in failed",
