@@ -47,6 +47,8 @@ final class Transcriber: Transcribing {
     enum AsrLoad {
         case missing
         case downloading(Task<PreparedAsr, Error>)
+        /// remove() cancelled the download; the folder goes once the task stops writing to it.
+        case cancelling(Task<PreparedAsr, Error>)
         case loading(Task<PreparedAsr, Error>)
         case ready(PreparedAsr)
         case failed(String)
@@ -54,6 +56,7 @@ final class Transcriber: Transcribing {
 
     private let directory: URL
     private let cache: ModelCache
+    private let fetcher: ModelFetcher
     private let output: Output
     private var load: AsrLoad = .missing
     private var lastDecodeFinishedAt: DispatchTime?
@@ -66,16 +69,17 @@ final class Transcriber: Transcribing {
             let idle = lastDecodeFinishedAt.map { $0.millisecondsToNow() / 1000 } ?? .infinity
             return idle < Self.warmSeconds ? .warm : .cold
         case .loading: return .loading
-        case .downloading: return .downloading
+        case .downloading, .cancelling: return .downloading
         case .missing: return .missing
         case .failed: return .failed
         }
     }
 
-    init(modelsDir: URL, output: Output) {
+    init(modelsDir: URL, output: Output, downloads: URLSessionConfiguration = ModelHub.session.configuration) {
         ModelHub.offlineMode = true
         cache = ModelCache(release: ModelManifest.parakeetV3, modelsDirectory: modelsDir)
         directory = cache.folder
+        fetcher = ModelFetcher(configuration: downloads)
         self.output = output
     }
 
@@ -84,7 +88,7 @@ final class Transcriber: Transcribing {
         case .ready:
             output.emit(.asrStatus(state: .ready, message: nil))
             return
-        case .downloading:
+        case .downloading, .cancelling:
             output.emit(.asrStatus(state: .downloading, message: nil))
             return
         case .loading:
@@ -107,7 +111,7 @@ final class Transcriber: Transcribing {
         }
         let directory = directory
         let cache = cache
-        let fetcher = ModelFetcher(configuration: ModelHub.session.configuration)
+        let fetcher = fetcher
         let loadBecameDownload: @Sendable ([ModelFile]) -> Void = { [weak self] files in Task { @MainActor in self?.downloadStarted(files) } }
         let output = output
         let task = Task.detached(priority: .userInitiated) { () throws -> PreparedAsr in
@@ -125,12 +129,14 @@ final class Transcriber: Transcribing {
         load = needsDownload ? .downloading(task) : .loading(task)
         output.emit(.asrStatus(state: needsDownload ? .downloading : .loading, message: nil))
         Task { @MainActor in
-            do {
-                let manager = try await task.value
+            let result = await task.result
+            if case .cancelling = load { return deleteModel() }
+            switch result {
+            case .success(let manager):
                 load = .ready(manager)
                 lastDecodeFinishedAt = .now()
                 output.emit(.asrStatus(state: .ready, message: nil))
-            } catch {
+            case .failure(let error):
                 fail(error)
             }
         }
@@ -186,17 +192,20 @@ final class Transcriber: Transcribing {
 
     func remove() {
         switch load {
-        case .downloading:
-            output.log(.info, "asr.remove ignored while the speech model downloads")
-            output.emit(.asrStatus(state: .downloading, message: nil))
-            return
+        case .downloading(let task):
+            load = .cancelling(task)
+            task.cancel()
+        case .cancelling:
+            break
         case .loading:
             output.log(.info, "asr.remove ignored while the speech model loads")
             output.emit(.asrStatus(state: .loading, message: nil))
-            return
         case .missing, .ready, .failed:
-            break
+            deleteModel()
         }
+    }
+
+    private func deleteModel() {
         load = .missing
         meetingManager = nil
         do {
@@ -270,7 +279,7 @@ final class Transcriber: Transcribing {
             } catch {
                 throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(Self.loadFailure(error))")
             }
-        case .missing:
+        case .missing, .cancelling:
             throw TranscribeError(reason: .asrUnavailable, message: "speech model is not loaded")
         case .failed(let message):
             throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(message)")
@@ -306,7 +315,7 @@ final class Transcriber: Transcribing {
             switch load {
             case .ready(let ready): prepared = Task { ready }
             case .loading(let task), .downloading(let task): prepared = task
-            case .missing: throw TranscribeError(reason: .asrUnavailable, message: "speech model is not downloaded")
+            case .missing, .cancelling: throw TranscribeError(reason: .asrUnavailable, message: "speech model is not downloaded")
             case .failed(let message): throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(message)")
             }
             pending = Task.detached(priority: .utility) {

@@ -127,10 +127,12 @@ describe("checklist", () => {
     ]);
   });
 
-  test("a speech model download shows progress and offers no action", () => {
+  test("a speech model download shows progress and offers Cancel", () => {
     const r = row(withAsr({ state: "downloading", progress: 0.42 }), "asr");
     expect(r.status).toEqual({ kind: "busy", text: "Downloading 42%", progress: 0.42 });
-    expect(r.actions).toEqual([]);
+    expect(r.actions).toEqual([
+      { label: "Cancel", command: { type: "uninstallModel", id: "asr" } },
+    ]);
     expect(row(withAsr({ state: "downloading" }), "asr").status).toEqual({
       kind: "busy",
       text: "Downloading",
