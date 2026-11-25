@@ -101,6 +101,14 @@ const FAILURES: Partial<Record<MeetingEvent["type"], string>> = {
   deleteAudio: "The audio could not be deleted. Try again.",
 };
 
+/** Why a command refuses to work from a kept audio set that a failed Delete audio left part of. */
+const INCOMPLETE = {
+  retryFinalPass:
+    "Part of this meeting's audio was already deleted, so it cannot be transcribed again. Delete audio to remove the rest.",
+  resume:
+    "Part of this meeting's audio was already deleted, so it cannot be resumed yet. Delete audio to remove the rest first.",
+} as const;
+
 const FAILED_START = "Recording could not start. Check your microphone, then try again.";
 
 const takesLiveLines = (meeting: Meeting) =>
@@ -431,6 +439,30 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return found.length === 0 ? null : Math.max(...found) / PCM_BYTES_PER_MS;
   }
 
+  /**
+   * A Delete audio that fails part way can remove one source's audio and keep the other's. A final
+   * pass over what is left would replace that source's live lines with nothing, so the kept audio
+   * is incomplete when a source has live lines since the audio began but no audio on disk.
+   */
+  async function audioIncomplete(id: MeetingId): Promise<boolean> {
+    await queue;
+    const meeting = store.get(id);
+    if (!meeting?.finalPassFailed) return false;
+    const missing = new Set<MeetingSource>();
+    for (const name of PCM_FILES) {
+      const size = await stat(NodePath.join(folder(id), name)).then(
+        (file) => file.size,
+        () => 0,
+      );
+      if (size === 0) missing.add(name === "mic.pcm" ? "mic" : "system");
+    }
+    if (missing.size === 0) return false;
+    const fromMs = await audioBase(meeting);
+    return (await store.transcript(id)).some(
+      (entry) => entry.kind === "segment" && entry.startMs >= fromMs && missing.has(entry.source),
+    );
+  }
+
   async function audioBase(meeting: Meeting): Promise<number> {
     if ((await audioLength(meeting.id)) === null) {
       return Math.max(recordedMs(meeting, now()), reach(await store.transcript(meeting.id)));
@@ -557,6 +589,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       const other = store.state().meetings.find((meeting) => meeting.id !== id && isLive(meeting));
       if (other) return { kind: "refused", message: "Stop the other meeting first." };
     }
+    if ((event.type === "retryFinalPass" || event.type === "resume") && (await audioIncomplete(id)))
+      return { kind: "refused", message: INCOMPLETE[event.type] };
     const applied = await dispatch(id, event);
     const failure = applied === "failed" ? FAILURES[event.type] : undefined;
     if (failure) return { kind: "refused", message: failure };
