@@ -73,6 +73,11 @@ const styles = stylex.create({
     textUnderlineOffset: 2,
     transform: "none",
   },
+  // A destructive action placed beside other actions: red text with no fill until hovered.
+  ghostDestructive: {
+    backgroundColor: { default: "transparent", ":hover": color.errorSurface },
+    color: color.errorForeground,
+  },
   icon: {
     width: 28,
     height: 28,
@@ -88,7 +93,7 @@ export function Button({
   pressed,
   ...props
 }: Omit<ComponentProps<"button">, "type" | "className" | "style" | "aria-pressed"> & {
-  variant?: "primary" | "secondary" | "destructive" | "text" | "icon";
+  variant?: "primary" | "secondary" | "destructive" | "ghostDestructive" | "text" | "icon";
   pressed?: boolean;
 }) {
   return (
