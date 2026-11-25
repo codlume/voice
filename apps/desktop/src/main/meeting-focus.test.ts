@@ -259,7 +259,7 @@ describe("notices on the Meetings page", () => {
     const pass = raise(
       follow(noMeetingFocus, [done]),
       done.id,
-      { kind: "finalPassFailed", reason: "other" },
+      { kind: "finalPassFailed", reason: "other", audio: "whole" },
       0,
     );
     expect(meetingBanners(pass)[0]).toMatchObject({

@@ -184,16 +184,6 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
   }
 
   recorder.recover().catch((error) => log(`meetings: recovery failed (${String(error)})`));
-  meetings
-    .loaded()
-    .then(() => {
-      for (const { id, finalPassFailed } of meetings.state().meetings) {
-        if (!finalPassFailed) continue;
-        const notice = { kind: "finalPassFailed", reason: finalPassFailed } as const;
-        store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
-      }
-    })
-    .catch((error) => log(`meetings: load failed (${String(error)})`));
   // The expiry timer counts awake time only, so a window that ended during sleep ends on wake.
   powerMonitor.on("resume", () => {
     meetings.expire().catch((error) => log(`meetings: expiry failed (${String(error)})`));
