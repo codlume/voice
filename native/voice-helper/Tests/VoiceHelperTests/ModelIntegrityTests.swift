@@ -88,6 +88,28 @@ struct ModelIntegrityTests {
         }
     }
 
+    @Test @MainActor func cancellingAStalledDownloadLeavesTheSpeechModelNotInstalled() async throws {
+        let lines = EmittedLines()
+        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-asr-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let transcriber = Transcriber(modelsDir: dir, output: output, downloads: StalledDownloads.configuration())
+        transcriber.prepare(download: true)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !StalledDownloads.started, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(transcriber.sessionState == .downloading)
+
+        transcriber.remove()
+
+        let final = try await waitForTerminal(lines, timeout: .seconds(5))
+        let states = lines.snapshot().filter { $0["type"] as? String == "asr.status" }.compactMap { $0["state"] as? String }
+        #expect(final["state"] as? String == "missing")
+        #expect(!states.contains("failed"), "a cancel never flashes a failure first")
+        #expect(transcriber.sessionState == .missing)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
+    }
+
     @Test @MainActor func theClassesThatLoadModelsLockFluidAudioOffline() {
         let output = Output(fd: FileHandle.nullDevice.fileDescriptor)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-asr-\(UUID().uuidString)")
@@ -191,4 +213,24 @@ struct ModelIntegrityTests {
         }
         throw ProtocolError("no terminal asr.status within \(timeout)")
     }
+}
+
+/// A download server that accepts every request and never answers, the way a stalled connection
+/// looks before URLSession's 60 s idle timeout.
+final class StalledDownloads: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var startedAny = false
+
+    static var started: Bool { lock.withLock { startedAny } }
+
+    static func configuration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StalledDownloads.self]
+        return configuration
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() { Self.lock.withLock { Self.startedAny = true } }
+    override func stopLoading() {}
 }

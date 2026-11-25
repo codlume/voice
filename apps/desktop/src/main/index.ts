@@ -816,8 +816,8 @@ async function main() {
   function assertCanUninstall(model: Model) {
     if (lifecycle !== "running") throw new Error("Voice is closing.");
     const { state } = store.state.models[model.id];
-    if (state === "loading" || (state === "downloading" && !model.cancelableDownload)) {
-      throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
+    if (state === "loading") {
+      throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish loading.`);
     }
     if (model.busyDuring && activity(store.state) === model.busyDuring) {
       throw new Error(

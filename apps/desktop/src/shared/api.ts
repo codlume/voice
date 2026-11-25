@@ -116,6 +116,7 @@ export const VOICE_URL_SCHEME = "com.codlume.voice";
  */
 export type AccountState =
   | { kind: "unavailable"; reason: string }
+  | { kind: "restoring" }
   | { kind: "signedOut" }
   | { kind: "signingIn"; purpose: "signIn" | "deleteAccount"; phase: "browser" | "finishing" }
   | ({ kind: "signedIn"; deletion?: AccountDeletion; notice?: string } & AccountIdentity)

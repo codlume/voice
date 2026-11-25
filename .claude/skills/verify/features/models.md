@@ -4,11 +4,11 @@ Voice runs two on-device models: Parakeet for speech recognition and S1-mini for
 
 ## Sub-features
 
-- `models-status`: each row's status line reads "Installed" (state `ready`), "Loading", "Downloading N%", "Not installed", or the failure message with `Retry` and `Uninstall`. Only S1-mini offers `Cancel S1-mini` while downloading.
+- `models-status`: each row's status line reads "Installed" (state `ready`), "Loading", "Downloading N%", "Not installed", or the failure message with `Retry` and `Uninstall`. Every row offers `Cancel <name>` while downloading.
 - `models-uninstall`: `Uninstall <name>` asks for confirmation ("Uninstall the cleanup model?" or "Uninstall the speech model?"). Cancel keeps the model. Uninstall removes it, and the row reads "Not installed".
 - `models-install`: `Install <name>` installs and loads the model again.
 - `models-cleanup-off`: with cleanup off, the S1-mini row reads "Installed. Loads when text cleanup is on."
-- `models-home-checklist`: a missing model shows on Home's `Set up Voice` checklist as "Not downloaded" with `Download Speech model` or `Download Cleanup model`, then `Cancel Cleanup model` while downloading and `Retry <kind>` after a failure. The Cleanup model row is hidden with cleanup off or a non-English language. The scratch instance never grants the microphone, so the checklist always shows there.
+- `models-home-checklist`: a missing model shows on Home's `Set up Voice` checklist as "Not downloaded" with `Download Speech model` or `Download Cleanup model`, then `Cancel <kind>` while downloading and `Retry <kind>` after a failure. The Cleanup model row is hidden with cleanup off or a non-English language. The scratch instance never grants the microphone, so the checklist always shows there.
 
 ## How to get to it (user POV)
 
@@ -26,11 +26,12 @@ Preconditions: baseline, both models `ready`.
 - **Reinstall without downloading.** First restore the link: `ln -s "$HOME/Library/Caches/Voice Development/test-models/s1-mini-q4_k_m.gguf" "<userData>/models/"`. Then `vv click "Install S1-mini"`, or `vv click "Download Cleanup model"` on Home. The state reaches `ready`, never `downloading` with a progress above 0.
 - **Home checklist.** While a model is missing, `vv key Escape`, `vv click Home`, then `vv text`. The output shows "Not downloaded".
 - **Stalled download and Cancel.** Start `node .claude/skills/verify/scripts/stalled-model-server.mjs 9461` in the background and record its PID. `launch` with `VOICE_CLEANUP_MODEL_URL=http://127.0.0.1:9461` (launch always re-links both models, so removing the link before launch does nothing), then uninstall S1-mini from Settings > Models as above. `Install S1-mini` sits at "Downloading 1%". `Cancel S1-mini` in Settings ends `missing` with no `.part` file. Repeat from Home with `Download Cleanup model` and `Cancel Cleanup model` for the same result. Leave a third attempt alone; it ends `failed` with "Download stalled. Check your connection and try again." after 30 s. Restore the link and `vv click "Retry Cleanup model"` to reach `ready`. Stop the verify instance and the recorded server PID afterward.
+- **Stalled speech download and Cancel.** Start the same server, then `launch` with `https_proxy=http://127.0.0.1:9461`. The helper's downloads go through that proxy, which accepts the connection and sends nothing. The cleanup download ignores it. Uninstall Parakeet from Settings > Models with `Uninstall Parakeet`, then `Uninstall` in the dialog. `Install Parakeet` sits at "Downloading", and `lsof -nP -iTCP:9461` lists `voice-helper` connections. `Cancel Parakeet` ends `missing` with no `parakeet-tdt-0.6b-v3` folder in `<userData>/models`. Repeat from Home with `Download Speech model` and `Cancel Speech model`. Restore the link and `vv click "Install Parakeet"` to reach `ready` with no new download. Cancel does not stop the voice detector download that Install also starts ([#444](https://github.com/codlume/voice/issues/444)), so `silero-vad-coreml` may hold a partial folder in place of its link until that download gives up.
 - **Full scripted pass.** `stop` the instance and run `node scripts/models-smoke.mjs`.
 
 ## Gotchas
 
 - Uninstall deletes the scratch userData's symlink, never the shared test-model cache. If the cache file disappears, that is a bug. Report it.
 - Uninstalling the speech model also removes the link to the voice detector meetings use, `models/silero-vad-coreml`. Restore that link with the speech model's, or `Install` downloads the detector (1 MB).
-- Clicking `Install` with no link in place starts a real download of about 480 MB. Restore the link first. Parakeet has no URL override and no Cancel, so cover its uninstall and reinstall with `node scripts/models-smoke.mjs`.
+- Clicking `Install` with no link in place starts a real download of about 480 MB. Restore the link first. Parakeet has no URL override, so stall it with `https_proxy` as above, or cover its uninstall and reinstall with `node scripts/models-smoke.mjs`.
 - The confirmation is an in-window dialog. Its `Cancel` and `Uninstall` buttons are reachable with `click`, and the row button is named `Uninstall <model>`, so the names do not collide.

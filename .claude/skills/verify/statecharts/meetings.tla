@@ -3,19 +3,20 @@
 \* steps it, meeting-recorder.ts runs its effects, and the helper records into mic.pcm and system.pcm.
 
 VARIABLES
-    status,     \* the meeting's status; "resuming" is the code's starting from paused
+    status,     \* the meeting's status; "resuming" and "reopening" are the code's starting from paused and from ready
     capturing,  \* the helper writes microphone and system audio to the meeting's files
     intent,     \* you pressed Start or Resume and have not stopped or paused since
     audio,      \* the meeting's audio files: never recorded, on disk, or deleted
     final,      \* everything recorded has a final transcript saved
     failed,     \* the final pass failed, so Try again and Delete audio are offered
     lost,       \* Voice dropped audio that had no final transcript without you asking
-    tray        \* the tray item's label
+    tray,       \* the tray item's label
+    stale       \* the helper appended to audio that had a final transcript and no Try again
 
-vars == <<status, capturing, intent, audio, final, failed, lost, tray>>
+vars == <<status, capturing, intent, audio, final, failed, lost, tray, stale>>
 
 Live == {"recording", "paused"}
-Opening == {"starting", "resuming"}
+Opening == {"starting", "resuming", "reopening"}
 
 TrayFor(s) ==
     IF s \in Live THEN "Stop meeting"
@@ -26,6 +27,7 @@ TrayFor(s) ==
 Moved(byYou) ==
     /\ tray' = TrayFor(status')
     /\ lost' = (lost \/ (~byYou /\ audio = "kept" /\ ~final /\ (status' = "gone" \/ audio' # "kept")))
+    /\ stale' = (stale \/ (~capturing /\ capturing' /\ final /\ ~failed /\ audio = "kept"))
 
 Init ==
     /\ status = "none"
@@ -36,6 +38,7 @@ Init ==
     /\ failed = FALSE
     /\ lost = FALSE
     /\ tray = "Start meeting"
+    /\ stale = FALSE
 
 \* Tray Start meeting, the meeting shortcut, or the hub's Start meeting button.
 YouStart ==
@@ -45,10 +48,15 @@ YouStart ==
     /\ UNCHANGED <<capturing, audio, final, failed>>
     /\ Moved(FALSE)
 
+\* A finished meeting resumes with audio still on disk although its final pass did not fail.
+\* clearLeftoverAudio in the startCapture effect deletes it before meeting.start.
+Leftover == status = "reopening" /\ ~capturing /\ ~failed /\ audio = "kept"
+
 \* The helper's meeting.start opened the devices and appends to the files.
 HelperStarts ==
     /\ status \in Opening
     /\ ~capturing
+    /\ ~Leftover
     /\ capturing' = TRUE
     /\ audio' = "kept"
     /\ final' = FALSE
@@ -101,23 +109,41 @@ AudioStops ==
     /\ Moved(FALSE)
 
 YouResume ==
-    /\ status = "paused"
-    /\ status' = "resuming"
+    /\ status \in {"paused", "ready"}
+    /\ status' = IF status = "paused" THEN "resuming" ELSE "reopening"
     /\ intent' = TRUE
     /\ UNCHANGED <<capturing, audio, final, failed>>
     /\ Moved(FALSE)
 
-ResumeFails ==
-    /\ status = "resuming"
-    /\ ~capturing
-    /\ status' = "paused"
+LeftoverDeleted ==
+    /\ Leftover
+    /\ audio' = "deleted"
+    /\ UNCHANGED <<status, capturing, intent, final, failed>>
+    /\ Moved(FALSE)
+
+\* The delete throws: captureFailed and a resumeFailed notice, and no meeting.start.
+LeftoverStays ==
+    /\ Leftover
+    /\ status' = "ready"
     /\ intent' = FALSE
     /\ UNCHANGED <<capturing, audio, final, failed>>
     /\ Moved(FALSE)
 
+\* meeting.failed, the 10 s start watchdog, or a helper exit: back to where the resume began.
+ResumeFails ==
+    /\ status \in {"resuming", "reopening"}
+    /\ ~capturing
+    /\ ~Leftover
+    /\ status' = IF status = "resuming" THEN "paused" ELSE "ready"
+    /\ intent' = FALSE
+    /\ UNCHANGED <<capturing, audio, final, failed>>
+    /\ Moved(FALSE)
+
+\* Pause, or Stop while reopening, goes back to where the resume began.
 YouPauseWhileResuming ==
-    /\ status = "resuming"
-    /\ status' = "paused"
+    /\ status \in {"resuming", "reopening"}
+    /\ ~Leftover
+    /\ status' = IF status = "resuming" THEN "paused" ELSE "ready"
     /\ capturing' = FALSE
     /\ intent' = FALSE
     /\ UNCHANGED <<audio, final, failed>>
@@ -196,7 +222,7 @@ AudioDeleted ==
     /\ UNCHANGED <<capturing, intent, final, failed>>
     /\ Moved(FALSE)
 
-\* rm throws: runOrFail logs it, and the next launch deletes the audio again.
+\* rm throws: runOrFail logs it. The next resume or the next launch deletes the audio again.
 DeleteFails ==
     /\ status = "deletingAudio"
     /\ status' = "ready"
@@ -225,12 +251,13 @@ YouDeleteAudio ==
 \* final pass answers with deleteAudio, so it deletes the audio again.
 Recovered(s) ==
     CASE s = "starting" /\ audio # "kept" -> "gone"
+      [] s = "reopening" /\ audio # "kept" -> "ready"
       [] s \in {"deletingAudio", "ready"} -> "deletingAudio"
       [] OTHER -> "draining"
 
 VoiceRestarts ==
     /\ \/ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing", "deletingAudio"}
-       \/ status = "ready" /\ final /\ ~failed /\ audio = "kept"
+       \/ status = "ready" /\ ~failed /\ audio = "kept"
     /\ status' = Recovered(status)
     /\ capturing' = FALSE
     /\ intent' = FALSE
@@ -243,7 +270,8 @@ Done ==
 
 Next ==
     \/ YouStart \/ HelperStarts \/ RecordingBegins \/ StartFails \/ YouStopWhileStarting
-    \/ YouPause \/ AudioStops \/ YouResume \/ ResumeFails \/ YouPauseWhileResuming
+    \/ YouPause \/ AudioStops \/ YouResume \/ LeftoverDeleted \/ LeftoverStays \/ ResumeFails
+    \/ YouPauseWhileResuming
     \/ YouStop \/ TimeLimit \/ CaughtUpShort \/ CaughtUp \/ YouKeep \/ YouDiscard
     \/ FinalSaved \/ FinalFails \/ AudioDeleted \/ DeleteFails \/ YouTryAgain \/ YouDeleteAudio
     \/ VoiceRestarts \/ Done
@@ -267,6 +295,11 @@ AudioDeletedOnlyAfterFinal == audio = "deleted" => final
 VoiceKeepsUnfinishedAudio == ~lost
 
 \* Once the final transcript is saved, the next launch deletes any audio still on disk.
-AudioGoneOnceFinal == (final /\ audio = "kept") => ENABLED (VoiceRestarts /\ status' = "deletingAudio")
+AudioGoneOnceFinal ==
+    (status \in {"ready", "deletingAudio"} /\ final /\ ~failed /\ audio = "kept")
+        => ENABLED (VoiceRestarts /\ status' = "deletingAudio")
+
+\* A resume never appends to audio that has its final transcript and is not kept for Try again.
+NoStaleAppend == ~stale
 
 ====

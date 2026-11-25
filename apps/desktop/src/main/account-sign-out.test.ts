@@ -144,7 +144,7 @@ describe("sign out", () => {
     });
     await h.account.restore();
     expect(h.state).toEqual({ kind: "signedOut" });
-    expect(h.states).toEqual([]);
+    expect(h.states).toEqual([{ kind: "signedOut" }]);
     expect(h.checks).toEqual([]);
     expect(fake.signOuts).toHaveLength(1);
     fake.signOuts[0]?.answer({ kind: "ended", status: 200 });

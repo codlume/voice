@@ -38,7 +38,6 @@ export const HELPER_LOGS = [
   "clipboard superseded by a later paste; not restoring previous contents",
   "clipboard changed by someone else during paste; not restoring previous contents",
   "clipboard changed during copy; not restoring previous contents",
-  "asr.remove ignored while the speech model downloads",
   "asr.remove ignored while the speech model loads",
   "streaming ASR incomplete; retrying complete capture",
   "ASR decode from the last pause failed; retrying complete capture",

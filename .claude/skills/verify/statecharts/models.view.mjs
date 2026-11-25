@@ -5,15 +5,13 @@ export function state(v) {
     case "removing":
       return "Uninstalling";
     case "stalled":
-      return v.which === "speech"
-        ? "Download stalled, nothing to press"
-        : "Download stalled, Cancel offered";
+      return "Download stalled";
     case "fetching":
       return "Downloading";
     case "verifying":
-      return "Checking the files";
+      return v.ui === "loading" ? "Checking the files, reads Loading" : "Checking the files";
     case "loading":
-      return "Loading";
+      return v.ui === "downloading" ? "Loading, reads Downloading" : "Loading";
   }
   if (v.ui === "ready") return "Installed";
   if (v.ui === "failed") return "Failed";
@@ -33,19 +31,25 @@ export function step(action, from) {
   switch (action) {
     case "YouInstall":
       if (from.ui === "missing") return "you press Install or Download";
-      return from.disk === "complete" ? "you press Retry [files on disk]" : "you press Retry";
+      return from.disk === "complete"
+        ? `you press Retry [files on disk, ${from.which} model]`
+        : "you press Retry";
     case "ConnectionStalls":
-      return `the connection stalls [${from.which} model]`;
+      return "the connection stalls";
     case "BytesResume":
       return "bytes arrive again";
     case "GiveUp":
-      return from.which === "speech" ? "4 tries time out, about 4 min" : "30 s pass with no bytes";
+      return from.which === "speech"
+        ? "4 tries time out, about 4 min [speech model]"
+        : "30 s pass with no bytes [cleanup model]";
     case "ConnectionFails":
       return "the server or connection fails";
     case "LastByte":
       return "the last byte arrives";
     case "FilesMatch":
-      return "every file matches its hash";
+      return from.ui === "loading"
+        ? "every file matches its hash"
+        : `every file matches its hash [${from.which} model]`;
     case "FileMismatch":
       return "a file does not match its hash";
     case "ModelLoads":
@@ -53,7 +57,7 @@ export function step(action, from) {
     case "LoadFails":
       return "the model fails to load";
     case "YouCancel":
-      return from.work === "stalled" ? "you press Cancel" : "you press Cancel [cleanup model]";
+      return "you press Cancel";
     case "YouUninstall":
       return "you confirm Uninstall";
     case "FilesDeleted":

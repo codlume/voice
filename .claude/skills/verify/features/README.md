@@ -140,11 +140,12 @@ Recipes: [history.md](./history.md#driving-it-with-voice-verify).
 
 Recipes: [models.md](./models.md#driving-it-with-voice-verify). State chart: [statecharts/models.md](../statecharts/models.md).
 
-| Flow                                 | Live check                                                                          | Tests                                                                     | Proof                                                 |
-| ------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Status, uninstall, reinstall         | **Open**, **Cancel an uninstall**, **Uninstall**, **Reinstall without downloading** | `apps/desktop/src/renderer/modelView.test.ts`                             | `vv shot models-installed`, `ls -l <userData>/models` |
-| Stalled download and Cancel          | **Stalled download and Cancel**                                                     | `swift: ModelFetcherTests`, `apps/desktop/src/renderer/checklist.test.ts` | `vv record`, no `.part` file                          |
-| Speech model uninstall and reinstall | `vv stop`, then `node scripts/models-smoke.mjs`                                     | None                                                                      | Script output                                         |
+| Flow                                 | Live check                                                                          | Tests                                                                                                                      | Proof                                                 |
+| ------------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Status, uninstall, reinstall         | **Open**, **Cancel an uninstall**, **Uninstall**, **Reinstall without downloading** | `apps/desktop/src/renderer/modelView.test.ts`                                                                              | `vv shot models-installed`, `ls -l <userData>/models` |
+| Stalled download and Cancel          | **Stalled download and Cancel**                                                     | `swift: ModelFetcherTests`, `apps/desktop/src/renderer/checklist.test.ts`                                                  | `vv record`, no `.part` file                          |
+| Stalled speech download and Cancel   | **Stalled speech download and Cancel**                                              | `swift: ModelIntegrityTests`, `apps/desktop/src/renderer/modelView.test.ts`, `apps/desktop/src/renderer/checklist.test.ts` | `vv record`, no `parakeet-tdt-0.6b-v3` folder         |
+| Speech model uninstall and reinstall | `vv stop`, then `node scripts/models-smoke.mjs`                                     | None                                                                                                                       | Script output                                         |
 
 ### Settings
 

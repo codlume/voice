@@ -13,7 +13,6 @@ export const models = [
     size: "480 MB",
     lostUntilReinstalled: "Dictation stops working",
     busyDuring: "dictation",
-    cancelableDownload: false,
     wanted: () => true,
   },
   {
@@ -25,7 +24,6 @@ export const models = [
     size: "480 MB",
     lostUntilReinstalled: "Text cleanup stops",
     busyDuring: null,
-    cancelableDownload: true,
     wanted: (settings: Settings) => wantsCleanup(settings),
   },
   {
@@ -37,7 +35,6 @@ export const models = [
     size: "3.1 GB",
     lostUntilReinstalled: "Transforms stop working",
     busyDuring: "transform",
-    cancelableDownload: true,
     wanted: (settings: Settings) => settings.transforms.enabled,
   },
 ] as const;
