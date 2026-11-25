@@ -155,11 +155,14 @@ export function parseSignInCode(value: string): SignInCode | null {
     : null;
 }
 
+// A stored auth session reads as restoring until restore() decides, so the page never offers a
+// sign-in that would retire it.
 function initialAccountState(
   apiUrl: string | null,
   development: boolean,
-): Extract<AccountState, { kind: "unavailable" | "signedOut" }> {
-  if (apiUrl !== null) return { kind: "signedOut" };
+  authSessionStored: boolean,
+): Extract<AccountState, { kind: "unavailable" | "restoring" | "signedOut" }> {
+  if (apiUrl !== null) return authSessionStored ? { kind: "restoring" } : { kind: "signedOut" };
   return {
     kind: "unavailable",
     reason: development
@@ -251,7 +254,7 @@ export function createAccount({
   onChange: (state: AccountState) => void;
   log: Log;
 }) {
-  let state: State = initialAccountState(apiUrl, development);
+  let state: State = initialAccountState(apiUrl, development, hasStoredAuthSession());
   let attempts = 0;
   let cachedClient: Promise<AuthClient> | null = null;
   let loadedClient: AuthClient | null = null;
@@ -465,8 +468,8 @@ export function createAccount({
     async restore() {
       if (restoreStarted) return;
       restoreStarted = true;
-      if (apiUrl === null || state.kind !== "signedOut") return;
-      if (!hasStoredAuth()) return;
+      if (apiUrl === null) return;
+      if (state.kind !== "restoring" && (state.kind !== "signedOut" || !hasStoredAuth())) return;
       let client: AuthClient;
       try {
         client = await loadClient(apiUrl);
@@ -476,13 +479,14 @@ export function createAccount({
           level: "warn",
           attributes: { "error.type": errorType(error) },
         });
+        if (state.kind === "restoring") publish({ kind: "signedOut" });
         return;
       }
       void endServerSignOuts(client);
-      if (state.kind !== "signedOut" || !client.hasAuthSession()) return;
-      const user = client.cachedUser();
-      if (user !== null) publish({ kind: "signedIn", ...user });
-      await checkAuthSession(client);
+      if (state.kind !== "restoring") return;
+      const user = client.hasAuthSession() ? client.cachedUser() : null;
+      publish(user === null ? { kind: "signedOut" } : { kind: "signedIn", ...user });
+      if (client.hasAuthSession()) await checkAuthSession(client);
     },
     async refresh() {
       if (state.kind !== "signedIn" || cachedClient === null) return;

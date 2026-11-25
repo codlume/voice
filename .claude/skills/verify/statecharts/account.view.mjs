@@ -1,5 +1,6 @@
 const PAGE = {
   unavailable: "Accounts unavailable",
+  restoring: "Just launched, checking your sign-in",
   launching: "Just launched, shows Signed out",
   signedOut: "Signed out",
   waiting: "Signing in",
@@ -20,12 +21,14 @@ export const group = (v) => {
   if (v.page === "signedIn" || v.page === "deleting") return "Signed in";
   if (v.page === "waiting" || v.page === "finishing") return "Signing in";
   if (v.page === "error") return "Error";
+  if (v.page === "restoring") return "Checking";
   return "Signed out";
 };
 
 export const colors = {
   "Signed in": "teal",
   "Signing in": "blue",
+  Checking: "blue",
   Error: "orange",
   "Signed out": "tan",
 };

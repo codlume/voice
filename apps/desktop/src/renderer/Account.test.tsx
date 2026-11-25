@@ -59,6 +59,14 @@ describe("account settings", () => {
     expect(host.querySelector("button")).toBeNull();
   });
 
+  test("restoring a stored sign-in says so and offers no sign-in", async () => {
+    const { host } = await render({ kind: "restoring" });
+
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("Checking your sign-in");
+    expect(host.querySelector("#setting-sign-in")).toBeNull();
+    expect(host.querySelector("button")).toBeNull();
+  });
+
   test("signed out offers Google sign-in", async () => {
     const { host, api } = await render({ kind: "signedOut" });
 
