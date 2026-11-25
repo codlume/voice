@@ -1,6 +1,13 @@
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type AnimationEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type AnimationEvent,
+} from "react";
 
 import type { PillSnapshot } from "../shared/api.ts";
 import { a11y } from "./a11y.ts";
@@ -43,9 +50,10 @@ const fadesOut = (key: LookKey) => key !== "idle" && key !== "inserted";
 
 const fadeIn = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
 const fadeOut = stylex.keyframes({ from: { opacity: 1 }, to: { opacity: 0 } });
-const pulse = stylex.keyframes({
-  "0%, 100%": { opacity: 0.35, transform: "scale(0.8)" },
-  "50%": { opacity: 1, transform: "scale(1)" },
+// A highlight that sweeps across the label, in 30 steps rather than every frame.
+const shine = stylex.keyframes({
+  from: { backgroundPosition: "-4.5rem 0, 0 0" },
+  to: { backgroundPosition: "calc(100% + 4.5rem) 0, 0 0" },
 });
 const draw = stylex.keyframes({ from: { strokeDashoffset: 23 }, to: { strokeDashoffset: 0 } });
 
@@ -133,18 +141,21 @@ const styles = stylex.create({
     transitionTimingFunction: "ease-out",
   },
   barScale: (scale: number) => ({ transform: `scaleY(${scale})` }),
-  dots: { gap: 5 },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: radius.round,
-    backgroundColor: darkPill.glyph,
-    animationName: { default: pulse, [motion.reduced]: "none" },
-    animationDuration: "1.1s",
+  shimmer: {
+    color: { default: "transparent", [motion.reduced]: darkPill.text },
+    backgroundImage: {
+      default: `linear-gradient(to right, transparent, ${darkPill.glyph}, transparent), linear-gradient(${darkPill.muted}, ${darkPill.muted})`,
+      [motion.reduced]: "none",
+    },
+    backgroundSize: "4.5rem 100%, 100% 100%",
+    backgroundRepeat: "no-repeat",
+    backgroundClip: "text",
+    animationName: { default: shine, [motion.reduced]: "none" },
+    animationDuration: "2.2s",
+    animationTimingFunction: "steps(30)",
     animationIterationCount: "infinite",
-    animationTimingFunction: "ease-in-out",
   },
-  dotDelay: (delay: number) => ({ animationDelay: `${delay}ms` }),
+  paused: { animationPlayState: "paused" },
   check: {
     gap: 6,
     animationName: fadeOut,
@@ -203,13 +214,16 @@ function Wave() {
   );
 }
 
-function Dots() {
+const onVisibility = (change: () => void) => {
+  document.addEventListener("visibilitychange", change);
+  return () => document.removeEventListener("visibilitychange", change);
+};
+const pageVisible = () => document.visibilityState === "visible";
+
+function Shimmer({ text }: { text: string }) {
+  const visible = useSyncExternalStore(onVisibility, pageVisible);
   return (
-    <div {...stylex.props(styles.row, styles.dots)}>
-      {[0, 150, 300].map((delay) => (
-        <div key={delay} {...stylex.props(styles.dot, styles.dotDelay(delay))} />
-      ))}
-    </div>
+    <span {...stylex.props(styles.text, styles.shimmer, !visible && styles.paused)}>{text}</span>
   );
 }
 
@@ -272,7 +286,7 @@ function Content({ view }: { view: PillView }) {
     case "listening":
       return <Wave />;
     case "processing":
-      return <Dots />;
+      return <Shimmer text={view.text} />;
     case "inserted":
       return <Check pasted={view.method === "paste"} />;
     case "message":

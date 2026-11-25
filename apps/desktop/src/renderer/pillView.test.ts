@@ -24,7 +24,10 @@ const kept = (reason: InsertFailure, copied: boolean): Outcome => ({
 describe("pillView", () => {
   test("shows listening only for the listening phase", () => {
     expect(pillView({ kind: "listening" })).toEqual({ kind: "listening" });
-    expect(pillView({ kind: "processing", overdue: false })).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "processing", overdue: false })).toEqual({
+      kind: "processing",
+      text: "Transcribing",
+    });
     expect(pillView({ kind: "processing", overdue: true })).toEqual({
       kind: "message",
       text: "Still transcribing",
@@ -75,7 +78,10 @@ describe("pillView", () => {
 
 describe("pillView for transforms", () => {
   test("shows dots while working and names the load when the model is not ready", () => {
-    expect(pillView({ kind: "transforming", loading: false })).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "transforming", loading: false })).toEqual({
+      kind: "processing",
+      text: "Transforming",
+    });
     expect(pillView({ kind: "transforming", loading: true })).toEqual({
       kind: "message",
       text: "Loading model",
@@ -185,7 +191,10 @@ describe("flowBarView", () => {
 
   test("dictation mid-meeting shows dictation, and the meeting comes back after", () => {
     expect(at(recording, { kind: "listening" })).toEqual({ kind: "listening" });
-    expect(at(recording, { kind: "processing", overdue: false })).toEqual({ kind: "processing" });
+    expect(at(recording, { kind: "processing", overdue: false })).toEqual({
+      kind: "processing",
+      text: "Transcribing",
+    });
     expect(at(recording, { kind: "done", outcome: { kind: "inserted", method: "paste" } })).toEqual(
       { kind: "inserted", method: "paste" },
     );

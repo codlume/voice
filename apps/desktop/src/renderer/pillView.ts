@@ -17,7 +17,7 @@ export type PillView =
   | { kind: "idle" }
   | { kind: "meeting"; look: MeetingLook; text: string }
   | { kind: "listening" }
-  | { kind: "processing" }
+  | { kind: "processing"; text: "Transcribing" | "Transforming" }
   | { kind: "inserted"; method: Extract<Outcome, { kind: "inserted" }>["method"] }
   | { kind: "message"; text: string };
 
@@ -114,11 +114,13 @@ export function pillView(session: PillState): PillView {
     case "processing":
       return session.overdue
         ? { kind: "message", text: "Still transcribing" }
-        : { kind: "processing" };
+        : { kind: "processing", text: "Transcribing" };
     case "transformDone":
       return transformOutcomeView(session.outcome);
     case "transforming":
-      return session.loading ? { kind: "message", text: "Loading model" } : { kind: "processing" };
+      return session.loading
+        ? { kind: "message", text: "Loading model" }
+        : { kind: "processing", text: "Transforming" };
     case "idle":
     case "listening":
       return session;
