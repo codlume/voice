@@ -12,15 +12,17 @@ stateDiagram-v2
     lg1: processing
     lg2: says inserted
     lg3: says nothing inserted
-    lg4: Breaks MicOnlyWhileYouAsk
-    lg5: Path to the MicOnlyWhileYouAsk bug
+    lg4: says not confirmed
+    lg5: Breaks MicOnlyWhileYouAsk
+    lg6: Path to the MicOnlyWhileYouAsk bug
   }
   class lg0 orange
   class lg1 blue
   class lg2 teal
   class lg3 tan
-  class lg4 breaks
-  class lg5 bugPath
+  class lg4 yellow
+  class lg5 breaks
+  class lg6 bugPath
   s0: Idle
   state "Mic open, Flow Bar idle until Listening" as s1 {
     s2: Mic starting
@@ -31,11 +33,12 @@ stateDiagram-v2
     s6: Too short, Nothing heard, or an error
     s7: Inserted or Pasted
     s8: Not inserted
+    s9: Not confirmed
   }
-  state "Flow Bar shows processing" as s9 {
-    s10: Transcribing
-    s11: Cleaning up
-    s12: Inserting
+  state "Flow Bar shows processing" as s10 {
+    s11: Transcribing
+    s12: Cleaning up
+    s13: Inserting
   }
   [*] --> s0
   s0 --> s2: you press the key
@@ -43,17 +46,18 @@ stateDiagram-v2
   s2 --> s3: the mic delivers audio
   s2 --> s4: you let go
   s3 --> s6: you let go within 250 ms
-  s3 --> s10: you let go or the mic changes or 10 min pass
+  s3 --> s11: you let go or the mic changes or 10 min pass
   s4 --> s6: the mic fails or takes 3 s or the mic delivers audio [you held under 250 ms]
-  s4 --> s10: the mic delivers audio [you held 250 ms or more]
-  s10 --> s6: the helper crashes or transcription fails or takes too long or Voice hears nothing
-  s10 --> s11: Voice hears words [cleanup on]
-  s10 --> s12: Voice hears words [cleanup off]
-  s11 --> s12: cleanup returns text, or fails and the raw text goes in
-  s11 --> s6: cleanup returns nothing
-  s11 --> s8: the helper crashes
-  s12 --> s7: the app takes the text
-  s12 --> s8: the app refuses the text or the helper crashes or 6.5 s pass with no answer
+  s4 --> s11: the mic delivers audio [you held 250 ms or more]
+  s11 --> s6: the helper crashes or transcription fails or takes too long or Voice hears nothing
+  s11 --> s12: Voice hears words [cleanup on]
+  s11 --> s13: Voice hears words [cleanup off]
+  s12 --> s13: cleanup returns text, or fails and the raw text goes in
+  s12 --> s6: cleanup returns nothing
+  s12 --> s8: the helper crashes
+  s13 --> s7: the app takes the text
+  s13 --> s8: the app refuses the text or the helper crashes or 6.5 s pass with no answer
+  s13 --> s9: the app does not answer the write in time
   s1 --> s0: you press Escape
   s1 --> s6: the helper crashes
   s5 --> s0: the Flow Bar clears
@@ -68,20 +72,21 @@ stateDiagram-v2
   class s6 tan
   class s7 teal
   class s8 tan
-  class s10 blue
+  class s9 yellow
   class s11 blue
   class s12 blue
+  class s13 blue
 ```
 
-The Flow Bar's `data-view` is `idle` while the mic starts, `listening` in Listening, and `processing` while Voice transcribes, cleans up, or inserts. After 30 s of transcribing, or 60 s while the speech model loads, it reads "Still transcribing". Inserted or Pasted shows `inserted`, and "Pasted" after a paste. Every other result shows `message`. After a focus change, Not inserted reads "Not inserted. Focus changed" with Copy to clipboard off, or "Focus changed. Copied to clipboard" once the copy worked. The last result reads "Too short. Hold to talk", "Nothing heard", or an error such as "Voice helper stopped".
+The Flow Bar's `data-view` is `idle` while the mic starts, `listening` in Listening, and `processing` while Voice transcribes, cleans up, or inserts. After 30 s of transcribing, or 60 s while the speech model loads, it reads "Still transcribing". Inserted or Pasted shows `inserted`, and "Pasted" after a paste. Every other result shows `message`. After a focus change, Not inserted reads "Not inserted. Focus changed" with Copy to clipboard off, or "Focus changed. Copied to clipboard" once the copy worked. Not confirmed reads "Not confirmed. Check the app" with Copy to clipboard off, or "Not confirmed. Check before pasting" with it on. The last result reads "Too short. Hold to talk", "Nothing heard", or an error such as "Voice helper stopped".
 
 ## Rules
 
 - `MicOnlyWhileYouAsk` breaks. The microphone is open only while you hold the key, or between your two taps, and Escape closes it.
 - `ListeningMeansRecording` holds. The Flow Bar shows listening only while the microphone records.
 - `InsertedMeansInApp` holds. The Flow Bar and history say inserted only after the helper reports that the text reached the app.
-- `NotInsertedMeansNotInApp` holds. The Flow Bar and history say not inserted only when the text is not in the app. The helper starts no write later than 4 s after it received the insert, and main waits 6.5 s before it says not inserted.
-- `TranscriptKept` holds. A final transcript with words always ends up in the app, on the clipboard, or in history. A failed cleanup inserts the raw text. A failed insert, a helper crash, or a cleanup that returns nothing keeps the transcript in history as `notInserted`.
+- `NotInsertedMeansNotInApp` holds. The Flow Bar and history say not inserted only when the text is not in the app. The helper starts no write later than 4 s after it received the insert, and main waits 6.5 s before it says not inserted. A write that the app does not answer in time says Not confirmed instead.
+- `TranscriptKept` holds. A final transcript with words always ends up in the app, on the clipboard, or in history. A failed cleanup inserts the raw text. A failed insert, a helper crash, or a cleanup that returns nothing keeps the transcript in history as `notInserted`. A write the app does not answer in time keeps it as `unconfirmed`.
 
 ## The `MicOnlyWhileYouAsk` break
 
@@ -102,11 +107,24 @@ To check it, press, release at 400 ms, and send `capture.started` at 1500 ms thr
 4. Voice hears words [cleanup off]: Inserting
 5. 6.5 s pass with no answer: Not inserted
 
-After 6.5 s (`INSERT_TIMEOUT_MS`) with no `insert.result`, main ends the session `notInserted`, settles history to `notInserted`, and copies the text when Copy to clipboard is on. No command stops the helper's insert, so the helper holds a deadline of its own. It starts no write later than 4 s after it read the `insert` line (`InsertDeadline`), and it asks right before the accessibility write and right before the paste's clipboard write and Cmd+V. An insert that ran out of time writes nothing and answers `insert.result` with method `none` and reason `failed`. A slow target app, which can use up a 0.3 s timeout on each accessibility call, or a slow clipboard save therefore ends as a true Not inserted.
+After 6.5 s (`INSERT_TIMEOUT_MS`) with no `insert.result`, main ends the session `notInserted`, settles history to `notInserted`, and copies the text when Copy to clipboard is on. No command stops the helper's insert, so the helper holds a deadline of its own. It starts no write later than 4 s after it read the `insert` line (`InsertDeadline`), and it asks right before the accessibility write and right before the paste's clipboard write and Cmd+V. An insert that ran out of time writes nothing and answers `insert.result` with method `none` and reason `failed`. A slow target app, which can use up a 0.3 s timeout on each accessibility call before the write, or a slow clipboard save therefore ends as a true Not inserted.
 
 A write that starts just before the deadline still has to answer before main gives up. The slowest answer is an accessibility write, the read after it, a 50 ms wait, and one re-read, 6.15 s after the helper read the line. `test-fixtures/helper-protocol.json` pins that bound as `insertMaxMs`, and main waits longer. The 350 ms between the two numbers covers the pipe in both directions and a busy helper main thread at the re-read.
 
 To check it, run `swift test --package-path native/voice-helper --filter "PasteKeystrokeTests|AccessibilityWriteTests|InsertDeadlineTests|InsertBudgetTests"` and the test "main waits for an insert longer than the helper can take to answer" in `apps/desktop/src/main/protocol.test.ts`.
+
+## Not confirmed
+
+0. Idle
+1. you press the key: Mic starting
+2. the mic delivers audio: Listening
+3. you let go: Transcribing
+4. Voice hears words [cleanup off]: Inserting
+5. the app does not answer the write in time: Not confirmed
+
+The accessibility write has a 0.3 s timeout. When it runs out and nothing shows the text landed, the request was still sent, and a busy app can apply it later or never. The helper answers `insert.result` with method `none` and reason `unconfirmed`. Main ends the session `notInserted` with that reason, settles history to `unconfirmed`, and copies the text when Copy to clipboard is on. The hub row shows a "Not confirmed" badge with Copy. The text may be in the app now, later, or not at all, so the Flow Bar asks you to check the app. A refused write and a write past the insert deadline still answer their own reasons and mean the text is not in the app.
+
+To check it, run `swift test --package-path native/voice-helper --filter "AccessibilityWriteTests|ProtocolTests"` and `pnpm --filter @voice/desktop exec vp test run src/main/dictation.test.ts src/renderer/pillView.test.ts src/renderer/History.test.tsx`.
 
 ## What the model leaves out
 
@@ -115,7 +133,7 @@ To check it, run `swift test --package-path native/voice-helper --filter "PasteK
 - Delays between main and the helper. Each command and each event is one step, except an insert. A transcript that arrives after main gave up goes into history as `notInserted`, which the model cannot reach.
 - "Still transcribing". The model folds it into Transcribing, and Voice gives up at least 30 s later.
 - The clipboard copy after a failed insert. The code waits up to 2 s for it in a phase that shows `processing`. The model makes it part of the failure step.
-- Whether the app really took the text. The model trusts the helper's report, and a paste counts once Cmd+V is posted. An accessibility write that the app never answers is reported as not inserted, and the app can still apply it.
+- Whether the app really took the text. The model trusts the helper's report, and a paste counts once Cmd+V is posted. An accessibility write that the app does not answer in time shows Not confirmed. The model decides at that answer whether the text is in the app, though the app can apply it later.
 - Time. The model takes from the insert deadline that main gives up only after the helper can no longer write.
 - A crash after the helper inserted but before it reported. That also shows Not inserted with the text in the app.
 - A late refusal after the Flow Bar clears or a new session starts. The model forgets it, and history keeps `notInserted`.

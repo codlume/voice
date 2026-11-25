@@ -13,6 +13,7 @@ The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle
 - `dictate-too-short`: a press-and-release with almost no audio ends as `tooShort` and inserts nothing.
 - `dictate-empty`: silence ends as `empty` and inserts nothing.
 - `dictate-not-inserted`: no focused field, a focus change, or secure input ends as `notInserted`, and the transcript is still kept in the history, where `latest.status` is `notInserted`.
+- `dictate-not-confirmed`: an accessibility write the target app does not answer in time ends as `notInserted` with reason `unconfirmed`. The text may or may not be in the app, now or later. The Flow Bar reads "Not confirmed. Check the app", or "Not confirmed. Check before pasting" with Copy to clipboard on, and `latest.status` is `unconfirmed`. Not inserted means the text is not in the app.
 - `flow-bar`: the pill shows the session state as `data-view` on its `[role=status]` element: `idle`, `listening`, `processing`, `inserted`, or `message` ("Nothing heard", "Too short. Hold to talk", a not-inserted reason). It stays visible at all times when `Show Flow Bar at all times` is on.
 
 ## How to get to it (user POV)
@@ -39,6 +40,7 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 - **Target app.** `vv dictate short.wav --app=com.apple.MobileSMS` and `vv dictate short.wav --app=com.google.Chrome@mail.google.com` both end with `outcome.kind` `inserted`, and the output records `app` with the bundle id and host you passed. The helper reports that target instead of the scratch window for this one session, and main uses it to pick the category style and to count the session's app in [Insights](./insights.md). [Style](./style.md) has the recipe that proves each target gets its category's style.
 - **TextEdit target.** `dictate` covers only the Electron textarea. For a native Cocoa target, `stop` the instance and run `pnpm e2e`.
 - **Not inserted.** `dictate` cannot move focus or remove the field, so it never ends `notInserted`. `node native/voice-helper/scripts/focus-smoke.mjs` covers a focus change.
+- **Not confirmed.** `dictate` pastes into the scratch textarea, and no fixture app stalls an accessibility write, so it never ends `unconfirmed`. `swift test --package-path native/voice-helper --filter "AccessibilityWriteTests|ProtocolTests"` and `apps/desktop/src/main/dictation.test.ts` cover it.
 
 ## Gotchas
 
