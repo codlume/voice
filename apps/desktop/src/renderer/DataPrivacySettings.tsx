@@ -65,8 +65,6 @@ export function DataPrivacySettings({
   const [confirmingClear, setConfirmingClear] = useState(false);
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(pageStyles.headline)}>Data and Privacy</h1>
-
       <Section label="Diagnostics">
         <Card>
           <Row
@@ -83,7 +81,7 @@ export function DataPrivacySettings({
           </Row>
         </Card>
         {diagnosticsAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {diagnosticsAction.error}
           </p>
         )}
@@ -124,7 +122,7 @@ export function DataPrivacySettings({
           </Row>
         </Card>
         {clearAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {clearAction.error}
           </p>
         )}
@@ -174,6 +172,7 @@ function HistorySection({ history: { entries, retention } }: { history: HistoryS
         >
           <Select
             id="setting-history-retention"
+            style={styles.select}
             value={retention}
             options={retentionOptions}
             disabled={action.pending}
@@ -195,7 +194,7 @@ function HistorySection({ history: { entries, retention } }: { history: HistoryS
         </Row>
       </Card>
       {action.error && (
-        <p role="alert" {...stylex.props(pageStyles.error)}>
+        <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
           {action.error}
         </p>
       )}
