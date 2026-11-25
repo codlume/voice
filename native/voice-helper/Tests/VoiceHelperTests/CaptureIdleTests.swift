@@ -2,17 +2,13 @@ import AVFoundation
 import Foundation
 import Testing
 import VoiceHelperCore
-import XCTest
 import os
 @testable import VoiceHelper
 
 @Suite(.serialized)
 struct CaptureIdleTests {
     @Test @MainActor func idleWarmupKeepsMainFreeWhileThePermissionProbeRuns() async {
-        let probing = XCTestExpectation(description: "the permission probe started")
-        probing.assertForOverFulfill = false
-        let probed = XCTestExpectation(description: "the permission probe ran")
-        probed.assertForOverFulfill = false
+        let (probeRuns, probeRan) = AsyncStream<Void>.makeStream()
         let releaseProbe = DispatchSemaphore(value: 0)
         defer { releaseProbe.signal() }
         let events = OSAllocatedUnfairLock<[String]>(initialState: [])
@@ -25,26 +21,19 @@ struct CaptureIdleTests {
             source: .microphone
         ) {
             onMain.withLock { $0 = $0 || Thread.isMainThread }
-            probing.fulfill()
-            if !Thread.isMainThread {
-                #expect(releaseProbe.wait(timeout: .now() + 5) == .success)
-            }
+            // Bounded so a warmup that holds main until the probe returns fails the order below instead of deadlocking.
+            if !Thread.isMainThread { _ = releaseProbe.wait(timeout: .now() + 5) }
             events.withLock { $0.append("probe done") }
-            probed.fulfill()
+            probeRan.yield()
             return .denied
         }
 
+        // Main releases the probe before it suspends, so no other test can hold main while the probe waits.
         capture.prepareIdleMic()
-        #expect(await XCTWaiter.fulfillment(of: [probing], timeout: 30) == .completed)
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async {
-                events.withLock { $0.append("main block") }
-                releaseProbe.signal()
-                continuation.resume()
-            }
-        }
-        #expect(await XCTWaiter.fulfillment(of: [probed], timeout: 5) == .completed)
-        #expect(events.withLock { $0 } == ["main block", "probe done"])
+        events.withLock { $0.append("warmup returned") }
+        releaseProbe.signal()
+        for await _ in probeRuns { break }
+        #expect(events.withLock { $0 } == ["warmup returned", "probe done"])
         #expect(!onMain.withLock { $0 })
 
         #expect(!capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil))
