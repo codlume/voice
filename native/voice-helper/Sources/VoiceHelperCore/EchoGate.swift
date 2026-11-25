@@ -128,12 +128,12 @@ public enum EchoGate {
             return echoLevel(heard: power, audible: audible)
         }
 
-        let ahead = Array(shift(played, by: lag - pathLead)[range])
+        let ahead = shift(played, by: lag - pathLead, over: range)
         var echo = Spectrogram(pad + filtered(ahead, through: echoPath(from: ahead, to: mic)) + pad)
         var level = levelHeard(of: echo)
         let pathHolds = (1 / pathTolerance...pathTolerance).contains(level)
         if !pathHolds {
-            echo = Spectrogram(pad + Array(shift(played, by: lag)[range]) + pad)
+            echo = Spectrogram(pad + shift(played, by: lag, over: range) + pad)
             level = levelHeard(of: echo)
         }
 
@@ -317,9 +317,14 @@ public enum EchoGate {
         return Array(out.prefix(samples.count))
     }
 
-    static func shift(_ samples: [Float], by lag: Int) -> [Float] {
-        let silence = [Float](repeating: 0, count: min(abs(lag), samples.count))
-        return lag >= 0 ? silence + samples.dropLast(silence.count) : samples.dropFirst(silence.count) + silence
+    /// `samples` heard `lag` frames later (earlier when negative), over `range` of the same length,
+    /// silent where the shifted audio runs out. Only `range` is built: `samples` spans seconds.
+    static func shift(_ samples: [Float], by lag: Int, over range: Range<Int>) -> [Float] {
+        let from = (range.lowerBound - lag)..<(range.upperBound - lag)
+        let heard = from.clamped(to: 0..<samples.count)
+        guard !heard.isEmpty else { return [Float](repeating: 0, count: range.count) }
+        return [Float](repeating: 0, count: heard.lowerBound - from.lowerBound) + samples[heard]
+            + [Float](repeating: 0, count: from.upperBound - heard.upperBound)
     }
 
     private struct Spectrogram {
