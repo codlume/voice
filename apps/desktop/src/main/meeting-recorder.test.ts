@@ -1826,6 +1826,33 @@ describe("meeting recorder", () => {
     for (const name of AUDIO) expect(existsSync(NodePath.join(dir, id, name)), name).toBe(false);
   });
 
+  test("a relaunch after Voice quit while a resume cleared leftover audio does not transcribe that audio", async () => {
+    const first = harness();
+    const id = await first.start();
+    await first.segment(id, "mic", 0, TEN_WORDS);
+    await first.recorder.stop(id);
+    await first.drained(id);
+    disk.nextAudioDelete = "throws";
+    await first.finalized(id, FINAL_PASS);
+    expect(first.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
+    expect(existsSync(NodePath.join(first.folder(id), "mic.pcm"))).toBe(true);
+    const transcript = await first.store.transcript(id);
+
+    disk.nextAudioDelete = "hangs";
+    void first.recorder.resume(id);
+    await vi.waitFor(() => expect(disk.nextAudioDelete).toBe("works"));
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(await h.store.transcript(id)).toEqual(transcript);
+    for (const type of ["meeting.start", "meeting.transcribe", "meeting.finalize"])
+      expect(h.sentTypes()).not.toContain(type);
+    for (const name of AUDIO)
+      expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
+  });
+
   test("live lines that arrive after the meeting finished are not appended", async () => {
     const h = harness();
     const id = await h.start();
