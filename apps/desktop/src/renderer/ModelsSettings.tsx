@@ -81,7 +81,7 @@ function ModelSection({
         </div>
       </Card>
       {error && (
-        <p role="alert" {...stylex.props(pageStyles.error)}>
+        <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
           {error}
         </p>
       )}
@@ -110,7 +110,6 @@ export function ModelsSettings({
   const activity = activityOf(session);
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(pageStyles.headline)}>Models</h1>
       {models.map((model) => (
         <ModelSection
           key={model.id}

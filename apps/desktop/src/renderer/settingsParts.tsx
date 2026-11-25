@@ -16,7 +16,14 @@ import { hubApi } from "./voice.ts";
 export const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
   section: { display: "flex", flexDirection: "column", gap: 10 },
-  sectionLabel: { margin: 0, fontSize: text.base, fontWeight: 600, lineHeight: leading.base },
+  // The label lines up with the row text below it.
+  sectionLabel: {
+    margin: 0,
+    paddingInline: space.base,
+    fontSize: text.base,
+    fontWeight: 600,
+    lineHeight: leading.base,
+  },
   row: {
     display: "flex",
     alignItems: "center",
@@ -39,7 +46,11 @@ export const styles = stylex.create({
     textWrap: "pretty",
   },
   actions: { display: "flex", gap: space.sm },
+  // Every select in a settings row has one width, so the controls line up down the page.
+  select: { width: 160, minWidth: 160, maxWidth: "none" },
   hint: { margin: 0, color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
+  // A hint or error under a card, indented like the section label.
+  note: { paddingInline: space.base },
   link: { textDecoration: "underline" },
 });
 
@@ -49,9 +60,9 @@ export function update(action: Action, patch: SettingsPatch) {
   return action.run(() => hubApi().updateSettings(patch), "Could not save settings.");
 }
 
-export function GlobeHint() {
+export function GlobeHint({ style }: { style?: stylex.StyleXStyles }) {
   return (
-    <p {...stylex.props(styles.hint)}>
+    <p {...stylex.props(styles.hint, style)}>
       If the Globe key opens the emoji picker, set System Settings &gt; Keyboard &gt; &ldquo;Press
       🌐 key to&rdquo; to &ldquo;Do Nothing&rdquo;.
     </p>

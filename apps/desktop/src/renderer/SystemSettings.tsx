@@ -35,6 +35,8 @@ const motionStyles = stylex.create({
   },
 });
 
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
 const themes = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -64,15 +66,23 @@ export function SystemSettings({
     update(audioAction, { lowerAudioWhileDictating });
   const changeLowerAudioBy = (lowerAudioByPercent: number) =>
     update(audioAction, { lowerAudioByPercent });
-  const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
+  // A theme change flips every color at once, and controls with color transitions would tween for
+  // a few frames while the rest of the window snaps. Transitions stay off until the new scheme has
+  // painted. Adapted from T3 Code's useTheme (MIT, see THIRD_PARTY_NOTICES.md).
+  const changeTheme = async (theme: Theme) => {
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+    await update(appearanceAction, { theme });
+    await nextFrame();
+    await nextFrame();
+    root.classList.remove("theme-switching");
+  };
   const changePageAnimation = (pageAnimationMs: number) =>
     update(motionAction, { pageAnimationMs });
   const changeDock = (showInDock: boolean) => update(appearanceAction, { showInDock });
   const changePill = (alwaysShowPill: boolean) => update(appearanceAction, { alwaysShowPill });
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(pageStyles.headline)}>System</h1>
-
       <Section label="Startup">
         <Card>
           <Row
@@ -96,7 +106,7 @@ export function SystemSettings({
           </Row>
         </Card>
         {loginAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {loginAction.error}
           </p>
         )}
@@ -146,7 +156,7 @@ export function SystemSettings({
           </Row>
         </Card>
         {audioAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {audioAction.error}
           </p>
         )}
@@ -183,7 +193,7 @@ export function SystemSettings({
           </Row>
         </Card>
         {appearanceAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {appearanceAction.error}
           </p>
         )}
@@ -215,11 +225,11 @@ export function SystemSettings({
             </div>
           </Row>
         </Card>
-        <p {...stylex.props(styles.hint, motionStyles.reducedMotionHint)}>
+        <p {...stylex.props(styles.hint, styles.note, motionStyles.reducedMotionHint)}>
           Reduce motion is on in your system settings, so pages change without animation.
         </p>
         {motionAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {motionAction.error}
           </p>
         )}
