@@ -19,7 +19,7 @@ describe("modelView", () => {
     });
   });
 
-  test("a cleanup download offers Cancel, a speech model download nothing", () => {
+  test("every model download offers Cancel", () => {
     expect(modelView(cleanup, { state: "downloading" }, idle)).toEqual({
       text: "Downloading",
       actions: [cancel],
@@ -30,7 +30,7 @@ describe("modelView", () => {
     });
     expect(modelView(asr, { state: "downloading", progress: 0.426 }, idle)).toEqual({
       text: "Downloading 43%",
-      actions: [],
+      actions: [cancel],
     });
   });
 

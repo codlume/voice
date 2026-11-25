@@ -72,9 +72,9 @@ function modelState(model: Model, status: ModelStatus): RowState {
         actions: [{ label: "Download", command }],
       };
     case "downloading": {
-      const actions: Action[] = model.cancelableDownload
-        ? [{ label: "Cancel", command: { type: "uninstallModel", id: model.id } }]
-        : [];
+      const actions: Action[] = [
+        { label: "Cancel", command: { type: "uninstallModel", id: model.id } },
+      ];
       return status.progress === undefined
         ? { status: { kind: "busy", text: "Downloading" }, actions }
         : {
