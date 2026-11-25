@@ -28,7 +28,7 @@ Settings holds the controls that aren't about style. General has the microphone 
 
 Preconditions: baseline.
 
-- **Open a page.** `vv click Settings`, then `vv click System`, then `vv wait hub 'document.querySelector("[data-app-modal] h1")?.textContent === "System"'`. `vv text` starts with `[Settings nav > System]`.
+- **Open a page.** `vv click Settings`, then `vv click System`, then `vv wait hub 'document.querySelector("[data-app-modal] h2")?.lastChild?.textContent === "System"'`. `vv text` starts with `[Settings nav > System]`.
 - **Toggle a switch.** `vv click "Show in Dock"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.showInDock === false)'`. `settings.json` shows `"showInDock": false`. Click it again to restore.
 - **Pick from a select.** `vv click css:#setting-hotkey`, then `vv click "Right Option"`, then wait for `s.settings.hotkey === "rightOption"`. Then `vv key Escape` and `vv click Home`, and `vv text` reads "Hold ⌥ Right Option, speak, and let go." Restore `fn` with `vv click "Reset Hold to talk to default"`.
 - **Language disables cleanup.** Pick a non-English option in `css:#setting-dictation-language`. Then `vv key Escape` and `vv click Style`. The `Clean up text` switch is disabled.

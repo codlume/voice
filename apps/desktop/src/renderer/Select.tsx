@@ -24,7 +24,6 @@ const styles = stylex.create({
     cursor: "pointer",
     userSelect: "none",
   },
-  grouped: { flexShrink: 1, maxWidth: 240 },
   disabled: { cursor: "default", opacity: 0.64 },
   value: {
     flexGrow: 1,
@@ -54,14 +53,14 @@ export function Select<T extends string>({
   value,
   options,
   disabled = false,
-  grouped = false,
+  style,
   onChange,
 }: {
   id: string;
   value: T;
   options: readonly { value: T; label: string }[];
   disabled?: boolean;
-  grouped?: boolean;
+  style?: stylex.StyleXStyles;
   onChange: (value: T) => void;
 }) {
   return (
@@ -75,12 +74,7 @@ export function Select<T extends string>({
     >
       <SelectPrimitive.Trigger
         id={id}
-        {...stylex.props(
-          surfaces.control,
-          styles.trigger,
-          grouped && styles.grouped,
-          disabled && styles.disabled,
-        )}
+        {...stylex.props(surfaces.control, styles.trigger, disabled && styles.disabled, style)}
       >
         <SelectPrimitive.Value {...stylex.props(styles.value)} />
         <SelectPrimitive.Icon {...stylex.props(styles.icon)}>

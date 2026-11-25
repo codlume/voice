@@ -106,8 +106,6 @@ export function GeneralSettings({
 
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(pageStyles.headline)}>General</h1>
-
       <Section label="Input">
         <Card>
           <MicrophoneRow
@@ -123,13 +121,13 @@ export function GeneralSettings({
               value={microphoneUid}
               options={microphoneOptions}
               disabled={microphoneAction.pending}
-              grouped
+              style={styles.select}
               onChange={changeMicrophone}
             />
           </MicrophoneRow>
         </Card>
         {microphoneAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {microphoneAction.error}
           </p>
         )}
@@ -148,6 +146,7 @@ export function GeneralSettings({
           >
             <Select
               id="setting-dictation-language"
+              style={styles.select}
               value={settings.dictationLanguage}
               options={dictationLanguages}
               onChange={changeLanguage}
@@ -155,7 +154,7 @@ export function GeneralSettings({
           </Row>
         </Card>
         {languageAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {languageAction.error}
           </p>
         )}
@@ -181,7 +180,7 @@ export function GeneralSettings({
           </Row>
         </Card>
         {clipboardAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {clipboardAction.error}
           </p>
         )}
@@ -197,6 +196,7 @@ export function GeneralSettings({
           >
             <Select
               id="setting-update-channel"
+              style={styles.select}
               value={updates.channel}
               options={updateChannels}
               disabled={updates.status.kind === "installing"}

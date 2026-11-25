@@ -63,8 +63,6 @@ export function ShortcutsSettings({
   ];
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(pageStyles.headline)}>Shortcuts</h1>
-
       <Section label="Dictation">
         <Card>
           <Row
@@ -74,6 +72,7 @@ export function ShortcutsSettings({
           >
             <Select
               id="setting-hotkey"
+              style={styles.select}
               value={settings.hotkey}
               options={hotkeyOptions}
               onChange={changeHotkey}
@@ -86,6 +85,7 @@ export function ShortcutsSettings({
           >
             <Select
               id="setting-toggle-hotkey"
+              style={styles.select}
               value={toggleChoice}
               options={toggleOptions}
               onChange={changeToggle}
@@ -98,11 +98,11 @@ export function ShortcutsSettings({
           />
         </Card>
         {hotkeyAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {hotkeyAction.error}
           </p>
         )}
-        {dictatesWithFn(settings) && <GlobeHint />}
+        {dictatesWithFn(settings) && <GlobeHint style={styles.note} />}
       </Section>
 
       <Section label="Meetings">
@@ -121,11 +121,11 @@ export function ShortcutsSettings({
             </div>
           </div>
         </Card>
-        <p {...stylex.props(styles.hint)}>
+        <p {...stylex.props(styles.hint, styles.note)}>
           Press it in any app to start a meeting, and again to stop it.
         </p>
         {meetingAction.error && (
-          <p role="alert" {...stylex.props(pageStyles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.note)}>
             {meetingAction.error}
           </p>
         )}
@@ -143,7 +143,7 @@ export function ShortcutsSettings({
             ))}
           </Card>
         )}
-        <p {...stylex.props(styles.hint)}>
+        <p {...stylex.props(styles.hint, styles.note)}>
           {shortcutsHint(transforms, transformModel)}{" "}
           <Button variant="text" onClick={onOpenTransforms}>
             <span {...stylex.props(styles.link)}>Open Transforms</span>

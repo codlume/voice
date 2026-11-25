@@ -61,6 +61,15 @@
   background: var(--scrollbar-thumb-hover);
 }
 
+/* Set while a theme change from Settings > System paints, so controls snap to the new colors
+   with the rest of the window instead of tweening. */
+.theme-switching,
+.theme-switching *,
+.theme-switching ::before,
+.theme-switching ::after {
+  transition-duration: 0s !important;
+}
+
 /* A backstop for motion a component forgot to gate. Durations stay above zero so
    transitionend and animationend still fire. */
 @media (prefers-reduced-motion: reduce) {

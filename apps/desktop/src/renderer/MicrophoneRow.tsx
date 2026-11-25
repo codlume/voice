@@ -4,6 +4,7 @@ import { MicIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { MicrophoneTest, PermissionState } from "../shared/api.ts";
+import { Button } from "./Button.tsx";
 import {
   HEARD_LEVEL,
   QUIET_AFTER_MS,
@@ -13,17 +14,16 @@ import {
 } from "./microphoneTestView.ts";
 import { smoothLevel } from "./pillView.ts";
 import { SettingTitle } from "./SettingTitle.tsx";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { styles as settingsStyles } from "./settingsParts.tsx";
+import { color, icon, motion, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
-const reduceMotion = "@media (prefers-reduced-motion: reduce)";
-
+// The microphone row keeps the settings row's padding and text, with a test strip that opens below.
 const styles = stylex.create({
-  row: { paddingBlock: 14, paddingInline: space.lg },
-  line: { display: "flex", alignItems: "center", gap: space.lg },
+  row: { paddingBlock: space.md, paddingInline: space.base },
+  line: { display: "flex", alignItems: "center", gap: space.xl },
   text: { flexGrow: 1, minWidth: 0 },
-  detail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   error: { color: color.errorForeground },
   controls: {
     display: "flex",
@@ -32,41 +32,21 @@ const styles = stylex.create({
     flexShrink: 0,
     maxWidth: "48%",
   },
-  button: {
-    display: "inline-flex",
-    alignItems: "center",
-    flexShrink: 0,
-    gap: 6,
-    paddingBlock: 6,
-    paddingInline: 10,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: { default: color.card, ":hover:not(:disabled)": color.accent },
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 13,
-    lineHeight: 1.45,
-    cursor: { default: "pointer", ":disabled": "default" },
-    opacity: { default: 1, ":disabled": 0.45 },
-  },
   glyph: { display: "block", flexShrink: 0, color: color.mutedForeground },
   glyphLive: { color: color.primary },
   expander: {
     display: "grid",
     gridTemplateRows: "0fr",
     transitionProperty: "grid-template-rows",
-    transitionDuration: { default: "160ms", [reduceMotion]: "0s" },
-    transitionTimingFunction: "ease-out",
+    transitionDuration: { default: motion.slow, [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.easeOut,
   },
   open: { gridTemplateRows: "1fr" },
   clip: { minHeight: 0, overflow: "hidden" },
-  body: { display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 },
+  body: { display: "flex", flexDirection: "column", gap: space.xs, paddingTop: space.xs },
   track: {
     maxWidth: 360,
     height: 6,
-    marginTop: 6,
     overflow: "hidden",
     borderRadius: radius.round,
     backgroundColor: color.input,
@@ -76,7 +56,7 @@ const styles = stylex.create({
     borderRadius: radius.round,
     backgroundColor: color.primary,
     transitionProperty: "width",
-    transitionDuration: { default: "90ms", [reduceMotion]: "0s" },
+    transitionDuration: { default: "90ms", [motion.reduced]: "0s" },
     transitionTimingFunction: "linear",
   },
 });
@@ -167,19 +147,18 @@ export function MicrophoneRow({
       <div {...stylex.props(styles.line)}>
         <div {...stylex.props(styles.text)}>
           <SettingTitle title="Microphone" onReset={onReset} disabled={disabled} />
-          <p {...stylex.props(styles.detail)}>{detail}</p>
+          <p {...stylex.props(settingsStyles.rowDetail)}>{detail}</p>
         </div>
         <div {...stylex.props(styles.controls)}>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             aria-label={accessibleLabels[action.kind]}
             disabled={action.kind === "start" && action.disabled}
             onClick={run}
-            {...stylex.props(styles.button)}
           >
-            <MicIcon size={14} {...stylex.props(styles.glyph, running && styles.glyphLive)} />
+            <MicIcon size={icon.md} {...stylex.props(styles.glyph, running && styles.glyphLive)} />
             {action.label}
-          </button>
+          </Button>
           {children}
         </div>
       </div>
@@ -194,12 +173,12 @@ export function MicrophoneRow({
             <p
               role="status"
               aria-live="polite"
-              {...stylex.props(styles.detail, status?.failed && styles.error)}
+              {...stylex.props(settingsStyles.rowDetail, status?.failed && styles.error)}
             >
               {status?.text}
             </p>
             {error && (
-              <p role="alert" {...stylex.props(styles.detail, styles.error)}>
+              <p role="alert" {...stylex.props(settingsStyles.rowDetail, styles.error)}>
                 {error}
               </p>
             )}
