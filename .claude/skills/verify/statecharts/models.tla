@@ -16,7 +16,7 @@ vars == <<which, ui, work, disk, engine, removed>>
 \* modelView.ts and checklist.ts: the buttons a row shows for its status.
 Offers ==
     CASE ui = "missing"     -> {"Install"}
-      [] ui = "downloading" -> IF which = "cleanup" THEN {"Cancel"} ELSE {}
+      [] ui = "downloading" -> {"Cancel"}
       [] ui = "loading"     -> {}
       [] ui = "ready"       -> {"Uninstall"}
       [] ui = "failed"      -> {"Retry", "Uninstall"}
@@ -76,11 +76,12 @@ LastByte ==
     /\ UNCHANGED <<which, ui, disk, engine, removed>>
 
 \* Cleanup renames the .part into place only after its size and SHA-256 match. The helper
-\* installs each staged file after its hash matches, then audits the folder again.
+\* installs each staged file after its hash matches, then audits the folder again. Its download
+\* task also loads the model, so a speech row keeps its status until the model is ready.
 FilesMatch ==
     /\ work = "verifying"
     /\ work' = "loading"
-    /\ ui' = "loading"
+    /\ ui' = IF which = "speech" THEN ui ELSE "loading"
     /\ disk' = "complete"
     /\ UNCHANGED <<which, engine, removed>>
 
@@ -105,15 +106,17 @@ LoadFails ==
     /\ ui' = "failed"
     /\ UNCHANGED <<which, disk, engine, removed>>
 
-\* Cancel calls uninstallModel: it aborts the download, then removes the weights and .part.
+\* Cancel calls uninstallModel. Cleanup aborts the download, then removes the weights and .part.
+\* The helper cancels the download task, hash check and load included, and deletes the speech
+\* model folder once the task has stopped.
 YouCancel ==
     /\ "Cancel" \in Offers
-    /\ work \in {"fetching", "stalled", "verifying"}
+    /\ work \in {"fetching", "stalled", "verifying", "loading"}
     /\ work' = "removing"
     /\ removed' = TRUE
     /\ UNCHANGED <<which, ui, disk, engine>>
 
-\* Main refuses an uninstall while the row is loading, or downloading with no Cancel.
+\* Main refuses an uninstall while the row is loading.
 YouUninstall ==
     /\ "Uninstall" \in Offers
     /\ work = "none"
