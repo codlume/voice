@@ -11,9 +11,10 @@ VARIABLES
     failed,     \* the final pass failed, so Try again and Delete audio are offered
     lost,       \* Voice dropped audio that had no final transcript without you asking
     tray,       \* the tray item's label
-    stale       \* the helper appended to audio that had a final transcript and no Try again
+    stale,      \* the helper appended to audio that had a final transcript and no Try again
+    partial     \* a failed delete already removed part of the kept audio, say system.pcm
 
-vars == <<status, capturing, intent, audio, final, failed, lost, tray, stale>>
+vars == <<status, capturing, intent, audio, final, failed, lost, tray, stale, partial>>
 
 Live == {"recording", "paused"}
 Opening == {"starting", "resuming", "reopening"}
@@ -24,10 +25,12 @@ TrayFor(s) ==
     ELSE "Start meeting"
 
 \* Every step ends with this, after status' and audio' are set. byYou marks your own deletions.
+\* Part of the audio stays deleted for as long as the rest is kept.
 Moved(byYou) ==
     /\ tray' = TrayFor(status')
     /\ lost' = (lost \/ (~byYou /\ audio = "kept" /\ ~final /\ (status' = "gone" \/ audio' # "kept")))
     /\ stale' = (stale \/ (~capturing /\ capturing' /\ final /\ ~failed /\ audio = "kept"))
+    /\ partial' = (partial /\ audio' = "kept")
 
 Init ==
     /\ status = "none"
@@ -39,6 +42,7 @@ Init ==
     /\ lost = FALSE
     /\ tray = "Start meeting"
     /\ stale = FALSE
+    /\ partial = FALSE
 
 \* Tray Start meeting, the meeting shortcut, or the hub's Start meeting button.
 YouStart ==
@@ -108,8 +112,10 @@ AudioStops ==
     /\ UNCHANGED <<audio, final, failed>>
     /\ Moved(FALSE)
 
+\* audioIncomplete refuses Resume while the audio kept for Try again is missing a part.
 YouResume ==
     /\ status \in {"paused", "ready"}
+    /\ ~(failed /\ partial)
     /\ status' = IF status = "paused" THEN "resuming" ELSE "reopening"
     /\ intent' = TRUE
     /\ UNCHANGED <<capturing, audio, final, failed>>
@@ -215,12 +221,14 @@ FinalFails ==
     /\ UNCHANGED <<capturing, intent, audio, final>>
     /\ Moved(FALSE)
 
+\* Audio with no final transcript gets here only after you pressed Delete audio and Voice
+\* relaunched before the delete, because only Delete audio clears finalPassFailed without one.
 AudioDeleted ==
     /\ status = "deletingAudio"
     /\ status' = "ready"
     /\ audio' = "deleted"
     /\ UNCHANGED <<capturing, intent, final, failed>>
-    /\ Moved(FALSE)
+    /\ Moved(~final)
 
 \* rm throws: runOrFail logs it. The next resume or the next launch deletes the audio again.
 DeleteFails ==
@@ -229,34 +237,58 @@ DeleteFails ==
     /\ UNCHANGED <<capturing, intent, audio, final, failed>>
     /\ Moved(FALSE)
 
+\* audioIncomplete refuses Try again while the kept audio is missing a part: a final pass over
+\* what is left would drop the live lines of the source whose audio is gone.
 YouTryAgain ==
     /\ status = "ready"
     /\ failed
+    /\ ~partial
     /\ status' = "finalizing"
     /\ UNCHANGED <<capturing, intent, audio, final, failed>>
     /\ Moved(FALSE)
 
-\* The Delete audio action on the final pass failed notice.
+\* The Delete audio action on the final pass failed notice. Main saves meeting.json with
+\* finalPassFailed cleared before the deleteAudio effect removes the files.
 YouDeleteAudio ==
     /\ status = "ready"
     /\ failed
-    /\ audio' = "deleted"
+    /\ status' = "deletingKeptAudio"
     /\ failed' = FALSE
-    /\ UNCHANGED <<status, capturing, intent, final>>
+    /\ UNCHANGED <<capturing, intent, audio, final>>
     /\ Moved(TRUE)
+
+KeptAudioDeleted ==
+    /\ status = "deletingKeptAudio"
+    /\ status' = "ready"
+    /\ audio' = "deleted"
+    /\ UNCHANGED <<capturing, intent, final, failed>>
+    /\ Moved(TRUE)
+
+\* rm throws: audioDeleteFailed restores finalPassFailed and the notice, and the command is
+\* refused. A partial delete can leave mic.pcm without system.pcm; the audio still counts as kept.
+\* The audio stays kept, so Moved(FALSE) would change neither lost nor stale.
+KeptAudioDeleteFails ==
+    /\ status = "deletingKeptAudio"
+    /\ status' = "ready"
+    /\ failed' = TRUE
+    /\ partial' \in {partial, TRUE}
+    /\ tray' = TrayFor(status')
+    /\ UNCHANGED <<capturing, intent, audio, final, lost, stale>>
 
 \* Quit or crash: the helper exits on stdin EOF and its files keep what it appended. On the next
 \* launch recover() sends "recover" with hasAudio from the files, before any start or resume. Then
 \* it sends "audioFound" to each meeting whose files hold audio. A finished meeting with no failed
-\* final pass answers with deleteAudio, so it deletes the audio again.
+\* final pass answers with deleteAudio, so it deletes the audio again. That includes a meeting
+\* whose Delete audio saved meeting.json and then quit before the files were removed.
 Recovered(s) ==
     CASE s = "starting" /\ audio # "kept" -> "gone"
       [] s = "reopening" /\ audio # "kept" -> "ready"
-      [] s \in {"deletingAudio", "ready"} -> "deletingAudio"
+      [] s \in {"deletingAudio", "deletingKeptAudio", "ready"} -> "deletingAudio"
       [] OTHER -> "draining"
 
 VoiceRestarts ==
-    /\ \/ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing", "deletingAudio"}
+    /\ \/ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing"}
+       \/ status \in {"deletingAudio", "deletingKeptAudio"}
        \/ status = "ready" /\ ~failed /\ audio = "kept"
     /\ status' = Recovered(status)
     /\ capturing' = FALSE
@@ -273,7 +305,8 @@ Next ==
     \/ YouPause \/ AudioStops \/ YouResume \/ LeftoverDeleted \/ LeftoverStays \/ ResumeFails
     \/ YouPauseWhileResuming
     \/ YouStop \/ TimeLimit \/ CaughtUpShort \/ CaughtUp \/ YouKeep \/ YouDiscard
-    \/ FinalSaved \/ FinalFails \/ AudioDeleted \/ DeleteFails \/ YouTryAgain \/ YouDeleteAudio
+    \/ FinalSaved \/ FinalFails \/ AudioDeleted \/ DeleteFails \/ YouTryAgain
+    \/ YouDeleteAudio \/ KeptAudioDeleted \/ KeptAudioDeleteFails
     \/ VoiceRestarts \/ Done
 
 \* Recording starts only from your Start or Resume, never from a relaunch or recovery.
@@ -301,5 +334,12 @@ AudioGoneOnceFinal ==
 
 \* A resume never appends to audio that has its final transcript and is not kept for Try again.
 NoStaleAppend == ~stale
+
+\* Audio a failed delete left part of only waits to be deleted.
+PartialAudioIsOnlyDeleted ==
+    partial => audio = "kept" /\ (status \in {"ready", "deletingKeptAudio", "deletingAudio"} \/ Leftover)
+
+\* No final pass runs over audio a failed delete left part of.
+NoFinalPassOnPartialAudio == partial => status # "finalizing"
 
 ====
