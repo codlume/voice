@@ -252,6 +252,19 @@ describe("the notepad", () => {
     expect(api.discardMeeting).toHaveBeenCalledWith(id);
   });
 
+  test("Stop keeps its name and looks like the prompt's quiet action, not its safe one", async () => {
+    fakeNotepad({ meeting, prompt: { kind: "silence" } });
+    await render();
+    const [headerStop, promptStop] = [...document.querySelectorAll("button")].filter(
+      (element) => element.textContent === "Stop",
+    );
+    expect(headerStop?.getAttribute("aria-label")).toBe("Stop");
+    expect(headerStop?.closest("section")).toBeNull();
+    expect(promptStop?.closest("section")).not.toBeNull();
+    expect(headerStop?.className).toBe(promptStop?.className);
+    expect(headerStop?.className).not.toBe(button("Keep recording")?.className);
+  });
+
   test("Keep recording answers the silence prompt without stopping", async () => {
     const { api } = fakeNotepad({ meeting, prompt: { kind: "silence" } });
     await render();

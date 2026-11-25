@@ -1,6 +1,17 @@
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Tabs } from "@base-ui/react/tabs";
+import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
-import { ChevronLeftIcon, CopyIcon, DownloadIcon, FolderPlusIcon, Trash2Icon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  DownloadIcon,
+  FolderIcon,
+  MoreHorizontalIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 
 import {
@@ -20,18 +31,20 @@ import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import type { ChecklistRow } from "./checklist.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { FolderDialog } from "./FolderDialog.tsx";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "./Menu.tsx";
 import { SetupChecklist } from "./SetupChecklist.tsx";
-import { FolderMenu } from "./MeetingList.tsx";
 import { MeetingNotices } from "./MeetingNotices.tsx";
 import {
   MeetingTabs,
   RecordingControls,
+  SpeakerDot,
   TranscriptList,
   useTranscriptRows,
 } from "./MeetingParts.tsx";
 import { ThoughtsEditor } from "./MeetingThoughts.tsx";
 import { SummaryMarkdown } from "./MeetingSummary.tsx";
-import { durationLabel, meetingWhen, summaryNotice } from "./meetingsView.ts";
+import { durationLabel, meetingWhen, speakerToneAt, summaryNotice } from "./meetingsView.ts";
 import {
   commandRefusal,
   promptView,
@@ -40,7 +53,10 @@ import {
   type RecordingCommand,
 } from "./meetingStatus.ts";
 import { pageStyles } from "./pageStyles.ts";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { Skeleton } from "./Skeleton.tsx";
+import { surfaces } from "./surfaces.ts";
+import { color, icon, leading, motion, radius, space, text as size } from "./tokens.stylex.ts";
+import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
@@ -49,12 +65,12 @@ const styles = stylex.create({
   readable: { maxWidth: 800, marginInline: "auto" },
   back: { alignSelf: "flex-start" },
   header: { display: "flex", alignItems: "flex-start", gap: space.md },
-  heading: { display: "flex", flexDirection: "column", gap: 6, flexGrow: 1, minWidth: 0 },
+  heading: { display: "flex", flexDirection: "column", gap: space.xs, flexGrow: 1, minWidth: 0 },
   titleInput: {
     width: "100%",
     padding: 0,
-    marginInline: -6,
-    paddingInline: 6,
+    marginInline: `calc(-1 * ${space.xs})`,
+    paddingInline: space.xs,
     borderWidth: 0,
     borderRadius: radius.small,
     backgroundColor: { default: "transparent", ":hover": color.accent, ":focus": color.accent },
@@ -62,21 +78,14 @@ const styles = stylex.create({
     font: "inherit",
     outline: "none",
   },
-  when: { margin: 0, color: color.mutedForeground, fontSize: 13.5 },
-  actions: { display: "flex", alignItems: "center", gap: 2, paddingTop: 6 },
-  iconButton: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 28,
-    height: 28,
-    borderWidth: 0,
-    borderRadius: radius.small,
-    backgroundColor: { default: "transparent", ":hover": color.accent },
+  when: {
+    margin: 0,
     color: color.mutedForeground,
-    cursor: "pointer",
+    fontSize: size.sm,
+    lineHeight: leading.sm,
+    fontVariantNumeric: "tabular-nums",
   },
-  iconButtonOpen: { backgroundColor: color.accent, color: color.foreground },
+  actions: { display: "flex", alignItems: "center", gap: space.xs },
   panel: {
     display: "flex",
     flexDirection: "column",
@@ -88,12 +97,23 @@ const styles = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: space.md,
-    paddingBlock: 10,
+    paddingBlock: space.sm,
     paddingInline: space.md,
+    backgroundColor: color.muted,
+    boxShadow: "none",
   },
-  bannerText: { margin: 0, flexGrow: 1, fontSize: 13.5 },
-  bannerError: { color: color.errorForeground },
-  muted: { margin: 0, color: color.mutedForeground },
+  bannerWarning: {
+    borderColor: `color-mix(in srgb, ${color.warning} 24%, transparent)`,
+    backgroundColor: color.warningSurface,
+  },
+  bannerError: {
+    borderColor: `color-mix(in srgb, ${color.error} 24%, transparent)`,
+    backgroundColor: color.errorSurface,
+  },
+  bannerText: { margin: 0, flexGrow: 1, fontSize: size.sm, lineHeight: leading.sm },
+  bannerTextError: { color: color.errorForeground },
+  bannerTitle: { fontWeight: 600 },
+  muted: { margin: 0, color: color.mutedForeground, fontSize: size.sm, lineHeight: leading.sm },
   summaryCard: { padding: space.lg },
   stale: { opacity: 0.6 },
   speakers: {
@@ -105,21 +125,46 @@ const styles = stylex.create({
     paddingBottom: 0,
     borderWidth: 0,
   },
-  speakerInput: {
-    width: 140,
-    paddingBlock: 4,
-    paddingInline: 8,
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.xs,
+    height: 28,
+    paddingInline: space.sm,
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: { default: color.border, ":focus": color.input },
-    borderRadius: radius.small,
+    borderColor: { default: color.border, ":focus-within": color["--ring"] },
+    borderRadius: radius.round,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
+    boxShadow: {
+      default: "none",
+      ":focus-within": `0 0 0 3px color-mix(in srgb, ${color["--ring"]} 24%, transparent)`,
+    },
+    cursor: "text",
+    transitionProperty: "box-shadow, border-color, background-color",
+    transitionDuration: { default: motion.base, [motion.reduced]: "0s" },
+  },
+  chipInput: {
+    fieldSizing: "content",
+    minWidth: "4ch",
+    padding: 0,
+    borderWidth: 0,
     backgroundColor: "transparent",
-    color: color.primary,
+    color: color.foreground,
     font: "inherit",
-    fontSize: 13,
-    fontWeight: 600,
+    fontSize: size.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
+    outline: "none",
+    "::placeholder": { color: color.mutedForeground },
   },
   transcript: { padding: space.lg },
+  loading: { display: "flex", flexDirection: "column", gap: space.lg, padding: space.lg },
+  loadingTurn: { display: "flex", flexDirection: "column", gap: space.sm },
+  menuCheck: { display: "flex", flexShrink: 0, width: icon.md, color: color.mutedForeground },
+  menuLabel: { flexGrow: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  menuEnd: { display: "flex", color: color.mutedForeground },
+  menuEmpty: { margin: 0 },
 });
 
 type DetailTab = "summary" | "thoughts" | "transcript";
@@ -220,8 +265,8 @@ function Banner({
   action?: { label: string; onClick: () => void; disabled: boolean } | null;
 }) {
   return (
-    <Card style={styles.banner}>
-      <p {...stylex.props(styles.bannerText, error && styles.bannerError)}>{text}</p>
+    <Card style={[styles.banner, error && styles.bannerError]}>
+      <p {...stylex.props(styles.bannerText, error && styles.bannerTextError)}>{text}</p>
       {action && (
         <Button variant="secondary" disabled={action.disabled} onClick={action.onClick}>
           {action.label}
@@ -242,9 +287,9 @@ function ShortRecording({
 }) {
   const { title, body, actions } = promptView({ kind: "startedByMistake" }, 0);
   return (
-    <Card style={styles.banner}>
+    <Card style={[styles.banner, styles.bannerWarning]}>
       <p {...stylex.props(styles.bannerText)}>
-        {title} {body}
+        <span {...stylex.props(styles.bannerTitle)}>{title}</span> {body}
       </p>
       {actions.map(
         ({ label, command, primary }) =>
@@ -318,28 +363,57 @@ function SummaryPanel({
   );
 }
 
-function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: Speaker }) {
+function SpeakerChip({
+  meetingId,
+  speaker,
+  index,
+}: {
+  meetingId: MeetingId;
+  speaker: Speaker;
+  index: number;
+}) {
   const action = useAction();
   return (
     <>
-      <DraftInput
-        aria-label={`Name for ${speaker.label}`}
-        placeholder={speaker.label}
-        saved={speaker.name ?? ""}
-        save={(name) =>
-          action.run(
-            () => hubApi().renameMeetingSpeaker(meetingId, speaker.id, name),
-            "Could not rename this speaker.",
-          )
-        }
-        style={styles.speakerInput}
-      />
+      <label {...stylex.props(styles.chip)}>
+        <SpeakerDot tone={speakerToneAt(index)} />
+        <DraftInput
+          aria-label={`Name for ${speaker.label}`}
+          placeholder={speaker.label}
+          saved={speaker.name ?? ""}
+          save={(name) =>
+            action.run(
+              () => hubApi().renameMeetingSpeaker(meetingId, speaker.id, name),
+              "Could not rename this speaker.",
+            )
+          }
+          style={styles.chipInput}
+        />
+      </label>
       {action.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
           {action.error}
         </p>
       )}
     </>
+  );
+}
+
+const loadingTurns = ["a", "b", "c", "d", "e", "f"] as const;
+
+function TranscriptSkeleton() {
+  return (
+    <Card>
+      <div aria-busy="true" {...stylex.props(styles.loading)}>
+        {loadingTurns.map((turn) => (
+          <div key={turn} {...stylex.props(styles.loadingTurn)}>
+            <Skeleton width="96px" height="12px" />
+            <Skeleton height="14px" />
+            <Skeleton width="64%" height="14px" />
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -354,7 +428,7 @@ function Transcript({ meeting }: { meeting: Meeting }) {
       />
     );
   }
-  if (transcript.kind === "reading") return null;
+  if (transcript.kind === "reading") return <TranscriptSkeleton />;
   const rows = transcript.value;
   if (rows.length === 0) {
     return (
@@ -367,8 +441,8 @@ function Transcript({ meeting }: { meeting: Meeting }) {
     <Card>
       {meeting.speakers.length > 0 && (
         <fieldset aria-label="Speakers" {...stylex.props(styles.speakers)}>
-          {meeting.speakers.map((speaker) => (
-            <SpeakerField key={speaker.id} meetingId={meeting.id} speaker={speaker} />
+          {meeting.speakers.map((speaker, index) => (
+            <SpeakerChip key={speaker.id} meetingId={meeting.id} speaker={speaker} index={index} />
           ))}
         </fieldset>
       )}
@@ -376,6 +450,127 @@ function Transcript({ meeting }: { meeting: Meeting }) {
         <TranscriptList rows={rows} look="page" />
       </div>
     </Card>
+  );
+}
+
+const menuItemClass = ({ highlighted }: { highlighted: boolean }) =>
+  stylex.props(surfaces.item, highlighted && surfaces.itemHighlighted).className;
+
+/** The folders a meeting is in, as checkboxes, and a way to make one with the meeting in it. */
+function FolderSubmenu({
+  meeting,
+  folders,
+  onToggle,
+  onCreate,
+}: {
+  meeting: Meeting;
+  folders: readonly Folder[];
+  onToggle: (folder: Folder, inFolder: boolean) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <MenuPrimitive.SubmenuRoot>
+      <MenuPrimitive.SubmenuTrigger className={menuItemClass}>
+        <span {...stylex.props(styles.menuCheck)}>
+          <FolderIcon size={16} aria-hidden="true" />
+        </span>
+        <span {...stylex.props(styles.menuLabel)}>Move to folder</span>
+        <span {...stylex.props(styles.menuEnd)}>
+          <ChevronRightIcon size={14} aria-hidden="true" />
+        </span>
+      </MenuPrimitive.SubmenuTrigger>
+      <MenuPopup>
+        {folders.length === 0 && (
+          <p {...stylex.props(surfaces.groupLabel, styles.menuEmpty)}>No folders yet</p>
+        )}
+        {folders.map((folder) => (
+          <MenuPrimitive.CheckboxItem
+            key={folder.id}
+            checked={meeting.folderIds.includes(folder.id)}
+            onCheckedChange={(checked) => onToggle(folder, checked)}
+            className={menuItemClass}
+          >
+            <span {...stylex.props(styles.menuCheck)}>
+              <MenuPrimitive.CheckboxItemIndicator>
+                <CheckIcon size={14} aria-hidden="true" />
+              </MenuPrimitive.CheckboxItemIndicator>
+            </span>
+            <span {...stylex.props(styles.menuLabel)}>{folder.name}</span>
+          </MenuPrimitive.CheckboxItem>
+        ))}
+        <MenuSeparator />
+        <MenuItem icon={<span />} onClick={onCreate}>
+          New folder…
+        </MenuItem>
+      </MenuPopup>
+    </MenuPrimitive.SubmenuRoot>
+  );
+}
+
+function MoreActions({
+  meeting,
+  folders,
+  onToggleFolder,
+  onCreateFolder,
+  onCopy,
+  onExport,
+  onDelete,
+}: {
+  meeting: Meeting;
+  folders: readonly Folder[];
+  onToggleFolder: (folder: Folder, inFolder: boolean) => void;
+  onCreateFolder: () => void;
+  onCopy: () => void;
+  onExport: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Menu>
+      <Tooltip.Root>
+        <Tooltip.Trigger
+          render={
+            <MenuTrigger
+              render={
+                <Button variant="icon" aria-label="More actions">
+                  <MoreHorizontalIcon size={16} aria-hidden="true" />
+                </Button>
+              }
+            />
+          }
+        />
+        <Tooltip.Portal>
+          <Tooltip.Positioner side="bottom" sideOffset={4} className={tooltipPositionerClass()}>
+            <Tooltip.Popup className={tooltipPopupClass()}>More actions</Tooltip.Popup>
+          </Tooltip.Positioner>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+      <MenuPopup align="end">
+        <MenuItem icon={<CopyIcon size={16} aria-hidden="true" />} onClick={onCopy}>
+          Copy as Markdown
+        </MenuItem>
+        <MenuItem icon={<DownloadIcon size={16} aria-hidden="true" />} onClick={onExport}>
+          Export .md
+        </MenuItem>
+        <FolderSubmenu
+          meeting={meeting}
+          folders={folders}
+          onToggle={onToggleFolder}
+          onCreate={onCreateFolder}
+        />
+        {!isLive(meeting) && (
+          <>
+            <MenuSeparator />
+            <MenuItem
+              icon={<Trash2Icon size={16} aria-hidden="true" />}
+              destructive
+              onClick={onDelete}
+            >
+              Delete meeting
+            </MenuItem>
+          </>
+        )}
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -435,6 +630,14 @@ export function MeetingDetail({
       await hubApi().deleteMeeting(meeting.id);
       onBack();
     }, "Could not delete this meeting.");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  // A retry after a failed move adds the meeting to the folder already made, not a second one.
+  const madeFolder = useRef<Folder | null>(null);
+  const toggleFolder = (folder: Folder, inFolder: boolean) =>
+    void action.run(
+      () => hubApi().setMeetingInFolder(meeting.id, folder.id, inFolder),
+      "Could not change this meeting's folders.",
+    );
 
   return (
     <div {...stylex.props(styles.page, styles.readable)}>
@@ -456,35 +659,18 @@ export function MeetingDetail({
             pending={recording.pending}
             onCommand={command}
           />
-          <FolderMenu
+          <MoreActions
             meeting={meeting}
             folders={folders}
-            label="Move to folder"
-            style={(open) => [styles.iconButton, open && styles.iconButtonOpen]}
-          >
-            <FolderPlusIcon size={16} />
-          </FolderMenu>
-          <Button
-            variant="icon"
-            aria-label="Copy as Markdown"
-            title="Copy as Markdown"
-            onClick={copy}
-          >
-            <CopyIcon size={16} />
-          </Button>
-          <Button variant="icon" aria-label="Export .md" title="Export .md" onClick={exportFile}>
-            <DownloadIcon size={16} />
-          </Button>
-          {!isLive(meeting) && (
-            <Button
-              variant="icon"
-              aria-label="Delete meeting"
-              title="Delete meeting"
-              onClick={() => setConfirmingDelete(true)}
-            >
-              <Trash2Icon size={16} />
-            </Button>
-          )}
+            onToggleFolder={toggleFolder}
+            onCreateFolder={() => {
+              madeFolder.current = null;
+              setCreatingFolder(true);
+            }}
+            onCopy={copy}
+            onExport={exportFile}
+            onDelete={() => setConfirmingDelete(true)}
+          />
         </div>
       </div>
       {[action.error, recording.error].map(
@@ -525,6 +711,17 @@ export function MeetingDetail({
         description="Its transcript, summary and your thoughts are deleted from this Mac. This cannot be undone."
         actions={[{ label: "Delete", variant: "destructive", onClick: remove }]}
       />
+      {creatingFolder && (
+        <FolderDialog
+          folder={null}
+          open={creatingFolder}
+          onOpenChange={setCreatingFolder}
+          save={async (draft) => {
+            madeFolder.current ??= await hubApi().createFolder(draft);
+            await hubApi().setMeetingInFolder(meeting.id, madeFolder.current.id, true);
+          }}
+        />
+      )}
     </div>
   );
 }

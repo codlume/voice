@@ -535,12 +535,22 @@ async function openMeeting(status: Meeting["status"]) {
   return commands;
 }
 
+async function openMoreActions() {
+  await click(document.querySelector("button[aria-label='More actions']")!);
+  return [...document.querySelectorAll("[role=menuitem]")].map((item) => item.textContent);
+}
+
 describe("a meeting's recording controls", () => {
   test("a finished meeting resumes into itself, and can be deleted", async () => {
     const commands = await openMeeting({ kind: "ready" });
     await click(byText("Resume"));
     expect(commands.resumeMeeting).toHaveBeenCalledWith(id(1));
-    expect(document.querySelector("[aria-label='Delete meeting']")).not.toBeNull();
+    expect(await openMoreActions()).toEqual([
+      "Copy as Markdown",
+      "Export .md",
+      "Move to folder",
+      "Delete meeting",
+    ]);
   });
 
   test("a meeting asking whether it started by mistake is kept or discarded from the page", async () => {
@@ -554,7 +564,7 @@ describe("a meeting's recording controls", () => {
 
   test("a live meeting pauses and stops from the page, shows why a command did nothing, and cannot be deleted", async () => {
     const commands = await openMeeting({ kind: "recording", since: hoursAgo(0) });
-    expect(document.querySelector("[aria-label='Delete meeting']")).toBeNull();
+    expect(await openMoreActions()).not.toContain("Delete meeting");
     await click(byText("Pause"));
     await waitForText("The meeting is not recording.");
     await click(byText("Stop"));
@@ -900,13 +910,46 @@ describe("a meeting", () => {
 
   test("asks before deleting, then returns to the list", async () => {
     const main = await openSync();
-    await click(document.querySelector("[aria-label='Delete meeting']")!);
+    await openMoreActions();
+    await click(byText("Delete meeting", "[role=menuitem]"));
     await waitForText("Delete “Weekly product sync”?");
     expect(main.deleteMeeting).not.toHaveBeenCalled();
     await click(byText("Delete"));
     expect(main.deleteMeeting).toHaveBeenCalledWith(id(1));
     await waitForText("Past notes");
     expect(text()).not.toContain("Weekly product sync");
+  });
+
+  test("More actions copies the meeting and moves it into a folder", async () => {
+    const product: Folder = {
+      id: "00000000-0000-4000-8000-00000000f001" as FolderId,
+      name: "Product",
+      createdAt: 0,
+      kind: "manual",
+    };
+    const main = fakeMain(sample(), [product]);
+    await render();
+    await click(byText("Weekly product sync"));
+    await waitForText("All meetings");
+    await openMoreActions();
+    await click(byText("Copy as Markdown", "[role=menuitem]"));
+    expect(main.copyMeetingMarkdown).toHaveBeenCalledWith(id(1));
+    await waitForText("Copied as Markdown");
+
+    await openMoreActions();
+    await click(byText("Move to folder", "[role=menuitem]"));
+    await waitForText("New folder…");
+    await click(byText("Product", "[role=menuitemcheckbox]"));
+    expect(main.setMeetingInFolder).toHaveBeenCalledWith(id(1), product.id, true);
+  });
+
+  test("the transcript shows placeholder lines while it is read", async () => {
+    const main = await openSync();
+    main.getMeeting.mockImplementationOnce(() => new Promise(() => {}));
+    await click(byText("Transcript"));
+    expect(document.querySelector("[role=tabpanel] [aria-busy=true]")).not.toBeNull();
+    expect(document.querySelector("ol[aria-label=Transcript]")).toBeNull();
+    expect(text()).not.toContain("No transcript yet.");
   });
 
   test("a short meeting offers Generate summary, which asks main for it", async () => {

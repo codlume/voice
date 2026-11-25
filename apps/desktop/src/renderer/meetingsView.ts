@@ -22,6 +22,7 @@ import {
   type MeetingSource,
   type Speaker,
   type TranscriptEntry,
+  type Voice,
 } from "../shared/meetings.ts";
 import { dayLabel, formatterCache, localDate, timeLabel } from "./historyView.ts";
 
@@ -238,12 +239,28 @@ export function inlineRuns(text: string, speakers: readonly Speaker[]): Run[] {
   });
 }
 
+const voiceTones = ["voice1", "voice2", "voice3", "voice4", "voice5", "voice6"] as const;
+
+/**
+ * The dot color a voice is drawn with, the same in the transcript, the notepad and the speaker
+ * names: You and Others are grays, each diarized speaker keeps a tone by its place in the meeting.
+ */
+export type SpeakerTone = "you" | "others" | (typeof voiceTones)[number];
+
+export const speakerToneAt = (index: number): SpeakerTone => voiceTones[index % voiceTones.length]!;
+
+export function speakerTone(voice: Voice, speakers: readonly Speaker[]): SpeakerTone {
+  if (voice.source === "mic") return "you";
+  const index = speakers.findIndex(({ id }) => id === voice.speakerId);
+  return index === -1 ? "others" : speakerToneAt(index);
+}
+
 export type TranscriptRow =
   | {
       kind: "speech";
       id: string;
       speaker: string;
-      mine: boolean;
+      tone: SpeakerTone;
       time: string;
       text: string;
       final: boolean;
@@ -273,7 +290,7 @@ export function transcriptRows(
       kind: "speech",
       id: entry.id,
       speaker,
-      mine: entry.source === "mic",
+      tone: speakerTone(entry, speakers),
       time: clock(entry.startMs),
       text: entry.text,
       final: true,
@@ -293,13 +310,12 @@ export function partialRows(partials: Partial<Record<MeetingSource, string>>): T
     const text = partials[source]?.trim();
     if (!text) return [];
     const mine = source === "mic";
-    const speaker = mine ? YOU : OTHERS;
     return [
       {
         kind: "speech",
         id: `partial-${source}`,
-        speaker,
-        mine,
+        speaker: mine ? YOU : OTHERS,
+        tone: mine ? "you" : "others",
         time: "",
         text,
         final: false,

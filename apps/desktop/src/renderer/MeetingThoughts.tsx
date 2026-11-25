@@ -3,7 +3,8 @@ import * as stylex from "@stylexjs/stylex";
 import type { Meeting } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { color, leading, space, text } from "./tokens.stylex.ts";
 import { useThoughts } from "./useThoughts.ts";
 
 const styles = stylex.create({
@@ -11,17 +12,13 @@ const styles = stylex.create({
     width: "100%",
     color: color.foreground,
     font: "inherit",
+    "::placeholder": { color: color.mutedForeground },
   },
   page: {
     minHeight: 280,
-    padding: space.lg,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.border, ":focus": color.input },
-    borderRadius: radius.large,
-    backgroundColor: color.card,
-    fontSize: 15,
-    lineHeight: 1.6,
+    padding: space.base,
+    fontSize: text.base,
+    lineHeight: leading.base,
     resize: "vertical",
   },
   notepad: {
@@ -31,8 +28,8 @@ const styles = stylex.create({
     borderWidth: 0,
     outlineOffset: -2,
     backgroundColor: "transparent",
-    fontSize: 14,
-    lineHeight: 1.55,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     resize: "none",
   },
   failure: { display: "flex", alignItems: "center", gap: space.sm },
@@ -57,7 +54,11 @@ export function ThoughtsEditor({
         value={thoughts.text}
         placeholder="Write your thoughts here. The summary never changes them."
         onChange={(event) => thoughts.change(event.target.value)}
-        {...stylex.props(styles.area, styles[look])}
+        {...stylex.props(
+          styles.area,
+          look === "page" && [surfaces.control, surfaces.field],
+          styles[look],
+        )}
       />
       {thoughts.error && (
         <div {...stylex.props(styles.failure, look === "notepad" && styles.failureNotepad)}>

@@ -3,15 +3,15 @@ import { Fragment } from "react";
 
 import type { Speaker } from "../shared/meetings.ts";
 import { inlineRuns, summaryBlocks, type Block } from "./meetingsView.ts";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { color, leading, radius, space, text as size } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
+  // A neutral tint: a name is not a link, so it never takes the primary color.
   name: {
-    paddingInline: 3,
-    marginInline: -1,
-    borderRadius: radius.small,
-    backgroundColor: `color-mix(in srgb, ${color.primary} 12%, transparent)`,
-    color: color.primary,
+    paddingInline: space.xxs,
+    borderRadius: radius.xs,
+    backgroundColor: `color-mix(in srgb, ${color.mutedForeground} 15%, transparent)`,
+    color: color.foreground,
     fontWeight: 500,
   },
   bold: { fontWeight: 600 },
@@ -19,13 +19,25 @@ const styles = stylex.create({
     display: "flex",
     flexDirection: "column",
     gap: space.md,
-    fontSize: 15,
-    lineHeight: 1.6,
+    fontSize: size.base,
+    lineHeight: leading.base,
   },
   paragraph: { margin: 0 },
-  heading: { margin: 0, marginTop: space.sm, fontSize: 16, fontWeight: 600 },
-  list: { margin: 0, paddingLeft: space.lg, display: "flex", flexDirection: "column", gap: 4 },
-  nested: { marginTop: 4 },
+  heading: {
+    margin: 0,
+    marginTop: space.sm,
+    fontSize: size.base,
+    fontWeight: 600,
+    lineHeight: leading.base,
+  },
+  list: {
+    margin: 0,
+    paddingLeft: space.lg,
+    display: "flex",
+    flexDirection: "column",
+    gap: space.xxs,
+  },
+  nested: { marginTop: space.xxs },
 });
 
 export function Inline({ text, speakers }: { text: string; speakers: readonly Speaker[] }) {

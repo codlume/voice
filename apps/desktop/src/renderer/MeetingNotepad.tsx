@@ -21,7 +21,7 @@ import type { Read } from "./useMeetings.ts";
 import { CONSENT_REMINDER, type TranscriptRow } from "./meetingsView.ts";
 import { commandRefusal, promptView, statusView, type PromptCommand } from "./meetingStatus.ts";
 import { pageStyles } from "./pageStyles.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, font, leading, radius, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useNow } from "./useNow.ts";
 import { notepadApi } from "./voice.ts";
@@ -38,7 +38,8 @@ const styles = stylex.create({
     backgroundColor: color.background,
     color: color.foreground,
     fontFamily: font.sans,
-    fontSize: 13,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
   },
   header: {
     display: "flex",
@@ -54,19 +55,19 @@ const styles = stylex.create({
     WebkitAppRegion: "drag",
     userSelect: "none",
   },
-  status: { display: "flex", alignItems: "center", gap: 6, flexGrow: 1, minWidth: 0 },
+  status: { display: "flex", alignItems: "center", gap: space.sm, flexGrow: 1, minWidth: 0 },
   light: { flexShrink: 0, width: 8, height: 8, borderRadius: radius.round },
   recording: { backgroundColor: color.error },
   paused: { backgroundColor: color.mutedForeground },
   busy: { backgroundColor: color.mutedForeground, opacity: 0.5 },
   done: { backgroundColor: color.success },
   label: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 },
-  clock: { color: color.mutedForeground },
+  clock: { flexShrink: 0, color: color.mutedForeground },
   controls: { WebkitAppRegion: "no-drag" },
   prompt: {
     display: "flex",
     flexDirection: "column",
-    gap: 6,
+    gap: space.xxs,
     flexShrink: 0,
     margin: space.sm,
     marginBottom: 0,
@@ -75,12 +76,21 @@ const styles = stylex.create({
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.large,
-    backgroundColor: color.card,
-    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
+    backgroundColor: color.muted,
   },
-  promptTitle: { margin: 0, fontSize: 13.5, fontWeight: 600 },
-  promptBody: { margin: 0, color: color.mutedForeground, lineHeight: 1.45 },
-  promptActions: { display: "flex", justifyContent: "flex-end", gap: 6, paddingTop: 4 },
+  // Prompts that can stop or discard the recording read as warnings.
+  promptWarning: {
+    borderColor: `color-mix(in srgb, ${color.warning} 24%, transparent)`,
+    backgroundColor: color.warningSurface,
+  },
+  promptTitle: { margin: 0, fontWeight: 600 },
+  promptBody: { margin: 0, color: color.mutedForeground },
+  promptActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: space.xs,
+    paddingTop: space.xs,
+  },
   tabs: { display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0 },
   panel: {
     display: "flex",
@@ -97,9 +107,24 @@ const styles = stylex.create({
     paddingBlock: space.sm,
     paddingInline: space.md,
   },
-  empty: { paddingBlock: space.lg, color: color.mutedForeground, textAlign: "center" },
-  emptyLine: { margin: 0 },
-  consent: { marginTop: space.sm, fontSize: 12 },
+  empty: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: space.xs,
+    paddingBlock: space.xl,
+    paddingInline: space.md,
+    textAlign: "center",
+    textWrap: "balance",
+  },
+  emptyLine: { margin: 0, fontWeight: 500 },
+  consent: {
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    fontWeight: 400,
+    lineHeight: leading.xs,
+  },
+  retry: { paddingTop: space.xs },
   error: { margin: 0, paddingInline: space.md, paddingBottom: space.sm },
 });
 
@@ -133,7 +158,7 @@ function Transcript({ transcript }: { transcript: Read<readonly TranscriptRow[]>
     return (
       <div {...stylex.props(styles.empty)}>
         <p {...stylex.props(styles.emptyLine)}>Could not load the transcript.</p>
-        <div {...stylex.props(styles.consent)}>
+        <div {...stylex.props(styles.retry)}>
           <Button variant="secondary" onClick={transcript.retry}>
             Try again
           </Button>
@@ -175,7 +200,10 @@ function Prompt({
   const now = useNow(prompt.kind === "maxLengthSoon");
   const asked = promptView(prompt, now);
   return (
-    <section aria-label={asked.title ?? "Notice"} {...stylex.props(styles.prompt)}>
+    <section
+      aria-label={asked.title ?? "Notice"}
+      {...stylex.props(styles.prompt, prompt.kind !== "summaryReady" && styles.promptWarning)}
+    >
       {asked.title && <p {...stylex.props(styles.promptTitle)}>{asked.title}</p>}
       <p {...stylex.props(styles.promptBody)}>{asked.body}</p>
       <div {...stylex.props(styles.promptActions)}>

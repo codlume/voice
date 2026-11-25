@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { DayKey } from "../shared/insights.ts";
-import type { Meeting, MeetingId, Speaker, SpeakerId } from "../shared/meetings.ts";
+import type {
+  Meeting,
+  MeetingId,
+  Speaker,
+  SpeakerId,
+  TranscriptEntry,
+} from "../shared/meetings.ts";
 import {
   expiredBy,
   inlineRuns,
@@ -180,12 +186,35 @@ test("transcript rows name each voice once per turn and mark pauses and dictatio
     [],
   );
   expect(rows).toEqual([
-    expect.objectContaining({ speaker: "You", mine: true, time: "00:00", continues: false }),
+    expect.objectContaining({ speaker: "You", tone: "you", time: "00:00", continues: false }),
     expect.objectContaining({ speaker: "You", continues: true }),
     expect.objectContaining({ kind: "marker", text: "Dictated at 00:04" }),
-    expect.objectContaining({ speaker: "Others", mine: false, continues: false }),
+    expect.objectContaining({ speaker: "Others", tone: "others", continues: false }),
     expect.objectContaining({ kind: "marker", text: "Paused at 01:10" }),
   ]);
+});
+
+const said = (id: string, speakerId: string | null): TranscriptEntry => ({
+  kind: "segment",
+  id,
+  startMs: 0,
+  endMs: 1,
+  text: id,
+  source: "system",
+  speakerId: speakerId as SpeakerId | null,
+});
+
+test("each diarized speaker keeps one tone, apart from You and Others", () => {
+  const tones = transcriptRows(
+    [said("a", "s1"), said("b", "s2"), said("c", "s1"), said("d", "gone"), said("e", null)],
+    [named("s1", "Speaker 1", "Ann"), named("s2", "Speaker 2", null)],
+  ).map((row) => row.kind === "speech" && row.tone);
+  const [ann, second, annAgain, ...others] = tones;
+  expect(annAgain).toBe(ann);
+  expect(second).not.toBe(ann);
+  expect([ann, second]).not.toContain("you");
+  expect([ann, second]).not.toContain("others");
+  expect(others).toEqual(["others", "others"]);
 });
 
 test("search results follow main's order, say where they matched, and skip deleted meetings", () => {
