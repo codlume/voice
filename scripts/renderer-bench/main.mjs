@@ -24,7 +24,7 @@ app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
 const HUB_SIZE = { width: 1350, height: 850 };
-const PILL_SIZE = { width: 320, height: 48 };
+const PILL_SIZE = { width: 320, height: 60 };
 const TRANSCRIPT_LINES = 600;
 const QUERY = "launch";
 const ROWS = "section[aria-labelledby=history] li";
@@ -441,10 +441,17 @@ const scenarios = {
   },
 
   async pill() {
+    // "Show Flow Bar at all times" keeps the idle capsule painted, the costlier idle case.
+    changed({ settings: { ...snapshot.settings, alwaysShowPill: true } });
     record("pill-cold", await open("pill", { ...PILL_SIZE, frame: false, transparent: true }));
+    const idleFrom = cpuMs();
     const idleCommits = await page("idle", 2000);
+    const idleCpuMs = cpuMs() - idleFrom;
     check(idleCommits === 0, `the idle Flow Bar committed ${idleCommits} times in 2 s`);
-    record("pill", { "commits while idle for 2 s": idleCommits });
+    record("pill", {
+      "commits while idle for 2 s": idleCommits,
+      "renderer cpu ms while idle for 2 s": idleCpuMs,
+    });
     const changes = [];
     const show = async (session) => {
       changes.push(await push("onPillSnapshot", toPillSnapshot(changed({ session }), null)));
@@ -464,6 +471,10 @@ const scenarios = {
       "a level update is not one commit that renders one component, so the counter is wrong",
     );
     await show({ kind: "processing", overdue: false });
+    check((await page("count", "[data-view=processing]")) === 1, "the Flow Bar is not processing");
+    const workingFrom = cpuMs();
+    await sleep(2000);
+    record("pill", { "renderer cpu ms while processing for 2 s": cpuMs() - workingFrom });
     await show({ kind: "done", outcome: { kind: "inserted", method: "accessibility" } });
     await show({ kind: "idle" });
     check((await page("count", "[data-view=idle]")) === 1, "the Flow Bar did not return to idle");

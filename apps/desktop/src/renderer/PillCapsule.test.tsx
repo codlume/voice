@@ -35,7 +35,19 @@ describe("Flow Bar status for a screen reader", () => {
   test("says Listening only while capture is active", () => {
     expect(spoken({ kind: "idle" })).toBe("");
     expect(spoken({ kind: "listening" })).toBe("Listening");
-    expect(spoken({ kind: "processing", overdue: false })).toBe("");
+    expect(spoken({ kind: "processing", overdue: false })).not.toContain("Listening");
+  });
+
+  test("names the work in progress", () => {
+    expect(spoken({ kind: "processing", overdue: false })).toBe("Transcribing");
+    expect(spoken({ kind: "transforming", loading: false })).toBe("Transforming");
+  });
+
+  test("announces only the new look while the old one fades out", () => {
+    spoken({ kind: "listening" });
+    expect(spoken({ kind: "processing", overdue: false })).toBe("Transcribing");
+    const hidden = [...host.querySelectorAll("[aria-hidden=true]")].map((node) => node.textContent);
+    expect(hidden).toContain("Listening");
   });
 });
 
