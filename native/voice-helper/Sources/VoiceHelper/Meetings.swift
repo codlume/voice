@@ -182,7 +182,10 @@ final class MeetingTranscription {
                 continue
             }
             do {
-                guard let window = try await nextWindow() else {
+                // The scan suspends, so a drain can arrive during it. Only a scan that already read
+                // the files as ended may report them drained.
+                let ended = recording.isEmpty
+                guard let window = try await nextWindow(ended: ended) else {
                     if !recording.isEmpty {
                         if let partial = await nextPartial(), !isDictating() {
                             await showPartial(partial)
@@ -191,6 +194,7 @@ final class MeetingTranscription {
                         }
                         continue
                     }
+                    guard ended else { continue }
                     for source in showing { clearPartial(source) }
                     output.emit(.meetingDrained(id: id, failure: nil))
                     return
@@ -223,22 +227,18 @@ final class MeetingTranscription {
         let samples: [Float]
     }
 
-    private func nextWindow() async throws -> Window? {
+    private func nextWindow(ended: Bool) async throws -> Window? {
         let sources = [MeetingSource.mic, .system].sorted { (cursor[$0] ?? 0) < (cursor[$1] ?? 0) }
         for source in sources {
             let offset = cursor[source] ?? 0
             let end = end(of: source)
             let available = end - offset
-            guard available > 0,
-                  let raw = try? PcmFile.read(at: source.file(in: dir), offset: offset, count: min(available, MeetingChunker.windowSamples))
+            guard available > 0, let cut = (try? await source.liveWindow(in: dir, offset: offset, available: available, ended: ended)) ?? nil
             else { continue }
-            let final = recording.isEmpty && available <= raw.count
-            if let cut = MeetingChunker.cut(raw, final: final) {
-                let settle = settleBound(of: source, end: end)
-                let heard = try await listen(to: source, offset: offset, count: cut)
-                guard try settled(heard, offset: offset, before: settle) == heard.samples.count else { continue }
-                return Window(source: source, offset: offset, heard: heard)
-            }
+            let settle = settleBound(of: source, end: end)
+            let heard = try await listen(to: source, offset: offset, count: cut)
+            guard try await settled(heard, offset: offset, before: settle) == heard.samples.count else { continue }
+            return Window(source: source, offset: offset, heard: heard)
         }
         return nil
     }
@@ -273,9 +273,9 @@ final class MeetingTranscription {
         source == .mic && recording.contains(.system) ? end : nil
     }
 
-    private func settled(_ heard: HeardAudio, offset: Int, before bound: Int?) throws -> Int {
+    private func settled(_ heard: HeardAudio, offset: Int, before bound: Int?) async throws -> Int {
         guard let bound, heard.speech != nil else { return heard.samples.count }
-        return try EchoGate.settled(heard.samples, offset: offset, heardEnd: bound,
+        return try await EchoGate.settled(heard.samples, offset: offset, heardEnd: bound,
                                     mic: MeetingSource.mic.file(in: dir), system: MeetingSource.system.file(in: dir))
     }
 
@@ -288,7 +288,7 @@ final class MeetingTranscription {
             partialEnd[source] = offset + count
             let settle = settleBound(of: source, end: end)
             guard let heard = try? await listen(to: source, offset: offset, count: count), let speech = heard.speech,
-                  let upTo = try? settled(heard, offset: offset, before: settle), speech.lowerBound < upTo
+                  let upTo = try? await settled(heard, offset: offset, before: settle), speech.lowerBound < upTo
             else { continue }
             return Partial(source: source, samples: Array(heard.samples.prefix(upTo)))
         }
@@ -378,9 +378,7 @@ final class MeetingFinalPass {
         var saidUnconfirmed = false
         while offset < total {
             try await dictationDone()
-            let samples = try PcmFile.read(at: url, offset: offset, count: MeetingChunker.finalWindowSamples)
-            guard !samples.isEmpty else { break }
-            let count = MeetingChunker.finalCut(samples)
+            guard let count = try await source.finalWindow(in: dir, offset: offset) else { break }
             if detector == nil { detector = await newDetector() }
             let heard = try await source.listen(in: dir, offset: offset, count: count, detector: detector)
             detector = heard.detector

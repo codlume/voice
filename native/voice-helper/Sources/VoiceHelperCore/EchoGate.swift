@@ -61,7 +61,9 @@ public enum EchoGate {
     /// samples before the first sound that may still be the other side's echo, or all of them.
     /// `gated` is the mic from `offset` on, as `read` returned it. `heardEnd` is where both files
     /// ended before the gate read them.
-    public static func settled(_ gated: [Float], offset: Int, heardEnd: Int, mic: URL, system: URL) throws -> Int {
+    /// It correlates seconds of audio, so it never runs on main, where it would hold up the shortcut.
+    public static func settled(_ gated: [Float], offset: Int, heardEnd: Int, mic: URL, system: URL) async throws -> Int {
+        dispatchPrecondition(condition: .notOnQueue(.main))
         guard FileManager.default.fileExists(atPath: system.path) else { return gated.count }
         let runs = MeetingChunker.speechRuns(in: gated)
         func firstSound(inTheLast newest: Int) throws -> Int? {
