@@ -52,14 +52,10 @@ public final class PcmWriter {
 
     public func append(_ samples: [Float]) throws {
         guard !samples.isEmpty else { return }
-        var data = Data(count: samples.count * PcmFile.bytesPerFrame)
-        data.withUnsafeMutableBytes { raw in
-            for (index, sample) in samples.enumerated() {
-                let value = Int16(max(-1, min(1, sample)) * 32767).littleEndian
-                raw.storeBytes(of: value, toByteOffset: index * PcmFile.bytesPerFrame, as: Int16.self)
-            }
-        }
-        try handle.write(contentsOf: data)
+        let scaled = vDSP.multiply(32767, vDSP.clip(samples, to: -1...1))
+        // Every Mac is little-endian, as the file is.
+        let pcm = vDSP.floatingPointToInteger(scaled, integerType: Int16.self, rounding: .towardZero)
+        try handle.write(contentsOf: pcm.withUnsafeBytes { Data($0) })
         frames += samples.count
     }
 
