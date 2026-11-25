@@ -96,12 +96,19 @@ const REFUSALS: Partial<Record<MeetingEvent["type"], string>> = {
   deleteAudio: "There is no kept audio to delete.",
 };
 
+/** What a command tells the user when one of its effects fails. Commands not listed report ok. */
+const FAILURES: Partial<Record<MeetingEvent["type"], string>> = {
+  deleteAudio: "The audio could not be deleted. Try again.",
+};
+
 const FAILED_START = "Recording could not start. Check your microphone, then try again.";
 
 const takesLiveLines = (meeting: Meeting) =>
   meeting.status.kind !== "summarizing" && meeting.status.kind !== "ready";
 
 type Watchdog = { watch: Watch; timer: NodeJS.Timeout | null };
+
+type Applied = "unchanged" | "changed" | "failed";
 
 function failureOf(effect: MeetingEffect): MeetingEvent | null {
   switch (effect.type) {
@@ -112,6 +119,8 @@ function failureOf(effect: MeetingEffect): MeetingEvent | null {
     case "finalize":
     case "applyFinalPass":
       return { type: "finalizeFailed", reason: "other" };
+    case "deleteAudio":
+      return effect.keptFor && { type: "audioDeleteFailed", reason: effect.keptFor };
     default:
       return null;
   }
@@ -159,13 +168,13 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   const folder = (id: MeetingId) => NodePath.join(deps.dir, id);
   const config = () => store.state().settings;
 
-  function dispatch(id: MeetingId, event: MeetingEvent): Promise<boolean> {
+  function dispatch(id: MeetingId, event: MeetingEvent): Promise<Applied> {
     const next = queue.then(() => apply(id, event));
     queue = next.catch((error) => log(`meetings: ${event.type} failed (${String(error)})`));
     return next;
   }
 
-  async function apply(id: MeetingId, event: MeetingEvent): Promise<boolean> {
+  async function apply(id: MeetingId, event: MeetingEvent): Promise<Applied> {
     let before = null as Meeting | null;
     let stepped: Step = { meeting: null, effects: [] };
     await store.upsert(id, (latest) => {
@@ -178,8 +187,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     });
     const { meeting, effects } = stepped;
     if (meeting?.status !== before?.status) statusChanged(id, before, meeting);
-    for (const effect of effects) await runOrFail(id, meeting ?? before, effect);
-    return meeting !== before || effects.length > 0;
+    let applied: Applied = meeting !== before || effects.length > 0 ? "changed" : "unchanged";
+    for (const effect of effects) {
+      if (!(await runOrFail(id, meeting ?? before, effect))) applied = "failed";
+    }
+    return applied;
   }
 
   function statusChanged(id: MeetingId, before: Meeting | null, after: Meeting | null) {
@@ -192,13 +204,19 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     if (recording && before?.status.kind !== "recording") armSilence(id);
   }
 
-  async function runOrFail(id: MeetingId, meeting: Meeting | null, effect: MeetingEffect) {
+  async function runOrFail(
+    id: MeetingId,
+    meeting: Meeting | null,
+    effect: MeetingEffect,
+  ): Promise<boolean> {
     try {
       await run(id, meeting, effect);
+      return true;
     } catch (error) {
       log(`meetings: ${effect.type} failed (${String(error)})`);
       const failed = failureOf(effect);
       if (failed) background(effect.type, dispatch(id, failed));
+      return false;
     }
   }
 
@@ -539,7 +557,10 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       const other = store.state().meetings.find((meeting) => meeting.id !== id && isLive(meeting));
       if (other) return { kind: "refused", message: "Stop the other meeting first." };
     }
-    if (await dispatch(id, event)) return { kind: "ok", id };
+    const applied = await dispatch(id, event);
+    const failure = applied === "failed" ? FAILURES[event.type] : undefined;
+    if (failure) return { kind: "refused", message: failure };
+    if (applied !== "unchanged") return { kind: "ok", id };
     return { kind: "refused", message: REFUSALS[event.type] ?? "This cannot be done now." };
   }
 

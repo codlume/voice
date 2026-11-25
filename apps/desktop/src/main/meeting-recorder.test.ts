@@ -1116,6 +1116,36 @@ describe("meeting recorder", () => {
     });
   });
 
+  test("Delete audio whose delete fails is refused and keeps the audio and both actions", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    h.emit({ type: "meeting.finalizeFailed", id, reason: "transcript", message: "model missing" });
+    await h.settle();
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    const mic = NodePath.join(h.folder(id), "mic.pcm");
+
+    disk.nextAudioDelete = "throws";
+    expect(await h.recorder.deleteAudio(id)).toEqual({
+      kind: "refused",
+      message: "The audio could not be deleted. Try again.",
+    });
+    await h.settle();
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    expect((await h.onDisk(id)).finalPassFailed).toBe("other");
+    expect(h.notices).toEqual(["finalPassFailed", "finalPassFailed"]);
+    expect(existsSync(mic)).toBe(true);
+
+    expect(await h.recorder.deleteAudio(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.store.get(id)?.finalPassFailed).toBeNull();
+    for (const name of AUDIO) {
+      expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
+    }
+  });
+
   test("a new meeting whose folder cannot be made is refused and asks the helper for nothing", async () => {
     const h = harness();
     await h.store.loaded();
