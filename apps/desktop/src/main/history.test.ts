@@ -297,6 +297,22 @@ describe("saved history", () => {
     ]);
   });
 
+  test("an entry whose insertion was not confirmed is saved and comes back that way after a restart", async () => {
+    const first = harness("month");
+    first.history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
+    first.history.settle("a", "unconfirmed");
+    await first.history.settled();
+    expect((await saved()).entries).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "Hi.", status: "unconfirmed" },
+    ]);
+
+    const second = harness();
+    await second.history.settled();
+    expect(second.history.entries()).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "Hi.", status: "unconfirmed" },
+    ]);
+  });
+
   test("a session reaches the hub as its entry alone, a delete as its id, and a clear as the whole list", async () => {
     await writeFile(file, envelope("month", [savedEntry("old", START - HOUR)]));
     const { history, changes, published } = harness();

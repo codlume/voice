@@ -184,6 +184,7 @@ private func eventCases() -> [String: HelperEvent] {
         "transcript.failed": .transcriptFailed(id: "s1", reason: .asrUnavailable, message: "Synthetic ASR failure"),
         "insert.result": .insertResult(id: "s1", outcome: .refused(.focusChanged)),
         "insert.result.selectionChanged": .insertResult(id: "r1", outcome: .refused(.selectionChanged)),
+        "insert.result.unconfirmed": .insertResult(id: "s1", outcome: .refused(.unconfirmed)),
         "insert.result.paste": .insertResult(id: "s1", outcome: .paste(.unchanged, clipboardSaveMs: 1.5)),
         "insert.result.accessibility": .insertResult(id: "s1", outcome: .accessibility(.direct)),
         "permissions": .permissions(microphone: .granted, accessibility: .notDetermined, systemAudio: .notDetermined),
