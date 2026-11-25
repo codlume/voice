@@ -1,4 +1,3 @@
-import { Progress } from "@base-ui/react/progress";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
 import { useId } from "react";
@@ -6,7 +5,8 @@ import { useId } from "react";
 import { settled, type ChecklistRow } from "./checklist.ts";
 import { runSetupCommand, setupFailure } from "./SetupChecklist.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { ProgressBar } from "./Skeleton.tsx";
+import { color, elevation, font, leading, radius, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 
 const styles = stylex.create({
@@ -20,18 +20,12 @@ const styles = stylex.create({
     borderColor: color.border,
     borderRadius: radius.large,
     backgroundColor: color.card,
+    boxShadow: elevation.xs,
     whiteSpace: "normal",
     cursor: "default",
   },
-  title: { margin: 0, fontSize: 13, fontWeight: 600 },
-  track: {
-    height: 4,
-    overflow: "hidden",
-    borderRadius: radius.round,
-    backgroundColor: color.segmentTrack,
-  },
-  fill: { height: "100%", backgroundColor: color.success },
-  list: { display: "flex", flexDirection: "column", gap: 10, margin: 0, padding: 0 },
+  title: { margin: 0, fontSize: text.sm, fontWeight: 600, lineHeight: leading.sm },
+  list: { display: "flex", flexDirection: "column", gap: space.sm, margin: 0, padding: 0 },
   row: { display: "flex", alignItems: "flex-start", gap: space.sm, listStyle: "none" },
   mark: {
     display: "grid",
@@ -39,7 +33,6 @@ const styles = stylex.create({
     flexShrink: 0,
     width: 16,
     height: 16,
-    marginTop: 1,
     borderWidth: 1.5,
     borderStyle: "solid",
     borderColor: color.input,
@@ -52,21 +45,22 @@ const styles = stylex.create({
   },
   markFailed: { borderColor: color.error },
   text: { display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0 },
-  label: { margin: 0, fontSize: 12.5, lineHeight: 1.35 },
+  label: { margin: 0, fontSize: text.xs, lineHeight: leading.xs },
   labelDone: { color: color.mutedForeground },
-  hint: { margin: 0, color: color.mutedForeground, fontSize: 11.5, lineHeight: 1.35 },
+  hint: { margin: 0, color: color.mutedForeground, fontSize: text.xxs, lineHeight: leading.xxs },
   action: {
     flexShrink: 0,
     padding: 0,
     borderWidth: 0,
     backgroundColor: "transparent",
     color: color.primary,
-    font: "inherit",
-    fontSize: 12.5,
+    fontFamily: font.sans,
+    fontSize: text.xs,
     fontWeight: 500,
+    lineHeight: leading.xs,
     cursor: "pointer",
   },
-  consent: { margin: 0, color: color.mutedForeground, fontSize: 11.5, lineHeight: 1.4 },
+  consent: { margin: 0, color: color.mutedForeground, fontSize: text.xxs, lineHeight: leading.xxs },
 });
 
 const hint = ({ status, actions, subtitle }: ChecklistRow) =>
@@ -87,11 +81,7 @@ export function MeetingsSetup({
       <h2 id={id} {...stylex.props(styles.title)}>
         Set up Meetings
       </h2>
-      <Progress.Root aria-label={`${done} of ${rows.length} done`} value={done} max={rows.length}>
-        <Progress.Track {...stylex.props(styles.track)}>
-          <Progress.Indicator {...stylex.props(styles.fill)} />
-        </Progress.Track>
-      </Progress.Root>
+      <ProgressBar label={`${done} of ${rows.length} done`} value={(done / rows.length) * 100} />
       <ul {...stylex.props(styles.list)}>
         {rows.map((row) => {
           const ready = row.status.kind === "ready";

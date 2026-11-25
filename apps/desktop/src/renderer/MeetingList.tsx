@@ -1,65 +1,39 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import * as stylex from "@stylexjs/stylex";
-import { CheckIcon, FileTextIcon, FolderPlusIcon } from "lucide-react";
+import { CheckIcon, FolderPlusIcon } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import {
+  closedMs,
   titleText,
   type Folder,
   type Meeting,
   type MeetingId,
   type MeetingSnippet,
 } from "../shared/meetings.ts";
+import { Badge } from "./Badge.tsx";
 import { Card } from "./Card.tsx";
 import { FolderDialog } from "./FolderDialog.tsx";
 import { timeLabel } from "./historyView.ts";
-import { meetingAt, type MeetingDay } from "./meetingsView.ts";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "./Menu.tsx";
+import { durationLabel, meetingAt, type MeetingDay } from "./meetingsView.ts";
 import { statusLabel } from "./meetingStatus.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { color, font, icon, leading, motion, space, text } from "./tokens.stylex.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 import { helpAnchor } from "./help.ts";
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-
 const menuStyles = stylex.create({
-  positioner: { zIndex: 10 },
-  popup: {
-    minWidth: "14rem",
-    maxWidth: "var(--available-width)",
-    maxHeight: "min(320px, var(--available-height))",
-    overflowY: "auto",
-    padding: 4,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    boxShadow: "0 8px 24px rgb(0 0 0 / 12%)",
-    fontFamily: font.sans,
-    fontSize: 13,
-    lineHeight: 1.45,
-    outline: "none",
-  },
-  item: {
-    display: "flex",
-    alignItems: "center",
-    gap: space.sm,
-    minHeight: 30,
-    paddingBlock: 5,
-    paddingInline: space.sm,
-    borderRadius: radius.small,
-    cursor: "pointer",
-    userSelect: "none",
-    outline: "none",
-  },
-  highlighted: { backgroundColor: color.input },
-  check: { flexShrink: 0, width: 14 },
+  check: { display: "flex", flexShrink: 0, width: icon.md },
   label: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  separator: { height: 1, marginBlock: 4, backgroundColor: color.border },
-  empty: { margin: 0, paddingBlock: 5, paddingInline: space.sm, color: color.mutedForeground },
+  empty: {
+    margin: 0,
+    paddingBlock: space.xxs,
+    paddingInline: space.sm,
+    color: color.mutedForeground,
+  },
 });
 
 const styles = stylex.create({
@@ -67,44 +41,42 @@ const styles = stylex.create({
   day: { display: "flex", flexDirection: "column", gap: space.sm },
   dayLabel: {
     margin: 0,
+    paddingInline: space.xxs,
     color: color.mutedForeground,
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.075em",
-    textTransform: "uppercase",
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
   },
+  // Rows tint on hover, so the card clips them to its corners.
   card: { overflow: "hidden" },
   list: { margin: 0, padding: 0, listStyle: "none" },
+  // Adapted list row (MIT, see THIRD_PARTY_NOTICES.md): hairline-divided rows that tint on hover.
   row: {
-    display: "grid",
-    gridTemplateColumns: "36px minmax(0, 1fr) auto",
+    display: "flex",
     alignItems: "center",
-    columnGap: space.md,
-    paddingBlock: 10,
-    paddingInline: space.md,
+    gap: space.md,
+    minHeight: 44,
+    paddingBlock: space.sm,
+    paddingInline: space.base,
     borderTopWidth: { default: 1, ":first-child": 0 },
     borderTopStyle: "solid",
-    borderTopColor: color.border,
+    borderTopColor: `color-mix(in srgb, ${color.border} 50%, transparent)`,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
     cursor: "pointer",
+    transitionProperty: "background-color",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
   },
   rowSelected: { backgroundColor: color.accent },
-  docIcon: {
-    display: "grid",
-    placeItems: "center",
-    width: 36,
-    height: 36,
-    borderRadius: radius.small,
-    backgroundColor: color.segmentTrack,
-    color: color.mutedForeground,
-  },
-  body: { display: "flex", flexDirection: "column", minWidth: 0 },
+  body: { display: "flex", flexDirection: "column", gap: 2, flexGrow: 1, minWidth: 0 },
   title: {
     padding: 0,
     borderWidth: 0,
     backgroundColor: "transparent",
     color: color.foreground,
-    font: "inherit",
-    fontSize: 15,
+    fontFamily: font.sans,
+    fontSize: text.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
     textAlign: "left",
     cursor: "pointer",
     overflow: "hidden",
@@ -113,37 +85,39 @@ const styles = stylex.create({
   },
   meta: {
     display: "flex",
-    gap: space.sm,
+    alignItems: "center",
+    gap: space.xs,
+    minWidth: 0,
+    overflow: "hidden",
     color: color.mutedForeground,
-    fontSize: 13,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
     fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
   },
-  status: { color: color.primary },
   snippet: {
     margin: 0,
-    marginTop: 2,
     color: color.mutedForeground,
-    fontSize: 13,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
   where: { color: color.foreground },
   match: { backgroundColor: "transparent", color: color.foreground, fontWeight: 600 },
+  // Shown on hover and focus only, but kept in the layout so the row's controls stay named.
   folderButton: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 6,
+    gap: space.xs,
+    flexShrink: 0,
     height: 28,
-    paddingInline: 10,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: color.input,
-    borderRadius: radius.small,
-    backgroundColor: { default: "transparent", ":hover": color.card },
-    color: color.mutedForeground,
-    font: "inherit",
-    fontSize: 12.5,
+    paddingInline: space.sm,
+    fontFamily: font.sans,
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
     cursor: "pointer",
     opacity: {
       default: 0,
@@ -151,10 +125,29 @@ const styles = stylex.create({
       [stylex.when.ancestor(":focus-within")]: 1,
     },
     transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: { default: motion.base, [motion.reduced]: "0s" },
   },
   folderButtonOpen: { opacity: 1 },
 });
+
+const SHOWN_FOLDERS = 2;
+
+/** The meeting's first folders by name, then a count of the rest. */
+function FolderBadges({ meeting, folders }: { meeting: Meeting; folders: readonly Folder[] }) {
+  const inFolders = folders.filter(({ id }) => meeting.folderIds.includes(id));
+  const more = inFolders.length - SHOWN_FOLDERS;
+  return (
+    <>
+      {inFolders.slice(0, SHOWN_FOLDERS).map((folder) => (
+        <Badge key={folder.id}>{folder.name}</Badge>
+      ))}
+      {more > 0 && <Badge>{`+${more}`}</Badge>}
+    </>
+  );
+}
+
+const itemClass = ({ highlighted }: MenuPrimitive.CheckboxItem.State) =>
+  stylex.props(surfaces.item, highlighted && surfaces.itemHighlighted).className;
 
 export function FolderMenu({
   meeting,
@@ -179,8 +172,6 @@ export function FolderMenu({
   useLayoutEffect(() => {
     if (menu?.focus) trigger.current?.focus();
   }, [menu]);
-  const itemClass = ({ highlighted }: Menu.Item.State) =>
-    stylex.props(menuStyles.item, highlighted && menuStyles.highlighted).className;
   const toggle = (folder: Folder, inFolder: boolean) =>
     void action.run(
       () => hubApi().setMeetingInFolder(meeting.id, folder.id, inFolder),
@@ -203,58 +194,47 @@ export function FolderMenu({
           {children}
         </button>
       ) : (
-        <Menu.Root defaultOpen={menu.open}>
-          <Menu.Trigger
+        <Menu defaultOpen={menu.open}>
+          <MenuTrigger
             ref={trigger}
             aria-label={label}
             title={label}
             className={({ open }) => stylex.props(style(open)).className}
           >
             {children}
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner
-              side="bottom"
-              align="end"
-              sideOffset={4}
-              collisionPadding={8}
-              {...stylex.props(menuStyles.positioner)}
-            >
-              <Menu.Popup {...stylex.props(menuStyles.popup)}>
-                {folders.length === 0 && <p {...stylex.props(menuStyles.empty)}>No folders yet</p>}
-                {folders.map((folder) => {
-                  const inFolder = meeting.folderIds.includes(folder.id);
-                  return (
-                    <Menu.CheckboxItem
-                      key={folder.id}
-                      checked={inFolder}
-                      onCheckedChange={(checked) => toggle(folder, checked)}
-                      className={itemClass}
-                    >
-                      <span {...stylex.props(menuStyles.check)}>
-                        <Menu.CheckboxItemIndicator>
-                          <CheckIcon size={14} />
-                        </Menu.CheckboxItemIndicator>
-                      </span>
-                      <span {...stylex.props(menuStyles.label)}>{folder.name}</span>
-                    </Menu.CheckboxItem>
-                  );
-                })}
-                <Menu.Separator {...stylex.props(menuStyles.separator)} />
-                <Menu.Item
-                  onClick={() => {
-                    made.current = null;
-                    setCreating(true);
-                  }}
+          </MenuTrigger>
+          <MenuPopup align="end">
+            {folders.length === 0 && <p {...stylex.props(menuStyles.empty)}>No folders yet</p>}
+            {folders.map((folder) => {
+              const inFolder = meeting.folderIds.includes(folder.id);
+              return (
+                <MenuPrimitive.CheckboxItem
+                  key={folder.id}
+                  checked={inFolder}
+                  onCheckedChange={(checked) => toggle(folder, checked)}
                   className={itemClass}
                 >
-                  <span {...stylex.props(menuStyles.check)} />
-                  New folder…
-                </Menu.Item>
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
+                  <span {...stylex.props(menuStyles.check)}>
+                    <MenuPrimitive.CheckboxItemIndicator>
+                      <CheckIcon size={16} />
+                    </MenuPrimitive.CheckboxItemIndicator>
+                  </span>
+                  <span {...stylex.props(menuStyles.label)}>{folder.name}</span>
+                </MenuPrimitive.CheckboxItem>
+              );
+            })}
+            <MenuSeparator />
+            <MenuItem
+              icon={<FolderPlusIcon size={16} />}
+              onClick={() => {
+                made.current = null;
+                setCreating(true);
+              }}
+            >
+              New folder…
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
       )}
       {creating && (
         <FolderDialog
@@ -293,6 +273,7 @@ const Row = memo(function Row({
 }) {
   const status = statusLabel(meeting);
   const at = meetingAt(meeting);
+  const recorded = closedMs(meeting);
   // Clicks in the folder menu and dialog bubble here through their portals, outside the row.
   const open = (event: MouseEvent<HTMLLIElement>) => {
     const { target, currentTarget } = event;
@@ -306,16 +287,20 @@ const Row = memo(function Row({
       onFocus={() => onSelect(meeting.id)}
       {...stylex.props(stylex.defaultMarker(), styles.row, selected && styles.rowSelected)}
     >
-      <span aria-hidden="true" {...stylex.props(styles.docIcon)}>
-        <FileTextIcon size={16} />
-      </span>
       <div {...stylex.props(styles.body)}>
         <button type="button" onClick={() => onOpen(meeting.id)} {...stylex.props(styles.title)}>
           {titleText(meeting)}
         </button>
         <span {...stylex.props(styles.meta)}>
           <time dateTime={new Date(at).toISOString()}>{timeLabel(at)}</time>
-          {status && <span {...stylex.props(styles.status)}>{status}</span>}
+          {recorded > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{durationLabel(recorded)}</span>
+            </>
+          )}
+          {status && <Badge>{status}</Badge>}
+          <FolderBadges meeting={meeting} folders={folders} />
         </span>
         {snippet && (
           <p {...stylex.props(styles.snippet)}>
@@ -330,9 +315,13 @@ const Row = memo(function Row({
         meeting={meeting}
         folders={folders}
         label={`Add “${titleText(meeting)}” to a folder`}
-        style={(menuOpen) => [styles.folderButton, menuOpen && styles.folderButtonOpen]}
+        style={(menuOpen) => [
+          surfaces.control,
+          styles.folderButton,
+          menuOpen && styles.folderButtonOpen,
+        ]}
       >
-        <FolderPlusIcon size={14} />
+        <FolderPlusIcon size={14} aria-hidden="true" />
         Add to folder
       </FolderMenu>
     </li>

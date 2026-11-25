@@ -190,8 +190,9 @@ async function render(snapshot: Snapshot = setUp, sidebar: HTMLElement | null = 
 }
 
 async function openSearch() {
-  await click(document.querySelector("button[aria-label='Search meetings']")!);
-  return document.querySelector<HTMLInputElement>("input[type=search]")!;
+  const field = document.querySelector<HTMLInputElement>("input[aria-label='Search meetings']")!;
+  await act(async () => field.focus());
+  return field;
 }
 
 const settle = () => act(async () => {});
@@ -384,6 +385,34 @@ describe("Past notes", () => {
     await type(await openSearch(), "export bug");
     await waitForText("Transcript: You: Morning all");
     expect(overviewTitle()).toBe("Weekly product sync");
+  });
+
+  test("while the meetings are read the page shows placeholder rows, not meetings", async () => {
+    const main = fakeMain(sample());
+    main.getMeetings.mockImplementationOnce(() => new Promise(() => {}));
+    await render();
+    expect(document.querySelector("h1")?.textContent).toBe("Meetings");
+    expect(document.querySelector("[aria-busy=true]")).not.toBeNull();
+    expect(document.querySelectorAll("section[aria-label] li")).toHaveLength(0);
+    expect(text()).not.toContain("Weekly product sync");
+  });
+
+  test("a row shows its length and folders, the first two by name", async () => {
+    const folders = ["Product", "Roadmap", "Hiring"].map((name, n): Folder => ({
+      id: `00000000-0000-4000-9000-00000000000${n}` as FolderId,
+      name,
+      createdAt: 0,
+      kind: "manual",
+    }));
+    const [sync, ...rest] = sample();
+    fakeMain([{ ...sync!, folderIds: folders.map((folder) => folder.id) }, ...rest], folders);
+    await render();
+    const row = [...document.querySelectorAll("li")].find((li) =>
+      li.textContent?.includes("Weekly product sync"),
+    )!;
+    expect(row.textContent).toContain("30 min");
+    expect(row.textContent).toContain("ProductRoadmap+1");
+    expect(row.textContent).not.toContain("Hiring");
   });
 
   test("without meetings it says how to start, with no calendar talk", async () => {
@@ -1163,6 +1192,26 @@ describe("Set up Meetings", () => {
     expect(text()).toContain("Weekly product sync");
     expect(text()).not.toContain("Set up Meetings");
     await click(byText("Download"));
+    expect(main.installModel).toHaveBeenCalledWith("transform");
+  });
+
+  test("the summary model's notice shows its download, and a failed one offers Retry", async () => {
+    const main = fakeMain(sample());
+    await render({
+      ...setUp,
+      models: { ...setUp.models, transform: { state: "downloading", progress: 0.42 } },
+    });
+    expect(text()).toContain("Downloading 42%");
+    expect(progress()).toBe("Summary model download");
+    await act(async () => root?.unmount());
+    document.body.replaceChildren();
+
+    await render({
+      ...setUp,
+      models: { ...setUp.models, transform: { state: "failed", message: "The download stalled." } },
+    });
+    expect(text()).toContain("The download stalled.");
+    await click(document.querySelector("[aria-label='Retry Summary model']")!);
     expect(main.installModel).toHaveBeenCalledWith("transform");
   });
 });

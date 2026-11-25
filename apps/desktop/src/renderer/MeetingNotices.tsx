@@ -12,7 +12,7 @@ import {
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { color, space } from "./tokens.stylex.ts";
+import { color, leading, space, text as size } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
@@ -21,13 +21,21 @@ const styles = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: space.md,
-    paddingBlock: 10,
-    paddingInline: space.md,
+    paddingBlock: space.sm,
+    paddingInlineStart: space.base,
+    paddingInlineEnd: space.sm,
   },
-  text: { margin: 0, flexGrow: 1, fontSize: 13.5 },
+  warning: {
+    borderColor: `color-mix(in srgb, ${color.warning} 32%, transparent)`,
+    backgroundColor: color.warningSurface,
+  },
+  text: { margin: 0, flexGrow: 1, fontSize: size.sm, lineHeight: leading.sm },
   title: { fontWeight: 600 },
   muted: { color: color.mutedForeground },
 });
+
+// A ready summary is the one notice that reports no problem; it alone offers View summary.
+const warns = (actions: readonly MeetingNoticeAction[]) => !actions.includes("viewSummary");
 
 /**
  * The notices meetings raised, in the words the notepad and the Flow Bar use. With `onOpen`,
@@ -69,7 +77,7 @@ export function MeetingNotices({
       {notices.map(({ key, id, text, actions, dismissable }) => {
         const meeting = onOpen && meetings?.find((candidate) => candidate.id === id);
         return (
-          <Card key={key} style={styles.notice}>
+          <Card key={key} style={[styles.notice, warns(actions) && styles.warning]}>
             <p role="status" {...stylex.props(styles.text)}>
               {meeting && <span {...stylex.props(styles.title)}>{titleText(meeting)} </span>}
               <span {...stylex.props(meeting && styles.muted)}>{text}</span>

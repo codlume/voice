@@ -21,7 +21,7 @@ import { Select } from "./Select.tsx";
 import { resetTo, Row } from "./settingsParts.tsx";
 import { Switch } from "./Switch.tsx";
 import { surfaces } from "./surfaces.ts";
-import { space, text } from "./tokens.stylex.ts";
+import { leading, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
@@ -43,7 +43,7 @@ const styles = stylex.create({
   },
   popupHidden: { transform: `${centered} scale(0.98)` },
   head: { display: "flex", alignItems: "center", justifyContent: "space-between" },
-  title: { margin: 0, fontSize: text.xl, fontWeight: 600, lineHeight: 1.375 },
+  title: { margin: 0, fontSize: text.xl, fontWeight: 600, lineHeight: leading.xl },
 });
 
 const maxLengthOptions = maxLengths.map((value) => ({ value, label: maxLengthLabels[value] }));

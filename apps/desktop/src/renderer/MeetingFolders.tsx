@@ -15,12 +15,13 @@ import type { Folder, FolderId, MeetingId, MeetingsState } from "../shared/meeti
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { EmptyState } from "./EmptyState.tsx";
 import { FolderDialog } from "./FolderDialog.tsx";
 import { MeetingList } from "./MeetingList.tsx";
 import { meetingDays } from "./meetingsView.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { Switch } from "./Switch.tsx";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { color, font, leading, motion, space, text } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
@@ -28,58 +29,66 @@ const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.md },
   bar: { display: "flex", alignItems: "center", gap: space.md },
   auto: { display: "flex", alignItems: "center", gap: space.sm, flexGrow: 1 },
-  autoLabel: { fontSize: 13, color: color.mutedForeground, cursor: "pointer" },
+  autoLabel: {
+    color: color.mutedForeground,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
+    cursor: "pointer",
+  },
+  // Rows tint on hover, so the card clips them to its corners.
+  clip: { overflow: "hidden" },
   list: { margin: 0, padding: 0, listStyle: "none" },
   row: {
-    display: "grid",
-    gridTemplateColumns: "36px minmax(0, 1fr) auto",
+    display: "flex",
     alignItems: "center",
-    columnGap: space.md,
-    paddingBlock: 10,
-    paddingInline: space.md,
+    gap: space.md,
+    minHeight: 44,
+    paddingBlock: space.sm,
+    paddingInlineStart: space.base,
+    paddingInlineEnd: space.sm,
     borderTopWidth: { default: 1, ":first-child": 0 },
     borderTopStyle: "solid",
-    borderTopColor: color.border,
+    borderTopColor: `color-mix(in srgb, ${color.border} 50%, transparent)`,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
+    transitionProperty: "background-color",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
   },
-  icon: {
-    display: "grid",
-    placeItems: "center",
-    width: 36,
-    height: 36,
-    borderRadius: radius.small,
-    backgroundColor: color.segmentTrack,
-    color: color.mutedForeground,
-  },
-  body: { display: "flex", flexDirection: "column", minWidth: 0 },
+  icon: { display: "flex", flexShrink: 0, color: color.mutedForeground },
+  body: { display: "flex", flexDirection: "column", gap: 2, flexGrow: 1, minWidth: 0 },
   name: {
     padding: 0,
     borderWidth: 0,
     backgroundColor: "transparent",
     color: color.foreground,
-    font: "inherit",
-    fontSize: 15,
+    fontFamily: font.sans,
+    fontSize: text.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
     textAlign: "left",
     cursor: "pointer",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  detail: { color: color.mutedForeground, fontSize: 13 },
-  actions: { display: "flex", alignItems: "center", gap: 2 },
-  empty: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: space.sm,
+  detail: {
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
+    fontVariantNumeric: "tabular-nums",
+  },
+  actions: { display: "flex", alignItems: "center", gap: space.xxs },
+  emptyBody: {
+    margin: 0,
     paddingBlock: space.xl,
     paddingInline: space.lg,
+    color: color.mutedForeground,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     textAlign: "center",
   },
-  emptyTitle: { margin: 0, fontSize: 15, fontWeight: 500 },
-  emptyBody: { margin: 0, maxWidth: 380, color: color.mutedForeground },
   back: { alignSelf: "flex-start" },
   folderHead: { display: "flex", flexDirection: "column", gap: 2 },
-  folderTitle: { margin: 0, fontSize: 17, fontWeight: 600 },
+  folderTitle: { margin: 0, fontSize: text.lg, fontWeight: 600, lineHeight: leading.lg },
 });
 
 const ruleText = (folder: Folder) =>
@@ -175,13 +184,11 @@ export function MeetingFolders({
         </div>
         {days.length === 0 ? (
           <Card>
-            <div {...stylex.props(styles.empty)}>
-              <p {...stylex.props(styles.emptyBody)}>
-                {open.kind === "auto"
-                  ? `Meetings with “${open.rule.text}” in the title show up here.`
-                  : "Add a meeting from its row in Past notes."}
-              </p>
-            </div>
+            <p {...stylex.props(styles.emptyBody)}>
+              {open.kind === "auto"
+                ? `Meetings with “${open.rule.text}” in the title show up here.`
+                : "Add a meeting from its row in Past notes."}
+            </p>
           </Card>
         ) : (
           <MeetingList
@@ -215,22 +222,20 @@ export function MeetingFolders({
           <Field.Label {...stylex.props(styles.autoLabel)}>Automatic folders</Field.Label>
         </Field.Root>
         <Button variant="secondary" onClick={() => edit(null)}>
-          <FolderPlusIcon size={14} aria-hidden="true" />
+          <FolderPlusIcon size={16} aria-hidden="true" />
           New folder
         </Button>
       </div>
       {folders.length === 0 ? (
         <Card>
-          <div {...stylex.props(styles.empty)}>
-            <p {...stylex.props(styles.emptyTitle)}>No folders yet</p>
-            <p {...stylex.props(styles.emptyBody)}>
-              Folders keep related meetings together. An automatic folder collects every meeting
-              with a word in its title.
-            </p>
-          </div>
+          <EmptyState
+            icon={<FolderIcon size={16} />}
+            title="No folders yet"
+            description="Folders keep related meetings together. An automatic folder collects every meeting with a word in its title."
+          />
         </Card>
       ) : (
-        <Card>
+        <Card style={styles.clip}>
           <ul aria-label="Folders" {...stylex.props(styles.list)}>
             {folders.map((folder) => (
               <li key={folder.id} {...stylex.props(styles.row)}>
@@ -256,7 +261,7 @@ export function MeetingFolders({
                     title="Edit"
                     onClick={() => edit(folder)}
                   >
-                    <PencilIcon size={15} />
+                    <PencilIcon size={16} />
                   </Button>
                   <Button
                     variant="icon"
@@ -264,7 +269,7 @@ export function MeetingFolders({
                     title="Delete"
                     onClick={() => setDeleting({ open: true, folder })}
                   >
-                    <Trash2Icon size={15} />
+                    <Trash2Icon size={16} />
                   </Button>
                 </div>
               </li>
