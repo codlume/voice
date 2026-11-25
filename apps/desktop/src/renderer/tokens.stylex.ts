@@ -86,6 +86,14 @@ export const darkPill = stylex.defineVars({
   line: "rgba(255, 255, 255, 0.14)",
   glyph: "white",
   text: "rgba(255, 255, 255, 0.92)",
+  // The base of the processing shimmer: 6.2:1 on the surface.
+  muted: "rgba(255, 255, 255, 0.55)",
+  hover: "rgba(255, 255, 255, 0.08)",
+  recording: "#ff453a",
+  attention: "#ffd60a",
+  // The overlay shadow scaled to a 32px capsule. A deep negative spread, as on a large overlay,
+  // collapses any shape shorter than twice the spread and draws nothing.
+  elevation: "0 1px 2px rgb(0 0 0 / 30%), 0 6px 16px -4px rgb(0 0 0 / 50%)",
 });
 
 export const radius = stylex.defineVars({

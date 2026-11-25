@@ -82,9 +82,10 @@ import { createTransforms, followTransformSettings, type Transforms } from "./tr
 import { idleRun } from "./transform-run.ts";
 import { acceptRestart, createUpdates, parseReleaseConfig } from "./updates.ts";
 
+// The window sits on the bottom of the work area and leaves room for the capsule's shadow. The
+// capsule's bottom edge is 20px above the work area, set by the pill frame's bottom padding.
 const PILL_WIDTH = 320;
-const PILL_HEIGHT = 48;
-const PILL_BOTTOM_MARGIN = 12;
+const PILL_HEIGHT = 60;
 const PERMISSION_POLL_MS = 2000;
 const SHUTDOWN_TIMEOUT_MS = 3000;
 const DIAGNOSTICS_FLUSH_MS = 1000;
@@ -210,7 +211,7 @@ function positionPill(pill: BrowserWindow) {
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   pill.setBounds({
     x: Math.round(workArea.x + (workArea.width - PILL_WIDTH) / 2),
-    y: workArea.y + workArea.height - PILL_HEIGHT - PILL_BOTTOM_MARGIN,
+    y: workArea.y + workArea.height - PILL_HEIGHT,
     width: PILL_WIDTH,
     height: PILL_HEIGHT,
   });

@@ -24,7 +24,7 @@ app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
 const HUB_SIZE = { width: 1350, height: 850 };
-const PILL_SIZE = { width: 320, height: 48 };
+const PILL_SIZE = { width: 320, height: 60 };
 const TRANSCRIPT_LINES = 600;
 const QUERY = "launch";
 const ROWS = "section[aria-labelledby=history] li";
