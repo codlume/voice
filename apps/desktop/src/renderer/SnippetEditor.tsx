@@ -1,4 +1,5 @@
 import { Field } from "@base-ui/react/field";
+import { Tooltip } from "@base-ui/react/tooltip";
 import { $isLinkNode, $createLinkNode, $toggleLink, LinkNode } from "@lexical/link";
 import {
   $isListNode,
@@ -53,7 +54,7 @@ import { useEffect, useEffectEvent, useState, type MouseEvent, type ReactNode } 
 
 import { allowedHref } from "../shared/snippet-html.ts";
 import { Button } from "./Button.tsx";
-import { styles as form } from "./RecordList.tsx";
+import { Input } from "./Input.tsx";
 import {
   $readSnippetText,
   $storedLink,
@@ -63,58 +64,59 @@ import {
   snippetNodes,
   type SnippetText,
 } from "./snippetText.ts";
-import { color, radius, snippetEditor } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { color, leading, snippetEditor, space, text } from "./tokens.stylex.ts";
+import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const styles = stylex.create({
-  box: {
+  // The shared field frame and focus ring (see surfaces.ts), with the toolbar inside it.
+  box: { display: "flex", flexDirection: "column", minHeight: snippetEditor.minHeight },
+  toolbar: {
     display: "flex",
-    flexDirection: "column",
-    minHeight: snippetEditor.minHeight,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.border, ":focus-within": color.input },
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    outline: {
-      default: "none",
-      ":has([contenteditable]:focus-visible)": "2px solid var(--ring)",
-    },
-    outlineOffset: 2,
+    alignItems: "center",
+    gap: 2,
+    paddingTop: space.xxs,
+    paddingInline: space.xxs,
   },
-  invalid: { borderColor: { default: color.error, ":focus-within": color.error } },
-  toolbar: { display: "flex", alignItems: "center", gap: 2, paddingTop: 4, paddingInline: 4 },
   divider: {
     width: 1,
     height: 16,
     marginBlock: 0,
-    marginInline: 4,
+    marginInline: space.xxs,
     backgroundColor: color.border,
   },
-  linkRow: { display: "flex", alignItems: "center", gap: 6, paddingTop: 6, paddingInline: 6 },
-  linkInput: { flexGrow: 1, width: "auto", minWidth: 0, paddingBlock: 5 },
+  linkRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.xs,
+    paddingTop: space.xs,
+    paddingInline: space.xs,
+  },
+  linkField: { display: "flex", flexGrow: 1, minWidth: 0 },
   surface: { position: "relative" },
   content: {
     minHeight: 140,
     maxHeight: 280,
     overflowY: "auto",
-    paddingBlock: 6,
-    paddingInline: 10,
-    fontSize: 13,
-    lineHeight: 1.45,
+    paddingBlock: 5,
+    paddingInline: 11,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     overflowWrap: "anywhere",
     outline: "none",
   },
   placeholder: {
     position: "absolute",
-    top: 6,
-    left: 10,
-    fontSize: 13,
-    lineHeight: 1.45,
+    top: 5,
+    left: 11,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     color: color.mutedForeground,
     pointerEvents: "none",
     userSelect: "none",
   },
+  tip: { display: "flex", alignItems: "center", gap: space.sm },
+  tipKey: { color: color.mutedForeground },
 });
 
 const content = stylex.create({
@@ -133,6 +135,7 @@ const KEPT_FORMATS = IS_BOLD | IS_ITALIC;
 // Lexical's list replace reads the start number from the second group.
 const ORDERED_LIST_FROM_1: ElementTransformer = { ...ORDERED_LIST, regExp: /^(\s*)(1)\.\s/ };
 const shortcut = (key: string) => (IS_APPLE ? `⌘${key}` : `Ctrl+${key}`);
+const ariaShortcut = (key: string) => `${IS_APPLE ? "Meta" : "Control"}+${key}`;
 const isShortcut = (event: KeyboardEvent | null): event is KeyboardEvent =>
   event !== null && (IS_APPLE ? event.metaKey : event.ctrlKey) && !event.altKey;
 
@@ -189,7 +192,14 @@ export function SnippetEditor({
         },
       }}
     >
-      <div {...stylex.props(styles.box, invalid && styles.invalid)}>
+      <div
+        {...stylex.props(
+          surfaces.control,
+          surfaces.field,
+          invalid && surfaces.fieldInvalid,
+          styles.box,
+        )}
+      >
         <Toolbar onSave={onSave} />
         <div {...stylex.props(styles.surface)}>
           <RichTextPlugin
@@ -339,79 +349,83 @@ function Toolbar({ onSave }: { onSave: () => void }) {
   const href = linkRow === null ? null : hrefFromInput(linkRow.url);
   return (
     <>
-      <div role="toolbar" aria-label="Formatting" {...stylex.props(styles.toolbar)}>
-        <ToolButton
-          label="Bold"
-          shortcutKey="B"
-          pressed={formats.bold}
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")}
-        >
-          <BoldIcon size={16} />
-        </ToolButton>
-        <ToolButton
-          label="Italic"
-          shortcutKey="I"
-          pressed={formats.italic}
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")}
-        >
-          <ItalicIcon size={16} />
-        </ToolButton>
-        <span {...stylex.props(styles.divider)} />
-        <ToolButton
-          label="Bulleted list"
-          pressed={formats.list === "bullet"}
-          onClick={() =>
-            editor.dispatchCommand(
-              formats.list === "bullet" ? REMOVE_LIST_COMMAND : INSERT_UNORDERED_LIST_COMMAND,
-              undefined,
-            )
-          }
-        >
-          <ListIcon size={16} />
-        </ToolButton>
-        <ToolButton
-          label="Numbered list"
-          pressed={formats.list === "number"}
-          onClick={() =>
-            editor.dispatchCommand(
-              formats.list === "number" ? REMOVE_LIST_COMMAND : INSERT_ORDERED_LIST_COMMAND,
-              undefined,
-            )
-          }
-        >
-          <ListOrderedIcon size={16} />
-        </ToolButton>
-        <span {...stylex.props(styles.divider)} />
-        <ToolButton
-          label="Link"
-          shortcutKey="K"
-          pressed={formats.link !== null || linkRow !== null}
-          onClick={openLinkRow}
-        >
-          <LinkIcon size={16} />
-        </ToolButton>
-      </div>
+      <Tooltip.Provider delay={150} closeDelay={0}>
+        <div role="toolbar" aria-label="Formatting" {...stylex.props(styles.toolbar)}>
+          <ToolButton
+            label="Bold"
+            shortcutKey="B"
+            pressed={formats.bold}
+            onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")}
+          >
+            <BoldIcon size={16} />
+          </ToolButton>
+          <ToolButton
+            label="Italic"
+            shortcutKey="I"
+            pressed={formats.italic}
+            onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")}
+          >
+            <ItalicIcon size={16} />
+          </ToolButton>
+          <span {...stylex.props(styles.divider)} />
+          <ToolButton
+            label="Bulleted list"
+            pressed={formats.list === "bullet"}
+            onClick={() =>
+              editor.dispatchCommand(
+                formats.list === "bullet" ? REMOVE_LIST_COMMAND : INSERT_UNORDERED_LIST_COMMAND,
+                undefined,
+              )
+            }
+          >
+            <ListIcon size={16} />
+          </ToolButton>
+          <ToolButton
+            label="Numbered list"
+            pressed={formats.list === "number"}
+            onClick={() =>
+              editor.dispatchCommand(
+                formats.list === "number" ? REMOVE_LIST_COMMAND : INSERT_ORDERED_LIST_COMMAND,
+                undefined,
+              )
+            }
+          >
+            <ListOrderedIcon size={16} />
+          </ToolButton>
+          <span {...stylex.props(styles.divider)} />
+          <ToolButton
+            label="Link"
+            shortcutKey="K"
+            pressed={formats.link !== null || linkRow !== null}
+            onClick={openLinkRow}
+          >
+            <LinkIcon size={16} />
+          </ToolButton>
+        </div>
+      </Tooltip.Provider>
       {linkRow !== null && (
         <div {...stylex.props(styles.linkRow)}>
-          <input
-            autoFocus
-            aria-label="Link address"
-            placeholder="https://example.com"
-            value={linkRow.url}
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(event) => setLinkRow({ ...linkRow, url: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.stopPropagation();
-                closeLinkRow();
-              } else if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                if (href !== null) applyLink(href);
-              }
-            }}
-            {...stylex.props(form.input, styles.linkInput)}
-          />
+          {/* Its own field, so it never takes over the Expansion field's label and ids. */}
+          <Field.Root {...stylex.props(styles.linkField)}>
+            <Input
+              autoFocus
+              aria-label="Link address"
+              placeholder="https://example.com"
+              value={linkRow.url}
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(event) => setLinkRow({ ...linkRow, url: event.currentTarget.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  closeLinkRow();
+                } else if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  if (href !== null) applyLink(href);
+                }
+              }}
+            />
+          </Field.Root>
           <Button variant="secondary" disabled={href === null} onClick={() => applyLink(href)}>
             Apply
           </Button>
@@ -442,15 +456,31 @@ function ToolButton({
   children: ReactNode;
 }) {
   return (
-    <Button
-      variant="icon"
-      aria-label={label}
-      title={shortcutKey === undefined ? label : `${label} (${shortcut(shortcutKey)})`}
-      pressed={pressed}
-      onMouseDown={keepEditorFocus}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
+    <Tooltip.Root>
+      <Tooltip.Trigger
+        render={
+          <Button
+            variant="icon"
+            aria-label={label}
+            aria-keyshortcuts={shortcutKey === undefined ? undefined : ariaShortcut(shortcutKey)}
+            pressed={pressed}
+            onMouseDown={keepEditorFocus}
+            onClick={onClick}
+          >
+            {children}
+          </Button>
+        }
+      />
+      <Tooltip.Portal>
+        <Tooltip.Positioner side="top" sideOffset={4} className={tooltipPositionerClass()}>
+          <Tooltip.Popup className={tooltipPopupClass(styles.tip)}>
+            {label}
+            {shortcutKey !== undefined && (
+              <span {...stylex.props(styles.tipKey)}>{shortcut(shortcutKey)}</span>
+            )}
+          </Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 }

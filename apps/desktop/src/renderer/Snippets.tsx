@@ -1,4 +1,3 @@
-import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
 import { lazy, Suspense, useEffect, useId } from "react";
 
@@ -9,9 +8,11 @@ import {
   TRIGGER_MAX_LENGTH,
   type Snippet,
 } from "../shared/snippets.ts";
-import { CountedField, RecordList, styles, type Copy } from "./RecordList.tsx";
+import { Input } from "./Input.tsx";
+import { CountedField, RecordList, type Copy } from "./RecordList.tsx";
+import { surfaces } from "./surfaces.ts";
 import { Switch } from "./Switch.tsx";
-import { color, radius, snippetEditor, space } from "./tokens.stylex.ts";
+import { leading, snippetEditor, space, text } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
 
 const loadSnippetEditor = () => import("./SnippetEditor.tsx");
@@ -21,15 +22,8 @@ const SnippetEditor = lazy(() =>
 
 const local = stylex.create({
   footerSwitch: { display: "flex", alignItems: "center", gap: space.sm },
-  footerSwitchLabel: { fontSize: 13 },
-  editorLoading: {
-    minHeight: snippetEditor.minHeight,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-  },
+  footerSwitchLabel: { fontSize: text.sm, lineHeight: leading.sm },
+  editorLoading: { minHeight: snippetEditor.minHeight },
 });
 
 const copy: Copy = {
@@ -85,15 +79,15 @@ export function Snippets({
             max={TRIGGER_MAX_LENGTH}
             problem={message("trigger")}
           >
-            <Field.Control
+            <Input
               value={draft.trigger}
               maxLength={TRIGGER_MAX_LENGTH}
               autoComplete="off"
               spellCheck={false}
               placeholder="my email"
-              onValueChange={(trigger) => edit({ trigger })}
+              invalid={shown?.field === "trigger"}
+              onChange={(event) => edit({ trigger: event.currentTarget.value })}
               onKeyDown={saveOnEnter}
-              {...stylex.props(styles.input, shown?.field === "trigger" && styles.invalid)}
             />
           </CountedField>
           <CountedField
@@ -102,7 +96,9 @@ export function Snippets({
             max={EXPANSION_MAX_LENGTH}
             problem={message("expansion")}
           >
-            <Suspense fallback={<div aria-busy {...stylex.props(local.editorLoading)} />}>
+            <Suspense
+              fallback={<div aria-busy {...stylex.props(surfaces.control, local.editorLoading)} />}
+            >
               <SnippetEditor
                 defaultValue={draft}
                 invalid={shown?.field === "expansion"}
