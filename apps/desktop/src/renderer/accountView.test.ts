@@ -18,6 +18,7 @@ describe("account view", () => {
   test("each state has its own row text", () => {
     const states: Exclude<AccountState, { kind: "signedIn" }>[] = [
       { kind: "unavailable", reason: "Set VOICE_API_URL to sign in from a development build." },
+      { kind: "restoring" },
       { kind: "signedOut" },
       { kind: "signingIn", purpose: "signIn", phase: "browser" },
       { kind: "error", message: "Sign-in was interrupted" },
@@ -26,6 +27,10 @@ describe("account view", () => {
       {
         title: "Accounts are unavailable",
         detail: "Set VOICE_API_URL to sign in from a development build.",
+      },
+      {
+        title: "Checking your sign-in",
+        detail: "Voice is restoring the Google account you signed in with.",
       },
       {
         title: "Google account",

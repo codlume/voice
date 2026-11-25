@@ -86,6 +86,7 @@ const styles = stylex.create({
 
 type RowRole = "status" | "alert";
 const rowRoles: Partial<Record<AccountState["kind"], RowRole>> = {
+  restoring: "status",
   signingIn: "status",
   error: "alert",
 };
@@ -146,6 +147,17 @@ function SignedOutRow({ account }: { account: Extract<AccountState, { kind: "sig
       </Card>
       <ErrorLine message={error} />
     </>
+  );
+}
+
+function RestoringRow({ account }: { account: Extract<AccountState, { kind: "restoring" }> }) {
+  return (
+    <Card>
+      <div {...stylex.props(settings.row, styles.markRow)}>
+        <AvatarSpinner size={markSize} />
+        <RowText account={account} />
+      </div>
+    </Card>
   );
 }
 
@@ -464,6 +476,8 @@ function AccountRow({ account }: { account: AccountState }) {
         </Card>
       );
     }
+    case "restoring":
+      return <RestoringRow account={account} />;
     case "signedOut":
       return <SignedOutRow account={account} />;
     case "signingIn":
