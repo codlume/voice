@@ -890,6 +890,52 @@ describe("meeting recorder", () => {
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 90_000 });
   });
 
+  test("a resume after the audio delete failed starts new files instead of adding to the old ones", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    h.advance(90_000);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    disk.nextAudioDelete = "throws";
+    await h.finalized(id, FINAL_PASS);
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+
+    expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 90_000 });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+    const saved = await readFile(NodePath.join(h.folder(id), "audio.json"), "utf8");
+    expect(JSON.parse(saved)).toEqual({ baseMs: 90_000 });
+  });
+
+  test("a resume whose leftover audio cannot be deleted does not record, and a later resume does", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    h.advance(90_000);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    disk.nextAudioDelete = "throws";
+    await h.finalized(id, FINAL_PASS);
+    const startsBefore = h.sentTypes().filter((type) => type === "meeting.start").length;
+
+    disk.nextAudioDelete = "throws";
+    await h.recorder.resume(id);
+    await h.settle();
+    expect(h.sentTypes().filter((type) => type === "meeting.start")).toHaveLength(startsBefore);
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(h.noticed.at(-1)).toEqual({
+      kind: "resumeFailed",
+      message: "Voice could not clear this meeting's old audio. Try again.",
+    });
+
+    expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 90_000 });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+  });
+
   test("deleting a meeting that records stops its capture, its timers and its folder", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const h = harness();
