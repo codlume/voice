@@ -13,7 +13,7 @@ import { clockTicks, minutesLeft, promptTitles, statusView } from "./meetingStat
 /** `recording` and `recordingPrompt` are the only looks that say audio is being captured. */
 export type MeetingLook = "recording" | "recordingPrompt" | "paused" | "waiting" | "prompt";
 
-type PillView =
+export type PillView =
   | { kind: "idle" }
   | { kind: "meeting"; look: MeetingLook; text: string }
   | { kind: "listening" }

@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type AnimationEvent } from "react";
 
 import type { PillSnapshot } from "../shared/api.ts";
 import { a11y } from "./a11y.ts";
@@ -12,14 +12,34 @@ import {
   smoothLevel,
   ticks,
   type MeetingLook,
+  type PillView,
 } from "./pillView.ts";
-import { font, darkPill, radius } from "./tokens.stylex.ts";
+import { font, darkPill, motion, radius } from "./tokens.stylex.ts";
 import { useNow } from "./useNow.ts";
 import { pillApi } from "./voice.ts";
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-const spring = "cubic-bezier(0.34, 1.36, 0.64, 1)";
-const settle = "cubic-bezier(0.32, 0.72, 0, 1)";
+/** One key per look. Text changes inside a look, such as the meeting clock, keep the key. */
+type LookKey = Exclude<PillView["kind"], "meeting"> | MeetingLook;
+
+const lookKey = (view: PillView): LookKey => (view.kind === "meeting" ? view.look : view.kind);
+
+const OPEN_HEIGHT = 32;
+const lookSize: Record<LookKey, { width: number; height: number }> = {
+  idle: { width: 36, height: 8 },
+  listening: { width: 112, height: OPEN_HEIGHT },
+  // Fits "Transforming" at the pill font with room on both sides.
+  processing: { width: 124, height: OPEN_HEIGHT },
+  inserted: { width: 112, height: OPEN_HEIGHT },
+  message: { width: 296, height: OPEN_HEIGHT },
+  recording: { width: 112, height: OPEN_HEIGHT },
+  recordingPrompt: { width: 200, height: OPEN_HEIGHT },
+  paused: { width: 200, height: OPEN_HEIGHT },
+  waiting: { width: 200, height: OPEN_HEIGHT },
+  prompt: { width: 200, height: OPEN_HEIGHT },
+};
+
+/** Idle draws nothing, and the check fades itself out, so neither needs to fade as it leaves. */
+const fadesOut = (key: LookKey) => key !== "idle" && key !== "inserted";
 
 const fadeIn = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
 const fadeOut = stylex.keyframes({ from: { opacity: 1 }, to: { opacity: 0 } });
@@ -39,35 +59,51 @@ const styles = stylex.create({
   },
   capsule: {
     position: "relative",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
     overflow: "hidden",
     borderRadius: radius.round,
     backgroundColor: darkPill.surface,
     transitionProperty: "width, height, opacity, box-shadow",
-    transitionDuration: { default: "420ms", [reducedMotion]: "0s" },
-    transitionTimingFunction: spring,
+    transitionDuration: { default: motion.slow, [motion.reduced]: "0s" },
+    transitionTimingFunction: motion.drawer,
   },
-  idle: {
-    width: 36,
-    height: 8,
-    opacity: 0.55,
-    boxShadow: "none",
-    transitionDuration: { default: "360ms", [reducedMotion]: "0s" },
-    transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
-  },
+  size: (width: number, height: number) => ({ width, height }),
+  idle: { opacity: 0.55, boxShadow: "none" },
   open: {
-    width: 112,
-    height: 32,
     opacity: 1,
     boxShadow: `inset 0 0 0 1px ${darkPill.line}, ${darkPill.elevation}`,
   },
   hidden: { opacity: 0 },
-  wide: { width: 296 },
-  meeting: { width: 200 },
-  meetingRecording: { width: 112 },
+  status: { display: "flex", width: "100%", height: "100%" },
+  enter: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+    minWidth: 0,
+    animationName: fadeIn,
+    animationDuration: motion.base,
+    animationDelay: "50ms",
+    animationFillMode: "both",
+  },
+  // The leaving look keeps its own size, centred, so its text does not reflow as the capsule
+  // changes width.
+  leave: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transform: "translate(-50%, -50%)",
+    animationName: fadeOut,
+    animationDuration: motion.fast,
+    animationFillMode: "forwards",
+  },
   button: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 7,
     width: "100%",
     height: "100%",
@@ -80,21 +116,12 @@ const styles = stylex.create({
     cursor: "pointer",
   },
   ellipsis: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
-  tabular: { fontVariantNumeric: "tabular-nums" },
   light: { flexShrink: 0, width: 7, height: 7, borderRadius: radius.round },
   recordingLight: { backgroundColor: darkPill.recording },
   promptLight: { backgroundColor: darkPill.attention },
   pauseGlyph: { flexShrink: 0, display: "flex", gap: 2 },
   pauseBar: { width: 2.5, height: 9, borderRadius: 1, backgroundColor: darkPill.glyph },
-  content: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    animationName: fadeIn,
-    animationDuration: "180ms",
-    animationDelay: "90ms",
-    animationFillMode: "both",
-  },
+  row: { display: "flex", alignItems: "center" },
   wave: { gap: 2.5, height: 16 },
   bar: {
     width: 3,
@@ -112,26 +139,26 @@ const styles = stylex.create({
     height: 5,
     borderRadius: radius.round,
     backgroundColor: darkPill.glyph,
-    animationName: { default: pulse, [reducedMotion]: "none" },
+    animationName: { default: pulse, [motion.reduced]: "none" },
     animationDuration: "1.1s",
     animationIterationCount: "infinite",
     animationTimingFunction: "ease-in-out",
   },
   dotDelay: (delay: number) => ({ animationDelay: `${delay}ms` }),
-  check: { gap: 6 },
-  checkFade: {
-    animationName: `${fadeIn}, ${fadeOut}`,
-    animationDuration: "180ms, 260ms",
-    animationDelay: "0ms, 950ms",
-    animationFillMode: "both, forwards",
+  check: {
+    gap: 6,
+    animationName: fadeOut,
+    animationDuration: "260ms",
+    animationDelay: "950ms",
+    animationFillMode: "forwards",
   },
   checkStroke: {
     stroke: darkPill.glyph,
     strokeDasharray: 23,
-    animationName: { default: draw, [reducedMotion]: "none" },
+    animationName: { default: draw, [motion.reduced]: "none" },
     animationDuration: "280ms",
     animationDelay: "60ms",
-    animationTimingFunction: settle,
+    animationTimingFunction: motion.drawer,
     animationFillMode: "both",
   },
   text: {
@@ -139,6 +166,7 @@ const styles = stylex.create({
     fontFamily: font.sans,
     fontSize: 12.5,
     fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
     letterSpacing: "0.01em",
     whiteSpace: "nowrap",
   },
@@ -166,7 +194,7 @@ function Wave() {
     });
   }, []);
   return (
-    <div {...stylex.props(styles.content, styles.wave)}>
+    <div {...stylex.props(styles.row, styles.wave)}>
       <span {...stylex.props(a11y.visuallyHidden)}>Listening</span>
       {scales.map((scale, i) => (
         <div key={barKeys[i]} {...stylex.props(styles.bar, styles.barScale(scale))} />
@@ -177,7 +205,7 @@ function Wave() {
 
 function Dots() {
   return (
-    <div {...stylex.props(styles.content, styles.dots)}>
+    <div {...stylex.props(styles.row, styles.dots)}>
       {[0, 150, 300].map((delay) => (
         <div key={delay} {...stylex.props(styles.dot, styles.dotDelay(delay))} />
       ))}
@@ -187,7 +215,7 @@ function Dots() {
 
 function Check({ pasted }: { pasted: boolean }) {
   return (
-    <div {...stylex.props(styles.content, styles.check, styles.checkFade)}>
+    <div {...stylex.props(styles.row, styles.check)}>
       <CheckIcon
         size={16}
         strokeWidth={3}
@@ -229,7 +257,7 @@ function MeetingButton({ look, text }: { look: MeetingLook; text: string }) {
       onPointerEnter={() => void pillApi().setPillClickable(true)}
       onPointerLeave={() => void pillApi().setPillClickable(false)}
       onClick={() => void pillApi().openNotepad()}
-      {...stylex.props(styles.content, styles.text, styles.button, styles.tabular)}
+      {...stylex.props(styles.text, styles.button)}
     >
       <MeetingGlyph look={look} />
       <span {...stylex.props(styles.ellipsis)}>{text}</span>
@@ -237,32 +265,90 @@ function MeetingButton({ look, text }: { look: MeetingLook; text: string }) {
   );
 }
 
+function Content({ view }: { view: PillView }) {
+  switch (view.kind) {
+    case "idle":
+      return null;
+    case "listening":
+      return <Wave />;
+    case "processing":
+      return <Dots />;
+    case "inserted":
+      return <Check pasted={view.method === "paste"} />;
+    case "message":
+      return <div {...stylex.props(styles.text, styles.message)}>{view.text}</div>;
+    case "meeting":
+      return <MeetingButton look={view.look} text={view.text} />;
+  }
+}
+
+type Shown = { key: LookKey; view: PillView };
+
+/**
+ * The look that just left, kept until its fade-out ends. `flowBarView` builds a new view on every
+ * render, so looks are compared by key.
+ */
+function useLeaving(view: PillView) {
+  const key = lookKey(view);
+  const shown = useRef<Shown>({ key, view });
+  const [leaving, setLeaving] = useState<Shown | null>(null);
+  // Runs before the ref below catches up, so `shown` still holds the old look's last frame.
+  useLayoutEffect(() => {
+    const previous = shown.current;
+    if (previous.key !== key) setLeaving(fadesOut(previous.key) ? previous : null);
+  }, [key]);
+  useLayoutEffect(() => {
+    shown.current = { key, view };
+  });
+  const onLeft = (event: AnimationEvent) => {
+    if (event.target === event.currentTarget) setLeaving(null);
+  };
+  return { leaving, onLeft };
+}
+
 export function PillCapsule(snapshot: PillSnapshot) {
   const now = useNow(ticks(snapshot));
   const view = flowBarView(snapshot, now);
+  const key = lookKey(view);
+  const size = lookSize[key];
+  const { leaving, onLeft } = useLeaving(view);
   return (
     <div {...stylex.props(styles.frame)}>
       <div
-        data-view={view.kind}
-        data-look={view.kind === "meeting" ? view.look : undefined}
-        role="status"
         {...stylex.props(
           styles.capsule,
+          styles.size(size.width, size.height),
           view.kind === "idle"
             ? [styles.idle, !snapshot.alwaysShowPill && styles.hidden]
             : styles.open,
-          view.kind === "message" && styles.wide,
-          view.kind === "meeting" &&
-            (view.look === "recording" ? styles.meetingRecording : styles.meeting),
         )}
       >
-        {view.kind === "listening" && <Wave />}
-        {view.kind === "processing" && <Dots />}
-        {view.kind === "inserted" && <Check pasted={view.method === "paste"} />}
-        {view.kind === "message" && (
-          <div {...stylex.props(styles.content, styles.text, styles.message)}>{view.text}</div>
+        {leaving && (
+          <div
+            key={leaving.key}
+            aria-hidden="true"
+            inert
+            onAnimationEnd={onLeft}
+            {...stylex.props(
+              styles.leave,
+              styles.size(lookSize[leaving.key].width, lookSize[leaving.key].height),
+            )}
+          >
+            <Content view={leaving.view} />
+          </div>
         )}
-        {view.kind === "meeting" && <MeetingButton look={view.look} text={view.text} />}
+        <div
+          role="status"
+          data-view={view.kind}
+          data-look={view.kind === "meeting" ? view.look : undefined}
+          {...stylex.props(styles.status)}
+        >
+          {view.kind !== "idle" && (
+            <div key={key} {...stylex.props(styles.enter)}>
+              <Content view={view} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

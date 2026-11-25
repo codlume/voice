@@ -37,6 +37,13 @@ describe("Flow Bar status for a screen reader", () => {
     expect(spoken({ kind: "listening" })).toBe("Listening");
     expect(spoken({ kind: "processing", overdue: false })).toBe("");
   });
+
+  test("announces only the new look while the old one fades out", () => {
+    spoken({ kind: "done", outcome: { kind: "empty" } });
+    expect(spoken({ kind: "listening" })).toBe("Listening");
+    const hidden = [...host.querySelectorAll("[aria-hidden=true]")].map((node) => node.textContent);
+    expect(hidden).toContain("Nothing heard");
+  });
 });
 
 const show = (snapshot: PillSnapshot) => {
