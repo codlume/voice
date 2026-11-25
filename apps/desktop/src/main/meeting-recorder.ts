@@ -233,11 +233,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       case "startCapture": {
         if (meeting === null) return;
         heardWhole.delete(id);
-        if (!(await clearLeftoverAudio(meeting))) {
-          const message = "Voice could not clear this meeting's old audio. Try again.";
-          background("start", dispatch(id, { type: "captureFailed", leg: effect.leg, message }));
-          return;
-        }
         const { language, microphone } = deps.capture();
         const length = await audioLength(id);
         const baseMs = await audioBase(meeting);
@@ -499,17 +494,20 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   /**
    * A finished meeting keeps audio only after a failed final pass. Audio it still has otherwise is
    * left over from a failed delete or a quit, and a resume that adds to it would transcribe that
-   * leg again, so the resume starts new files instead.
+   * leg again, so the resume starts new files instead. The leftover must be gone before the resume
+   * is saved, because a relaunch transcribes whatever audio a resuming meeting has.
    */
-  async function clearLeftoverAudio(meeting: Meeting): Promise<boolean> {
-    const { status, finalPassFailed } = meeting;
-    if (status.kind !== "starting" || status.from !== "ready" || finalPassFailed !== null) {
+  async function clearLeftoverAudio(id: MeetingId): Promise<boolean> {
+    await queue;
+    const meeting = store.get(id);
+    const kind = meeting?.status.kind;
+    if ((kind !== "ready" && kind !== "summarizing") || meeting?.finalPassFailed !== null) {
       return true;
     }
-    return deleteAudio(meeting.id).then(
+    return deleteAudio(id).then(
       () => true,
       (error) => {
-        log(`meetings: ${meeting.id} leftover audio could not be deleted (${String(error)})`);
+        log(`meetings: ${id} leftover audio could not be deleted (${String(error)})`);
         return false;
       },
     );
@@ -591,6 +589,10 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     }
     if ((event.type === "retryFinalPass" || event.type === "resume") && (await audioIncomplete(id)))
       return { kind: "refused", message: INCOMPLETE[event.type] };
+    if (event.type === "resume" && !(await clearLeftoverAudio(id))) {
+      const message = "Voice could not clear this meeting's old audio. Try again.";
+      return { kind: "refused", message };
+    }
     const applied = await dispatch(id, event);
     const failure = applied === "failed" ? FAILURES[event.type] : undefined;
     if (failure) return { kind: "refused", message: failure };

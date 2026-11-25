@@ -921,18 +921,52 @@ describe("meeting recorder", () => {
     const startsBefore = h.sentTypes().filter((type) => type === "meeting.start").length;
 
     disk.nextAudioDelete = "throws";
-    await h.recorder.resume(id);
+    expect(await h.recorder.resume(id)).toEqual({
+      kind: "refused",
+      message: "Voice could not clear this meeting's old audio. Try again.",
+    });
     await h.settle();
     expect(h.sentTypes().filter((type) => type === "meeting.start")).toHaveLength(startsBefore);
     expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
-    expect(h.noticed.at(-1)).toEqual({
-      kind: "resumeFailed",
-      message: "Voice could not clear this meeting's old audio. Try again.",
-    });
+    expect(h.notices).not.toContain("resumeFailed");
 
     expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
     await h.settle();
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 90_000 });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+  });
+
+  test("a resume while the summary is written also starts new files after a failed audio delete", async () => {
+    const { promise: running, resolve: started } = Promise.withResolvers<void>();
+    const h = harness({
+      summarizer: {
+        summarizeMeeting: async (_id, { signal }) => {
+          started();
+          await new Promise((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason)),
+          );
+          return { ok: true };
+        },
+        generateTitle: async () => ({ ok: true, title: null }),
+      },
+    });
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    h.advance(6 * 60_000);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    disk.nextAudioDelete = "throws";
+    h.emit({ type: "meeting.finalized", id, segments: FINAL_PASS });
+    await running;
+    expect(h.store.get(id)).toMatchObject({
+      status: { kind: "summarizing" },
+      finalPassFailed: null,
+    });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+
+    expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 6 * 60_000 });
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
   });
 
