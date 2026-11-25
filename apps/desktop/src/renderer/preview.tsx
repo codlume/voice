@@ -385,6 +385,7 @@ const hubScenes: Record<string, HubScene> = {
     settings: { ...ready.settings, updateChannel: "nightly" },
     updates: { ...ready.updates, channel: "nightly", status: { kind: "current" } },
   },
+  "account-restoring": { ...ready, account: { kind: "restoring" } },
   "account-signed-out": { ...ready, account: { kind: "signedOut" } },
   "account-signing-in": {
     ...ready,

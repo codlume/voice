@@ -266,7 +266,7 @@ describe("stored auth expiry through the account snapshot", () => {
     const h = await restoreExpiredSession();
 
     expect(h.state).toEqual({ kind: "signedOut" });
-    expect(h.states).toEqual([]);
+    expect(h.states).toEqual([{ kind: "signedOut" }]);
     expect(http.sent).toEqual([]);
     expect(config()).toBe(before);
   });

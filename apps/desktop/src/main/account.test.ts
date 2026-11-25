@@ -859,7 +859,7 @@ describe("restore", () => {
     expect(offline.state).toEqual({ kind: "signedOut" });
     offline.checks[0]?.answer({ kind: "unreachable", error: new TypeError("fetch failed") });
     await unanswered.done;
-    expect(offline.states).toEqual([]);
+    expect(offline.states).toEqual([{ kind: "signedOut" }]);
     expect(offline.fake.forgotten).toBe(0);
 
     const online = harness({ hasStoredAuthSession: withStoredAuthSession });
@@ -867,7 +867,7 @@ describe("restore", () => {
     const answered = await restore(online);
     online.checks[0]?.answer({ kind: "active", user: USER });
     await answered.done;
-    expect(online.states).toEqual([{ kind: "signedIn", ...USER }]);
+    expect(online.states).toEqual([{ kind: "signedOut" }, { kind: "signedIn", ...USER }]);
   });
 
   test("a show and an unminimize in the same moment send one check", async () => {
@@ -919,7 +919,10 @@ describe("restore", () => {
     h.requests[0]?.resolve();
     await signIn;
     expect(h.fake.forgotten).toBe(1);
-    expect(h.states).toEqual([{ kind: "signingIn", purpose: "signIn", phase: "browser" }]);
+    expect(h.states).toEqual([
+      { kind: "signedOut" },
+      { kind: "signingIn", purpose: "signIn", phase: "browser" },
+    ]);
   });
 
   test("quitting aborts a check still in flight", async () => {
@@ -929,14 +932,36 @@ describe("restore", () => {
     expect(h.checks[0]?.signal.aborted).toBe(true);
   });
 
-  test("a sign-in started while the client loads wins over the restore", async () => {
+  test("a launch with a stored auth session reads as restoring, and a sign-in click cannot retire it", async () => {
     const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    expect(h.state).toEqual({ kind: "restoring" });
+    await h.account.signIn();
+    h.account.cancelSignIn();
     const restored = h.account.restore();
     void h.account.signIn();
+    await flush();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    h.checks[0]?.answer({ kind: "active", user: USER });
     await restored;
-    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
-    expect(h.checks).toEqual([]);
+    expect(h.states).toEqual([{ kind: "signedIn", ...USER }]);
+    expect(h.fake.forgotten).toBe(0);
+    expect(h.fake.serverSignOuts).toBe(0);
     expect(h.createClient).toHaveBeenCalledOnce();
+  });
+
+  test.each([
+    ["the client cannot load", true, () => Promise.reject(new Error("chunk"))],
+    ["the stored item holds no auth session", false, undefined],
+  ])("a restore ends at signed out when %s", async (_, stored, createClient) => {
+    const h = harness({
+      hasStoredAuthSession: withStoredAuthSession,
+      ...(createClient && { createClient }),
+    });
+    h.fake.setStored(stored);
+    expect(h.state).toEqual({ kind: "restoring" });
+    await h.account.restore();
+    expect(h.states).toEqual([{ kind: "signedOut" }]);
+    expect(h.checks).toEqual([]);
   });
 });
 
