@@ -100,10 +100,10 @@ describe("history in memory", () => {
   test("keeps one entry per session, newest first, and cleanup replaces its text in place", () => {
     const { history } = harness();
     history.remember({ id: "a", raw: "first", text: "first", status: "pending" }, 1000);
-    history.settle("a", true);
+    history.settle("a", "inserted");
     history.remember({ id: "b", raw: "um second", text: "um second", status: "pending" }, 2000);
     history.remember({ id: "b", raw: "um second", text: "Second.", status: "pending" }, 2500);
-    history.settle("b", false);
+    history.settle("b", "notInserted");
 
     expect(history.entries()).toEqual([
       { id: "b", at: 2000, raw: "um second", text: "Second.", status: "notInserted" },
@@ -113,11 +113,11 @@ describe("history in memory", () => {
 
   test("settling a session that left no transcript, or one already settled, changes nothing", async () => {
     const { history, published } = harness();
-    history.settle("none", true);
+    history.settle("none", "inserted");
     history.remember({ id: "late", raw: "late", text: "late", status: "notInserted" }, 1000);
     await settledTick();
     published.length = 0;
-    history.settle("late", true);
+    history.settle("late", "inserted");
     await settledTick();
 
     expect(history.entries()).toEqual([
@@ -130,7 +130,7 @@ describe("history in memory", () => {
     const { history } = harness();
     history.remember({ id: "a", raw: "um hi", text: "um hi", status: "pending" }, 1000);
     history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, 1500);
-    history.settle("a", true);
+    history.settle("a", "inserted");
     history.remember({ id: "a", raw: "um hi", text: "um hi", status: "notInserted" }, 2000);
 
     expect(history.entries()).toEqual([
@@ -145,7 +145,7 @@ describe("history in memory", () => {
     changes.length = 0;
     published.length = 0;
     history.remember({ id: "a", raw: "hi", text: "hi", status: "pending" }, 1000);
-    history.settle("a", true);
+    history.settle("a", "inserted");
     expect(published).toEqual([]);
     await settledTick();
     expect(changes).toEqual([
@@ -183,7 +183,7 @@ describe("history in memory", () => {
     history.remember({ id: "a", raw: "um raw", text: "um raw", status: "pending" }, 1000);
     await history.remove("a");
     history.remember({ id: "a", raw: "um raw", text: "Cleaned.", status: "pending" }, 1500);
-    history.settle("a", true);
+    history.settle("a", "inserted");
     expect(history.entries()).toEqual([]);
 
     history.remember({ id: "b", raw: "b", text: "b", status: "pending" }, 2000);
@@ -203,7 +203,7 @@ describe("history in memory", () => {
     history.remember({ id: "x", raw: "r", text: "r", status: "pending" }, 1000);
     await history.remove("x");
     history.remember({ id: "x", raw: "r", text: "R.", status: "pending" }, 1500);
-    history.settle("x", true);
+    history.settle("x", "inserted");
     history.remember({ id: "x", raw: "r", text: "r", status: "notInserted" }, 2000);
     expect(history.entries()).toEqual([]);
   });
@@ -265,7 +265,7 @@ describe("history in memory", () => {
   test("writes nothing to disk", async () => {
     const { history } = harness("memory");
     history.remember({ id: "a", raw: "secret", text: "Secret.", status: "pending" }, START);
-    history.settle("a", true);
+    history.settle("a", "inserted");
     await history.settled();
     expect(await exists(file)).toBe(false);
     expect(ids(history.entries())).toEqual(["a"]);
@@ -284,7 +284,7 @@ describe("saved history", () => {
   test("the file names the window, so a restart keeps it and brings back the entries, with one a quit cut short not inserted", async () => {
     const first = harness("month");
     first.history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
-    first.history.settle("a", true);
+    first.history.settle("a", "inserted");
     first.history.remember({ id: "b", raw: "cut", text: "cut", status: "pending" }, START + 1);
     await first.history.settled();
 
@@ -325,7 +325,7 @@ describe("saved history", () => {
     await settledTick();
     history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
     await settledTick();
-    history.settle("a", true);
+    history.settle("a", "inserted");
     await settledTick();
     expect(changes).toEqual([
       patch({ id: "a", at: START, raw: "um hi", text: "um hi", status: "pending" }),
@@ -369,7 +369,7 @@ describe("saved history", () => {
     expect(writes.count).toBe(1);
     expect(history.entries()[0]?.text).toBe("Hi.");
 
-    history.settle("a", true);
+    history.settle("a", "inserted");
     await history.settled();
     expect(writes.count).toBe(2);
     expect((await saved()).entries).toEqual([
@@ -601,7 +601,7 @@ describe("saved history", () => {
     expect(await exists(file)).toBe(false);
     expect(ids(history.entries())).toEqual(["a"]);
 
-    history.settle("a", true);
+    history.settle("a", "inserted");
     await history.settled();
     expect(await exists(file)).toBe(false);
   });
@@ -981,7 +981,7 @@ describe("saved history", () => {
     expect(await tempFiles()).toEqual([]);
 
     await unblockWrites();
-    history.settle("a", true);
+    history.settle("a", "inserted");
     await history.settled();
     await settledTick();
     expect(history.state().saveFailed).toBe(false);

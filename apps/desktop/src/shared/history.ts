@@ -13,11 +13,14 @@ export const retentionMs: Record<HistoryRetention, number> = {
   forever: Infinity,
 };
 
+/** How a session ended. `unconfirmed` is a transcript the app may or may not have taken. */
+export type SettledStatus = "inserted" | "notInserted" | "unconfirmed";
+
 /**
- * `pending` is a transcript whose session is still cleaning or inserting it. Main settles it to
- * `inserted` or `notInserted` when the session ends.
+ * `pending` is a transcript whose session is still cleaning or inserting it. Main settles it
+ * when the session ends.
  */
-export type HistoryStatus = "pending" | "inserted" | "notInserted";
+export type HistoryStatus = "pending" | SettledStatus;
 
 /** One session's transcript, newest first in the history. `at` is when the transcript arrived. */
 export type HistoryEntry = {
@@ -28,9 +31,9 @@ export type HistoryEntry = {
   status: HistoryStatus;
 };
 
-/** What a session hands the history: its transcript so far, never already inserted. */
+/** What a session hands the history: its transcript so far, before any insert was answered. */
 export type Transcript = Pick<HistoryEntry, "id" | "raw" | "text"> & {
-  status: Exclude<HistoryStatus, "inserted">;
+  status: "pending" | "notInserted";
 };
 
 /**
@@ -80,7 +83,10 @@ export function applyHistoryChange(
 export const historySurvivesQuit = (retention: HistoryRetention, saveFailed: boolean) =>
   retention !== "memory" && !saveFailed;
 
-/** The newest entry when quitting now would lose it: never inserted, and not saved on this Mac. */
+/**
+ * The newest entry when quitting now would lose it: not saved on this Mac, and not known to be in
+ * the app.
+ */
 export const atRiskOnQuit = ({
   entries: [latest],
   retention,
