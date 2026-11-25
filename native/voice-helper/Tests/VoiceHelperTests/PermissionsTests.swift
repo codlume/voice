@@ -14,7 +14,7 @@ struct PermissionsTests {
         let callerReturned = DispatchSemaphore(value: 0)
         let readFinishedAfterTheCaller = OSAllocatedUnfairLock(initialState: false)
         let permissions = Permissions(
-            output: Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor),
+            output: lines.output(),
             read: { _ in
                 let returned = callerReturned.wait(timeout: .now() + .seconds(2)) == .success
                 readFinishedAfterTheCaller.withLock { $0 = returned }
@@ -35,7 +35,7 @@ struct PermissionsTests {
         let firstMayAnswer = DispatchSemaphore(value: 0)
         let reads = OSAllocatedUnfairLock(initialState: 0)
         let permissions = Permissions(
-            output: Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor),
+            output: lines.output(),
             read: { _ in
                 let first = reads.withLock { count in
                     count += 1

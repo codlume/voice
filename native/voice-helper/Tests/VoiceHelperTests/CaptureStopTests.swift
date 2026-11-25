@@ -9,7 +9,7 @@ struct CaptureStopTests {
     @Test(arguments: [(audio: "silence", terminal: "transcript"), (audio: "tone with no model", terminal: "transcript.failed")])
     @MainActor func reportsTheDurationCapBeforeTheCaptureEnds(audio: String, terminal: String) async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -4,17 +4,23 @@ import VoiceHelperCore
 
 final class Output: @unchecked Sendable {
     private let fd: Int32
+    private let owner: AnyObject?
     private let lock = NSLock()
 
     /// Takes over fd 1 for the protocol and points fd 1 at stderr so a stray
     /// `print` inside a dependency cannot corrupt the stream.
     init() {
         fd = dup(STDOUT_FILENO)
+        owner = nil
         dup2(STDERR_FILENO, STDOUT_FILENO)
     }
 
-    init(fd: Int32) {
+    /// `owner` is whatever closes `fd`. The output holds it, so the descriptor stays open for
+    /// as long as anything can still emit. A closed descriptor's number goes to the next file
+    /// the process opens, and a late emit would be written into that file.
+    init(fd: Int32, owner: AnyObject? = nil) {
         self.fd = fd
+        self.owner = owner
     }
 
     func emit(_ event: HelperEvent) {

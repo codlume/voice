@@ -75,7 +75,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         diarize: @escaping MeetingFinalPass.Diarize, dictating: @escaping () -> Bool = { false },
         fail: Bool = false, decoded: @escaping (Int) -> Void = { _ in }
     ) -> MeetingFinalPass {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         return MeetingFinalPass(output: output, decode: { samples, _ in
             decoded(samples.count)
             if fail { throw TranscribeError(reason: .asrUnavailable, message: "speech model is not downloaded") }
@@ -112,7 +112,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
     @Test func theOtherSideHeardThroughTheSpeakersIsNotTranscribedAsTheUser() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
         try writeMeeting(in: dir, micHearsTheSpeakers: true)
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         await MeetingFinalPass(output: output, decode: { samples, _ in soundWords(in: samples) }, diarize: { _ in nil }, newDetector: { nil }, isDictating: { false })
             .run(id: "m1", dir: dir, baseMs: 0, language: .en)
         let mic = try await finalized().filter { $0["source"] as? String == "mic" }
@@ -121,7 +121,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
     }
 
     private func micLines(newDetector: @escaping MeetingTranscription.NewDetector) async throws -> [String] {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         await MeetingFinalPass(output: output, decode: { samples, _ in soundWords(in: samples) }, diarize: { _ in nil },
                                newDetector: newDetector, isDictating: { false })
             .run(id: "m1", dir: dir, baseMs: 0, language: .en)
@@ -160,7 +160,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         var looks = 0
         var decodes = 0
         var decodedWhileDictating = 0
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let finalPass = MeetingFinalPass(output: output, decode: { samples, _ in
             decodes += 1
             if dictating { decodedWhileDictating += 1 }
@@ -240,7 +240,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 @Suite struct MeetingPartialTests {
     @Test func theOtherSideHeardThroughTheSpeakersShowsNoPartialAsTheUser() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -263,7 +263,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func unfinishedSpeechShowsAsAPartialThatTheSegmentClears() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -291,7 +291,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func theUsersVoiceOverTheOtherSideShowsAsAPartialUpToTheNewestAudio() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let theirs = talk(7)
@@ -309,7 +309,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func aLegOnNewFilesAfterTheAudioWasDeletedShowsItsUnfinishedSpeech() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words \(samples.count / 16_000)", in: samples) },
@@ -360,7 +360,7 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
         newDetector: @escaping MeetingTranscription.NewDetector = { nil }, isDictating: @escaping () -> Bool = { false },
         decoded: @escaping () throws -> Void = {}
     ) -> MeetingTranscription {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in
             try decoded()
             return spokenWords("words", in: samples)

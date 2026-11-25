@@ -90,7 +90,7 @@ private final class Leg {
     private(set) var capture: MeetingCapture!
 
     init(micAllowed: @escaping @Sendable () -> Bool = { true }, systemAllowed: @escaping @Sendable () -> Bool = { true }) {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         devices = AudioInputDevices(output: output)
         let hardware = MeetingHardware(
             micAllowed: micAllowed, systemAllowed: systemAllowed,
