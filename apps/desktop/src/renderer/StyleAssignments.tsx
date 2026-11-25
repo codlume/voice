@@ -7,6 +7,8 @@ import type { Category } from "../shared/app-categories.ts";
 import type { Assignment } from "../shared/style.ts";
 import { AppIcon } from "./AppIcon.tsx";
 import { Button } from "./Button.tsx";
+import { transitionHidden } from "./ConfirmDialog.tsx";
+import { Input, SearchField } from "./Input.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import {
   CATEGORY_LABELS,
@@ -16,7 +18,8 @@ import {
   type Chip,
   type PickerRow,
 } from "./styleView.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { surfaces } from "./surfaces.ts";
+import { color, leading, radius, space, text } from "./tokens.stylex.ts";
 import type { useAction } from "./useAction.ts";
 import type { InstalledApps } from "./useInstalledApps.ts";
 import { hubApi } from "./voice.ts";
@@ -25,117 +28,72 @@ const IME_COMPOSITION_KEY_CODE = 229;
 const composing = (event: KeyboardEvent) =>
   event.nativeEvent.isComposing || event.keyCode === IME_COMPOSITION_KEY_CODE;
 
-const reducedMotion = "@media (prefers-reduced-motion: reduce)";
-
 const styles = stylex.create({
+  // Adapted outline badge (MIT, see THIRD_PARTY_NOTICES.md), with the app icon in front and a small
+  // remove button behind.
   chip: {
     display: "inline-flex",
     alignItems: "center",
-    gap: 5,
+    gap: space.xs,
     height: 24,
-    paddingInlineStart: 4,
-    paddingInlineEnd: 2,
+    paddingInlineStart: space.xs,
+    paddingInlineEnd: 3,
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.round,
-    backgroundColor: color.card,
-    fontSize: 12,
+    borderColor: color.input,
+    borderRadius: radius.medium,
+    backgroundColor: color.control,
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
   },
   chipName: { maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   remove: {
     display: "grid",
     placeItems: "center",
-    width: 18,
-    height: 18,
+    width: 16,
+    height: 16,
     padding: 0,
     borderWidth: 0,
-    borderRadius: radius.round,
+    borderRadius: radius.xs,
     backgroundColor: { default: "transparent", ":hover": color.accent },
     color: { default: color.mutedForeground, ":hover": color.foreground },
     cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
   },
+  // The "+" is the small outline icon button.
   add: {
     display: "grid",
     placeItems: "center",
     width: 24,
     height: 24,
     padding: 0,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: color.input,
-    borderRadius: radius.round,
-    backgroundColor: { default: "transparent", ":hover": color.accent },
     color: { default: color.mutedForeground, ":hover": color.foreground },
     cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
   },
-  positioner: { zIndex: 10 },
+  positioner: { zIndex: 20 },
   popup: {
     display: "flex",
     flexDirection: "column",
-    gap: space.md,
+    gap: space.xxs,
     width: "20rem",
     maxWidth: "var(--available-width)",
-    padding: space.md,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    boxShadow: "0 8px 24px rgb(0 0 0 / 12%)",
-    fontFamily: font.sans,
-    fontSize: 13,
-    WebkitFontSmoothing: "antialiased",
-    opacity: 1,
-    transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
-    outline: "none",
+    padding: space.xxs,
   },
-  popupHidden: { opacity: 0 },
   section: {
     display: "flex",
     flexDirection: "column",
-    gap: 6,
-    margin: 0,
-    padding: 0,
-    borderWidth: 0,
-  },
-  label: { padding: 0, fontSize: 12, fontWeight: 600 },
-  input: {
-    width: "100%",
-    minWidth: 0,
-    paddingBlock: 6,
-    paddingInline: 10,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.border, ":focus": color.input },
-    borderRadius: radius.medium,
-    backgroundColor: color.card,
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 13,
+    gap: space.xxs,
+    padding: space.xxs,
   },
   list: {
     display: "flex",
     flexDirection: "column",
-    height: "13.5rem",
+    height: "12.5rem",
     marginInline: -4,
+    paddingInline: 4,
     overflowY: "auto",
   },
-  row: {
-    display: "flex",
-    alignItems: "center",
-    gap: space.sm,
-    flexShrink: 0,
-    height: 30,
-    paddingInline: 6,
-    borderRadius: radius.small,
-    cursor: "pointer",
-  },
-  rowActive: { backgroundColor: color.accent },
+  row: { flexShrink: 0 },
   rowName: {
     flexGrow: 1,
     minWidth: 0,
@@ -143,12 +101,24 @@ const styles = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  hint: { flexShrink: 0, color: color.mutedForeground, fontSize: 12 },
-  here: { flexShrink: 0, color: color.primary },
-  empty: { margin: 0, paddingBlock: space.sm, paddingInline: 6, color: color.mutedForeground },
+  hint: { flexShrink: 0, color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
+  here: { display: "flex", flexShrink: 0, color: color.primary },
+  empty: {
+    margin: 0,
+    paddingBlock: space.sm,
+    paddingInline: space.sm,
+    color: color.mutedForeground,
+  },
   siteRow: { display: "flex", gap: space.sm },
-  status: { minHeight: 17, margin: 0, color: color.mutedForeground, fontSize: 12 },
-  separator: { height: 1, margin: 0, borderWidth: 0, backgroundColor: color.border },
+  separator: { flexShrink: 0, borderWidth: 0 },
+  status: {
+    minHeight: leading.xs,
+    margin: 0,
+    paddingInline: 2,
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
+  },
 });
 
 export function AssignmentChip({
@@ -171,7 +141,7 @@ export function AssignmentChip({
         onClick={() => onRemove(chip.assignment)}
         {...stylex.props(styles.remove)}
       >
-        <XIcon size={12} strokeWidth={2.5} />
+        <XIcon size={12} strokeWidth={2.25} />
       </button>
     </span>
   );
@@ -203,15 +173,15 @@ export function AddToCategory({
         ref={triggerRef}
         aria-label={`Add an app or website to ${CATEGORY_LABELS[picker.category]}`}
         title="Add an app or website"
-        {...stylex.props(styles.add)}
+        {...stylex.props(surfaces.control, styles.add)}
       >
-        <PlusIcon size={14} strokeWidth={2.25} />
+        <PlusIcon size={14} />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner
           side="bottom"
           align="start"
-          sideOffset={6}
+          sideOffset={4}
           collisionPadding={8}
           {...stylex.props(styles.positioner)}
         >
@@ -220,9 +190,10 @@ export function AddToCategory({
             aria-label={`Add to ${CATEGORY_LABELS[picker.category]}`}
             className={({ transitionStatus }) =>
               stylex.props(
+                surfaces.popup,
+                surfaces.popupMotion,
                 styles.popup,
-                (transitionStatus === "starting" || transitionStatus === "ending") &&
-                  styles.popupHidden,
+                transitionHidden(transitionStatus) && surfaces.popupHidden,
               ).className
             }
           >
@@ -291,13 +262,12 @@ function Picker({
   return (
     <>
       <div {...stylex.props(styles.section)}>
-        <label htmlFor={`${id}-search`} {...stylex.props(styles.label)}>
+        <label htmlFor={`${id}-search`} {...stylex.props(surfaces.groupLabel)}>
           Apps
         </label>
-        <input
+        <SearchField
           ref={searchRef}
           id={`${id}-search`}
-          type="search"
           role="combobox"
           placeholder="Search installed apps"
           autoComplete="off"
@@ -312,7 +282,6 @@ function Picker({
             setActive(0);
           }}
           onKeyDown={onSearchKey}
-          {...stylex.props(styles.input)}
         />
         <div {...stylex.props(styles.list)}>
           <div id={`${id}-list`} role="listbox" aria-label="Installed apps">
@@ -329,14 +298,18 @@ function Picker({
                   }
                   onMouseMove={() => setActive(index)}
                   onClick={() => !pending && pick(row)}
-                  {...stylex.props(styles.row, index === activeIndex && styles.rowActive)}
+                  {...stylex.props(
+                    surfaces.item,
+                    styles.row,
+                    index === activeIndex && surfaces.itemHighlighted,
+                  )}
                 >
-                  <AppIcon bundleId={row.bundleId} name={row.name} size={20} decorative />
+                  <AppIcon bundleId={row.bundleId} name={row.name} size={16} decorative />
                   <span {...stylex.props(styles.rowName)}>{row.name}</span>
                   {hint !== null && <span {...stylex.props(styles.hint)}>{hint}</span>}
                   {row.current === category && (
                     <span {...stylex.props(styles.here)}>
-                      <CheckIcon size={14} strokeWidth={2.5} aria-hidden />
+                      <CheckIcon size={16} aria-hidden />
                     </span>
                   )}
                 </div>
@@ -355,14 +328,14 @@ function Picker({
         </div>
       </div>
 
-      <hr {...stylex.props(styles.separator)} />
+      <hr {...stylex.props(surfaces.separator, styles.separator)} />
 
       <div {...stylex.props(styles.section)}>
-        <label htmlFor={`${id}-site`} {...stylex.props(styles.label)}>
+        <label htmlFor={`${id}-site`} {...stylex.props(surfaces.groupLabel)}>
           Add website
         </label>
         <div {...stylex.props(styles.siteRow)}>
-          <input
+          <Input
             id={`${id}-site`}
             placeholder="slack.com or a link"
             autoComplete="off"
@@ -376,7 +349,6 @@ function Picker({
               event.preventDefault();
               addSite();
             }}
-            {...stylex.props(styles.input)}
           />
           <Button
             variant="secondary"
