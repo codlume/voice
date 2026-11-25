@@ -215,12 +215,14 @@ FinalFails ==
     /\ UNCHANGED <<capturing, intent, audio, final>>
     /\ Moved(FALSE)
 
+\* Audio with no final transcript gets here only after you pressed Delete audio and Voice
+\* relaunched before the delete, because only Delete audio clears finalPassFailed without one.
 AudioDeleted ==
     /\ status = "deletingAudio"
     /\ status' = "ready"
     /\ audio' = "deleted"
     /\ UNCHANGED <<capturing, intent, final, failed>>
-    /\ Moved(FALSE)
+    /\ Moved(~final)
 
 \* rm throws: runOrFail logs it. The next resume or the next launch deletes the audio again.
 DeleteFails ==
@@ -236,27 +238,46 @@ YouTryAgain ==
     /\ UNCHANGED <<capturing, intent, audio, final, failed>>
     /\ Moved(FALSE)
 
-\* The Delete audio action on the final pass failed notice.
+\* The Delete audio action on the final pass failed notice. Main saves meeting.json with
+\* finalPassFailed cleared before the deleteAudio effect removes the files.
 YouDeleteAudio ==
     /\ status = "ready"
     /\ failed
-    /\ audio' = "deleted"
+    /\ status' = "deletingKeptAudio"
     /\ failed' = FALSE
-    /\ UNCHANGED <<status, capturing, intent, final>>
+    /\ UNCHANGED <<capturing, intent, audio, final>>
     /\ Moved(TRUE)
+
+KeptAudioDeleted ==
+    /\ status = "deletingKeptAudio"
+    /\ status' = "ready"
+    /\ audio' = "deleted"
+    /\ UNCHANGED <<capturing, intent, final, failed>>
+    /\ Moved(TRUE)
+
+\* rm throws: audioDeleteFailed restores finalPassFailed and the notice, and the command is
+\* refused. A partial delete can leave mic.pcm without system.pcm; the audio still counts as kept.
+KeptAudioDeleteFails ==
+    /\ status = "deletingKeptAudio"
+    /\ status' = "ready"
+    /\ failed' = TRUE
+    /\ UNCHANGED <<capturing, intent, audio, final>>
+    /\ Moved(FALSE)
 
 \* Quit or crash: the helper exits on stdin EOF and its files keep what it appended. On the next
 \* launch recover() sends "recover" with hasAudio from the files, before any start or resume. Then
 \* it sends "audioFound" to each meeting whose files hold audio. A finished meeting with no failed
-\* final pass answers with deleteAudio, so it deletes the audio again.
+\* final pass answers with deleteAudio, so it deletes the audio again. That includes a meeting
+\* whose Delete audio saved meeting.json and then quit before the files were removed.
 Recovered(s) ==
     CASE s = "starting" /\ audio # "kept" -> "gone"
       [] s = "reopening" /\ audio # "kept" -> "ready"
-      [] s \in {"deletingAudio", "ready"} -> "deletingAudio"
+      [] s \in {"deletingAudio", "deletingKeptAudio", "ready"} -> "deletingAudio"
       [] OTHER -> "draining"
 
 VoiceRestarts ==
-    /\ \/ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing", "deletingAudio"}
+    /\ \/ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing"}
+       \/ status \in {"deletingAudio", "deletingKeptAudio"}
        \/ status = "ready" /\ ~failed /\ audio = "kept"
     /\ status' = Recovered(status)
     /\ capturing' = FALSE
@@ -273,7 +294,8 @@ Next ==
     \/ YouPause \/ AudioStops \/ YouResume \/ LeftoverDeleted \/ LeftoverStays \/ ResumeFails
     \/ YouPauseWhileResuming
     \/ YouStop \/ TimeLimit \/ CaughtUpShort \/ CaughtUp \/ YouKeep \/ YouDiscard
-    \/ FinalSaved \/ FinalFails \/ AudioDeleted \/ DeleteFails \/ YouTryAgain \/ YouDeleteAudio
+    \/ FinalSaved \/ FinalFails \/ AudioDeleted \/ DeleteFails \/ YouTryAgain
+    \/ YouDeleteAudio \/ KeptAudioDeleted \/ KeptAudioDeleteFails
     \/ VoiceRestarts \/ Done
 
 \* Recording starts only from your Start or Resume, never from a relaunch or recovery.
