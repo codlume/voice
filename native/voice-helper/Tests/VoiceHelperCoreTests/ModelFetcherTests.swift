@@ -64,7 +64,7 @@ struct ModelFetcherTests {
     @Test func aCompleteBodyFollowedByADropIsKept() async throws {
         let scenario = try Scenario()
         defer { try? FileManager.default.removeItem(at: scenario.dir) }
-        scenario.script([.resume(scenario.bytes, end: .fail(.networkConnectionLost))])
+        scenario.script([.resume(scenario.bytes, end: .fail(.networkConnectionLost, onceStoredIn: scenario.staged))])
         try await RecordedSleeps().fetcher().fetch(scenario.file, of: scenario.fixture.release, to: scenario.staged)
         #expect(try Data(contentsOf: scenario.staged) == scenario.bytes)
         #expect(scenario.requests.count == 1)
@@ -155,17 +155,12 @@ struct ModelFetcherTests {
         let scenario = try Scenario()
         defer { try? FileManager.default.removeItem(at: scenario.dir) }
         scenario.script([
-            StubHub.Reply(status: 200, chunks: scenario.bytes.prefix(50_000).chunked(10_000), end: .fail(.networkConnectionLost)),
+            StubHub.Reply(status: 200, chunks: scenario.bytes.prefix(50_000).chunked(10_000), end: .fail(.networkConnectionLost, onceStoredIn: scenario.staged)),
             .ok(scenario.bytes),
         ])
         try await RecordedSleeps().fetcher().fetch(scenario.file, of: scenario.fixture.release, to: scenario.staged)
         #expect(try Data(contentsOf: scenario.staged) == scenario.bytes)
-        let ranges = scenario.requests.map { $0.value(forHTTPHeaderField: "Range") }
-        #expect(ranges.count == 2 && ranges[0] == nil)
-        // Bytes the socket had but the delegate never saw are lost with the connection, so the
-        // offset is what reached disk, somewhere below the cut.
-        let offset = try #require(ranges[1].flatMap { Int($0.dropFirst("bytes=".count).dropLast()) })
-        #expect(offset > 0 && offset <= 50_000)
+        #expect(scenario.requests.map { $0.value(forHTTPHeaderField: "Range") } == [nil, "bytes=50000-"])
     }
 
     @Test func aResumeThatDoesNotLineUpIsRefused() async throws {
