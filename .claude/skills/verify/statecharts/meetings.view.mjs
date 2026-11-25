@@ -6,11 +6,13 @@ const ready = (v) => {
       : "Ready, final pass failed, audio kept";
   }
   if (!v.final) {
-    return v.audio === "kept"
-      ? "Ready, audio without a final transcript left on disk"
+    if (v.audio === "kept") return "Ready, audio without a final transcript left on disk";
+    return v.audio === "empty"
+      ? "Ready, live transcript only, empty audio files left on disk"
       : "Ready, live transcript only, audio deleted";
   }
-  return v.audio === "kept" ? "Ready, audio left on disk" : "Ready, audio deleted";
+  if (v.audio === "kept") return "Ready, audio left on disk";
+  return v.audio === "empty" ? "Ready, empty audio files left on disk" : "Ready, audio deleted";
 };
 
 const deleting = (v) =>
@@ -73,7 +75,6 @@ export function step(action, from, to) {
     case "LeftoverDeleted":
       return "the audio left on disk is deleted";
     case "LeftoverStays":
-      return "the audio left on disk cannot be deleted, so the resume fails";
     case "ResumeFails":
     case "YouPauseWhileResuming":
       return from.status === "reopening"
