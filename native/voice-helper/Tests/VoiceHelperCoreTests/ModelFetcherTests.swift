@@ -214,18 +214,15 @@ struct ModelFetcherTests {
         let scenario = try Scenario()
         defer { try? FileManager.default.removeItem(at: scenario.dir) }
         scenario.script([
-            .resume(scenario.bytes, truncateAt: 30_000, end: .fail(.timedOut)),
-            .resume(scenario.bytes, truncateAt: 30_000, end: .fail(.networkConnectionLost)),
+            .resume(scenario.bytes, truncateAt: 30_000, end: .fail(.timedOut, onceStoredIn: scenario.staged)),
+            .resume(scenario.bytes, truncateAt: 30_000, end: .fail(.networkConnectionLost, onceStoredIn: scenario.staged)),
             .resume(scenario.bytes),
         ])
         let sleeps = RecordedSleeps()
         try await sleeps.fetcher().fetch(scenario.file, of: scenario.fixture.release, to: scenario.staged)
         #expect(try Data(contentsOf: scenario.staged) == scenario.bytes)
-        let offsets = scenario.requests.map { $0.value(forHTTPHeaderField: "Range").flatMap { Int($0.dropFirst("bytes=".count).dropLast()) } }
-        #expect(offsets.count == 3 && offsets[0] == nil)
-        let second = try #require(offsets[1])
-        let third = try #require(offsets[2])
-        #expect(second > 0 && third > second, "each attempt carries on from what reached disk: \(offsets)")
+        let ranges = scenario.requests.map { $0.value(forHTTPHeaderField: "Range") }
+        #expect(ranges == [nil, "bytes=30000-", "bytes=60000-"], "each attempt carries on from what reached disk")
         #expect(sleeps.recorded == [.seconds(1), .seconds(2)])
     }
 
