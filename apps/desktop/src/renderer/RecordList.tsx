@@ -1,7 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
-import { PencilIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -12,22 +12,51 @@ import {
   type RefObject,
 } from "react";
 
+import { Badge } from "./Badge.tsx";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
 import { useHoldNavigation } from "./navigationHold.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as settings } from "./settingsParts.tsx";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { color, leading, motion, radius, space, text as size } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 
 export const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.lg },
-  header: { display: "flex", alignItems: "flex-start", gap: space.lg },
-  headerText: { display: "flex", flexDirection: "column", gap: space.sm, flexGrow: 1 },
+  header: { display: "flex", flexDirection: "column", gap: space.sm },
+  // The page's one action sits on the headline's baseline.
+  titleRow: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: space.lg,
+  },
   subtitle: { margin: 0, color: color.mutedForeground },
-  list: { margin: 0, padding: 0, listStyle: "none" },
-  rowText: { display: "flex", flexDirection: "column", gap: 2 },
+  // Adapted list row (MIT, see THIRD_PARTY_NOTICES.md): hairline-divided rows that tint on hover,
+  // clipped to the card's corners.
+  list: {
+    margin: 0,
+    padding: 0,
+    overflow: "hidden",
+    borderRadius: `calc(${radius.large} - 1px)`,
+    listStyle: "none",
+  },
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.base,
+    minHeight: 44,
+    paddingBlock: space.md,
+    paddingInline: space.base,
+    borderTopWidth: { default: 1, ":first-child": 0 },
+    borderTopStyle: "solid",
+    borderTopColor: `color-mix(in srgb, ${color.border} 50%, transparent)`,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
+    transitionProperty: "background-color",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
+  },
+  rowText: { display: "flex", flexDirection: "column", gap: 2, flexGrow: 1, minWidth: 0 },
   wrap: { overflowWrap: "anywhere" },
   detail: {
     display: "-webkit-box",
@@ -37,12 +66,32 @@ export const styles = stylex.create({
     WebkitLineClamp: 2,
   },
   example: { color: color.mutedForeground },
-  off: { opacity: 0.6 },
-  rowActions: { display: "flex", flexShrink: 0, alignItems: "center", gap: 4 },
+  off: { opacity: 0.64 },
+  trailing: { display: "flex", flexShrink: 0, alignItems: "center", gap: space.sm },
+  // Edit and delete keep their place but show only while the row is hovered or holds keyboard
+  // focus, so the list reads as content rather than a column of icons.
+  rowActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 2,
+    opacity: {
+      default: 0,
+      [stylex.when.ancestor(":hover")]: 1,
+      [stylex.when.ancestor(":focus-within")]: 1,
+    },
+    transitionProperty: "opacity",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
+  },
   fields: { display: "flex", flexDirection: "column", gap: space.base },
-  field: { display: "flex", flexDirection: "column", gap: 6 },
+  field: { display: "flex", flexDirection: "column", gap: space.xs },
   fieldHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
-  counter: { fontVariantNumeric: "tabular-nums" },
+  counter: {
+    color: color.mutedForeground,
+    fontSize: size.xxs,
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+    lineHeight: leading.xxs,
+  },
   input: {
     width: "100%",
     paddingBlock: 6,
@@ -163,13 +212,14 @@ export function RecordList<T extends { id: string }, F extends string>({
   return (
     <div {...stylex.props(styles.page)}>
       <header {...stylex.props(styles.header)}>
-        <div {...stylex.props(styles.headerText)}>
+        <div {...stylex.props(styles.titleRow)}>
           <h1 {...stylex.props(pageStyles.headline)}>{copy.title}</h1>
-          <p {...stylex.props(styles.subtitle)}>{copy.subtitle}</p>
+          <Button ref={addRef} onClick={() => show("add", blank())}>
+            <PlusIcon size={16} aria-hidden />
+            Add new
+          </Button>
         </div>
-        <Button ref={addRef} onClick={() => show("add", blank())}>
-          Add new
-        </Button>
+        <p {...stylex.props(styles.subtitle)}>{copy.subtitle}</p>
       </header>
 
       <Card>
@@ -184,31 +234,33 @@ export function RecordList<T extends { id: string }, F extends string>({
               const rowText = row(record);
               const offId = `${baseId}-${record.id}-off`;
               return (
-                <li key={record.id} {...stylex.props(settings.row)}>
+                <li key={record.id} {...stylex.props(stylex.defaultMarker(), styles.row)}>
                   {text(rowText)}
-                  <div {...stylex.props(styles.rowActions)}>
+                  <div {...stylex.props(styles.trailing)}>
                     {rowText.off && (
-                      <span id={offId} {...stylex.props(settings.hint)}>
-                        Off
+                      <span id={offId}>
+                        <Badge>Off</Badge>
                       </span>
                     )}
-                    <Button
-                      variant="icon"
-                      aria-label={`Edit ${name(record)}`}
-                      aria-describedby={rowText.off ? offId : undefined}
-                      title="Edit"
-                      onClick={() => show("edit", record)}
-                    >
-                      <PencilIcon size={16} />
-                    </Button>
-                    <Button
-                      variant="icon"
-                      aria-label={`Delete ${name(record)}`}
-                      title="Delete"
-                      onClick={() => show("delete", record)}
-                    >
-                      <Trash2Icon size={16} />
-                    </Button>
+                    <div {...stylex.props(styles.rowActions)}>
+                      <Button
+                        variant="icon"
+                        aria-label={`Edit ${name(record)}`}
+                        aria-describedby={rowText.off ? offId : undefined}
+                        title="Edit"
+                        onClick={() => show("edit", record)}
+                      >
+                        <PencilIcon size={16} />
+                      </Button>
+                      <Button
+                        variant="icon"
+                        aria-label={`Delete ${name(record)}`}
+                        title="Delete"
+                        onClick={() => show("delete", record)}
+                      >
+                        <Trash2Icon size={16} />
+                      </Button>
+                    </div>
                   </div>
                 </li>
               );
@@ -393,7 +445,7 @@ export function CountedField({
     <Field.Root invalid={problem !== undefined} {...stylex.props(styles.field)}>
       <div {...stylex.props(styles.fieldHead)}>
         <Field.Label {...stylex.props(settings.rowTitle)}>{label}</Field.Label>
-        <Field.Description {...stylex.props(settings.hint, styles.counter)}>
+        <Field.Description {...stylex.props(styles.counter)}>
           {length}/{max}
         </Field.Description>
       </div>

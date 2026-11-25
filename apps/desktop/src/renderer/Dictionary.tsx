@@ -10,6 +10,7 @@ import {
   type DictionaryProblem,
 } from "../shared/dictionary.ts";
 import type { Snippet } from "../shared/snippets.ts";
+import { Input } from "./Input.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { RecordList, styles, type Copy } from "./RecordList.tsx";
 import { styles as settings } from "./settingsParts.tsx";
@@ -19,7 +20,6 @@ import { hubApi } from "./voice.ts";
 
 const local = stylex.create({
   toggle: { display: "flex", alignItems: "center", gap: space.lg, marginBottom: space.sm },
-  toggleLabel: { fontSize: 13 },
   inputs: { display: "flex", alignItems: "center", gap: space.sm },
   cell: { flexBasis: 0, flexGrow: 1, minWidth: 0 },
   arrow: { flexShrink: 0, color: color.mutedForeground },
@@ -72,13 +72,13 @@ export function Dictionary({
           autoComplete: "off",
           spellCheck: false,
           onKeyDown: saveOnEnter,
+          invalid: invalid(field),
           "aria-describedby": invalid(field) ? problemId : undefined,
-          ...stylex.props(styles.input, invalid(field) && styles.invalid),
         });
         return (
           <>
             <div {...stylex.props(local.toggle)}>
-              <label htmlFor={switchId} {...stylex.props(settings.rowText, local.toggleLabel)}>
+              <label htmlFor={switchId} {...stylex.props(settings.rowText, settings.rowTitle)}>
                 Replace with other text
               </label>
               <Switch
@@ -90,12 +90,12 @@ export function Dictionary({
             <div {...stylex.props(styles.field)}>
               <div {...stylex.props(local.inputs)}>
                 <Field.Root invalid={invalid("phrase")} {...stylex.props(local.cell)}>
-                  <Field.Control
+                  <Input
                     value={draft.phrase}
                     maxLength={PHRASE_MAX_LENGTH}
                     placeholder={replacing ? "Phrase" : "Add a new word"}
                     aria-label={replacing ? "Phrase" : "Word or phrase"}
-                    onValueChange={(phrase) => edit({ phrase })}
+                    onChange={(event) => edit({ phrase: event.currentTarget.value })}
                     {...input("phrase")}
                   />
                 </Field.Root>
@@ -105,12 +105,12 @@ export function Dictionary({
                       →
                     </span>
                     <Field.Root invalid={invalid("replacement")} {...stylex.props(local.cell)}>
-                      <Field.Control
+                      <Input
                         value={replacement}
                         maxLength={REPLACEMENT_MAX_LENGTH}
                         placeholder="Replace with"
                         aria-label="Replace with"
-                        onValueChange={(text) => edit({ replacement: text })}
+                        onChange={(event) => edit({ replacement: event.currentTarget.value })}
                         {...input("replacement")}
                       />
                     </Field.Root>
