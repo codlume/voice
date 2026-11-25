@@ -50,11 +50,18 @@ const fadesOut = (key: LookKey) => key !== "idle" && key !== "inserted";
 
 const fadeIn = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
 const fadeOut = stylex.keyframes({ from: { opacity: 1 }, to: { opacity: 0 } });
-// A highlight that sweeps across the label, in 30 steps rather than every frame.
-const shine = stylex.keyframes({
-  from: { backgroundPosition: "-4.5rem 0, 0 0" },
-  to: { backgroundPosition: "calc(100% + 4.5rem) 0, 0 0" },
+// A bright copy of the label, seen through a band that sweeps across it in 30 steps. The band moves
+// one way and the copy the other, so the text stays put and only transforms animate: the
+// compositor moves them without repainting the text.
+const sweep = stylex.keyframes({
+  from: { transform: "translateX(0)" },
+  to: { transform: "translateX(100%)" },
 });
+const sweepBack = stylex.keyframes({
+  from: { transform: "translateX(0)" },
+  to: { transform: "translateX(-100%)" },
+});
+const SHINE = "4.5rem";
 const draw = stylex.keyframes({ from: { strokeDashoffset: 23 }, to: { strokeDashoffset: 0 } });
 
 const styles = stylex.create({
@@ -143,15 +150,30 @@ const styles = stylex.create({
   },
   barScale: (scale: number) => ({ transform: `scaleY(${scale})` }),
   shimmer: {
-    color: { default: "transparent", [motion.reduced]: darkPill.text },
-    backgroundImage: {
-      default: `linear-gradient(to right, transparent, ${darkPill.glyph}, transparent), linear-gradient(${darkPill.muted}, ${darkPill.muted})`,
-      [motion.reduced]: "none",
-    },
-    backgroundSize: "4.5rem 100%, 100% 100%",
-    backgroundRepeat: "no-repeat",
-    backgroundClip: "text",
-    animationName: { default: shine, [motion.reduced]: "none" },
+    position: "relative",
+    display: "inline-block",
+    color: { default: darkPill.muted, [motion.reduced]: darkPill.text },
+  },
+  shine: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: `-${SHINE}`,
+    display: { default: "block", [motion.reduced]: "none" },
+    width: `calc(100% + 2 * ${SHINE})`,
+    maskImage: `linear-gradient(to right, transparent 0, black calc(${SHINE} / 2), transparent ${SHINE}, transparent 100%)`,
+    maskRepeat: "no-repeat",
+    animationName: sweep,
+  },
+  shineCounter: { display: "block", width: "100%", animationName: sweepBack },
+  shineText: {
+    display: "block",
+    width: `calc(100% - 2 * ${SHINE})`,
+    marginInlineStart: SHINE,
+    color: darkPill.glyph,
+    "::after": { content: "attr(data-text)" },
+  },
+  looping: {
     animationDuration: "2.2s",
     animationTimingFunction: "steps(30)",
     animationIterationCount: "infinite",
@@ -222,9 +244,17 @@ const onVisibility = (change: () => void) => {
 const pageVisible = () => document.visibilityState === "visible";
 
 function Shimmer({ text }: { text: string }) {
-  const visible = useSyncExternalStore(onVisibility, pageVisible);
+  const paused = !useSyncExternalStore(onVisibility, pageVisible) && styles.paused;
   return (
-    <span {...stylex.props(styles.text, styles.shimmer, !visible && styles.paused)}>{text}</span>
+    <span {...stylex.props(styles.text, styles.shimmer)}>
+      {text}
+      <span aria-hidden="true" {...stylex.props(styles.shine, styles.looping, paused)}>
+        <span {...stylex.props(styles.shineCounter, styles.looping, paused)}>
+          {/* Drawn from the attribute, so the label is read and counted once. */}
+          <span data-text={text} {...stylex.props(styles.shineText)} />
+        </span>
+      </span>
+    </span>
   );
 }
 
