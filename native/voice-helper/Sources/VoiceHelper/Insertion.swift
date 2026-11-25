@@ -126,7 +126,7 @@ final class Insertion {
         output.log(.info, "insert \(id): \(branch)" + (why.map { " (\($0))" } ?? ""))
     }
 
-    func insert(id: String, text: String, html: String?, keepOnClipboard: Bool, target: InsertTarget?) {
+    func insert(id: String, text: String, html: String?, keepOnClipboard: Bool, target: InsertTarget?, deadline: InsertDeadline) {
         dispatchPrecondition(condition: .onQueue(.main))
         defer { target?.cancel() }
         let checked = focusInputStamp()
@@ -152,7 +152,7 @@ final class Insertion {
         } else if focused != nil, pasteOnly != nil {
             outcome = .paste(.notKeyFocus)
         } else {
-            outcome = insertViaAccessibility(focused: focused, text: text)
+            outcome = insertViaAccessibility(focused: focused, text: text, deadline: deadline)
         }
         switch outcome {
         case .inserted(let route):
@@ -162,21 +162,23 @@ final class Insertion {
         case .unknown:
             if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
             finish(id, .refused(.failed), why: "write timed out")
+        case .tooLate:
+            finish(id, .refused(.failed), why: "tooLate before write")
         case .paste(let route):
             paste(
                 id: id, text: text, html: html, route: route, keepOnClipboard: keepOnClipboard, pid: target?.pid, checked: checked,
-                why: pasteOnly)
+                deadline: deadline, why: pasteOnly)
         case .unchanged(let focused, let before):
             // Some apps apply the write after returning. One re-read separates a slow app from
             // Chromium's silent no-op before the paste fallback risks a second copy.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + rereadDelay) { [self] in
                 if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
                     finish(id, .accessibility(.late))
                 } else {
                     if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
                     paste(
                         id: id, text: text, html: html, route: .unchanged, keepOnClipboard: keepOnClipboard, pid: target?.pid,
-                        checked: checked)
+                        checked: checked, deadline: deadline)
                 }
             }
         }
@@ -234,7 +236,7 @@ final class Insertion {
 
     private enum AccessibilityOutcome {
         case inserted(AccessibilityRoute)
-        case notEditable, unknown
+        case notEditable, unknown, tooLate
         case paste(PasteRoute)
         case unchanged(AXUIElement, before: AXTextState)
     }
@@ -250,13 +252,19 @@ final class Insertion {
         return isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute)
     }
 
-    private func insertViaAccessibility(focused: AXUIElement?, text: String) -> AccessibilityOutcome {
+    private func insertViaAccessibility(focused: AXUIElement?, text: String, deadline: InsertDeadline) -> AccessibilityOutcome {
         guard let focused else { return .paste(.noElement) }
-        let before = textState(of: focused)
-        let sent = DispatchTime.now()
-        let error = AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString)
-        let answer = AXWriteAnswer(error, waited: elapsed(since: sent), timeout: TimeInterval(axMessagingTimeout))
-        switch AXWritePlan(answer: answer, before: before, after: { textState(of: focused) }) {
+        let attempt = accessibilityWrite(
+            before: { textState(of: focused) },
+            deadlinePassed: { deadline.passed() },
+            write: {
+                let sent = DispatchTime.now()
+                let error = AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString)
+                return AXWriteAnswer(error, waited: elapsed(since: sent), timeout: TimeInterval(axMessagingTimeout))
+            },
+            after: { textState(of: focused) })
+        guard case .wrote(let plan, let before) = attempt else { return .tooLate }
+        switch plan {
         case .inserted(let route): return .inserted(route)
         case .paste(let route): return .paste(route)
         case .reread: return .unchanged(focused, before: before)
@@ -269,6 +277,7 @@ final class Insertion {
         return AXUIElementIsAttributeSettable(element, attribute as CFString, &settable) == .success && settable.boolValue
     }
 
+    /// Makes at most `textStateMaxReads` accessibility calls.
     private func textState(of element: AXUIElement) -> AXTextState {
         var selection: AXTextRange?
         if case .value(let range) = focusAttribute(element, kAXSelectedTextRangeAttribute) {
@@ -290,7 +299,7 @@ final class Insertion {
 
     private func paste(
         id: String, text: String, html: String?, route: PasteRoute, keepOnClipboard: Bool, pid: pid_t?, checked: PressStamp,
-        why: String? = nil
+        deadline: InsertDeadline, why: String? = nil
     ) {
         var clipboardSaveMs = 0.0
         let attempt = pasteKeystroke(
@@ -299,6 +308,7 @@ final class Insertion {
                 defer { clipboardSaveMs = saving.millisecondsToNow() }
                 return keepOnClipboard ? nil : pasteboard.save()
             },
+            deadlinePassed: { deadline.passed() },
             refusal: {
                 KeystrokeDestination(
                     presses: focusInputStamp(), frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
@@ -323,6 +333,21 @@ final class Insertion {
 }
 
 let axMessagingTimeout: Float = 0.3
+
+/// The selection range, the character count, and the value when the app gives no count.
+private let textStateMaxReads = 3
+
+private let rereadDelay: TimeInterval = 0.05
+
+/// The longest an insert whose text can reach the app takes to answer. Its last write starts
+/// before the deadline. The slowest way on from there is an accessibility write, the read
+/// after it, then the re-read's wait and its read, with every call running out the app's
+/// messaging timeout. A paste answers once its keystroke is posted. A clipboard save has no
+/// bound, but an insert that it carries past the deadline is refused and writes nothing.
+/// `test-fixtures/helper-protocol.json` pins the bound, and main waits longer than that for
+/// `insert.result`.
+let insertMaxDuration = InsertDeadline.window + TimeInterval(axMessagingTimeout) * Double(1 + 2 * textStateMaxReads)
+    + rereadDelay
 
 private let focusSnapshotRetryDelay: TimeInterval = 0.2
 

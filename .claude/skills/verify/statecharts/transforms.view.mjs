@@ -6,11 +6,8 @@ const RUNNING = {
   replacing: "Replacing the selection",
 };
 
-const LATE = "Pill says text unchanged, but it was replaced";
-
 const outcomeLabel = (v) => {
   if (v.outcome === "replaced") return "Replaced";
-  if (v.text !== "original") return LATE;
   if (v.outcome === "cancelled") return "Cancelled. Text unchanged";
   if (v.outcome === "notReplaced") return "Not replaced. Result is in Voice";
   return "Refused or failed. Text unchanged";
@@ -30,21 +27,10 @@ export const group = (v) => {
 
 export const colors = { idle: "tan", running: "blue", outcome: "teal" };
 
-// An earlier run's write that lands late reaches the same chart state from every state of a
-// later run. The chart keeps the one arrow from "Not replaced" and hides the rest. It also
-// hides a new shortcut pressed while the pill still shows an outcome, which repeats the
-// arrows out of Ready.
-const hidden = (action, from, to) => {
-  if (from.phase === "done" && action === "YouPressTheShortcutModelMissing") return true;
-  if (to.phase === "done" && from.phase !== "done" && outcomeLabel(to) === LATE) {
-    return from.phase !== "replacing" || from.text !== "original";
-  }
-  return (
-    action === "HelperWriteLands" &&
-    from.phase === "done" &&
-    !(from.outcome === "notReplaced" && from.text === "original")
-  );
-};
+// The chart hides a new shortcut pressed while the pill still shows an outcome, which repeats
+// the arrows out of Ready.
+const hidden = (action, from) =>
+  from.phase === "done" && action === "YouPressTheShortcutModelMissing";
 
 const label = (action, from, to) => {
   switch (action) {
@@ -72,7 +58,7 @@ const label = (action, from, to) => {
         ? "the rewrite finishes"
         : "the rewrite fails, is unusable, or is too long";
     case "HelperWriteLands":
-      return from.phase === "replacing" ? "the write lands" : "the timed-out write lands late";
+      return "the write lands";
     case "HelperWriteRefused":
     case "WriteTimesOut":
       return "the write is refused or times out";
@@ -83,5 +69,4 @@ const label = (action, from, to) => {
   }
 };
 
-export const step = (action, from, to) =>
-  hidden(action, from, to) ? null : label(action, from, to);
+export const step = (action, from, to) => (hidden(action, from) ? null : label(action, from, to));

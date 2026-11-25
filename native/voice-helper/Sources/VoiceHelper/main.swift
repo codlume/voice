@@ -107,7 +107,9 @@ final class Helper {
         case .microphoneTestStop(let id):
             capture.stopTest(id: id)
         case .insert(let id, let text, let html, let keepOnClipboard):
-            insertion.insert(id: id, text: text, html: html, keepOnClipboard: keepOnClipboard, target: capture.takeLastTarget(id: id) ?? selection.take(id: id))
+            insertion.insert(
+                id: id, text: text, html: html, keepOnClipboard: keepOnClipboard,
+                target: capture.takeLastTarget(id: id) ?? selection.take(id: id), deadline: InsertDeadline(receivedAt: receivedAt))
         case .selectionRead(let id):
             selection.read(id: id)
         case .transformEnd(let id):
