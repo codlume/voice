@@ -1,13 +1,20 @@
 // View for meetings.tla: the meeting recording flow in the words of the user and maintainer.
 const ready = (v) => {
-  if (v.failed) return "Ready, final pass failed, audio kept";
+  if (v.failed) {
+    return v.partial
+      ? "Ready, final pass failed, part of the audio deleted"
+      : "Ready, final pass failed, audio kept";
+  }
   if (!v.final) {
     return v.audio === "kept"
-      ? "Ready, resume cancelled, its first audio on disk"
+      ? "Ready, audio without a final transcript left on disk"
       : "Ready, live transcript only, audio deleted";
   }
   return v.audio === "kept" ? "Ready, audio left on disk" : "Ready, audio deleted";
 };
+
+const deleting = (v) =>
+  v.final ? "Final transcript saved, deleting audio" : "Live transcript only, deleting audio";
 
 const labels = {
   none: "No meeting",
@@ -20,17 +27,21 @@ const labels = {
   draining: "Catching up the live transcript",
   confirming: "Started by mistake?",
   finalizing: "Final pass",
-  deletingAudio: "Final transcript saved, deleting audio",
+  deletingKeptAudio: "Deleting the kept audio",
   gone: "Removed",
 };
 
-export const state = (v) => (v.status === "ready" ? ready(v) : labels[v.status]);
+export const state = (v) => {
+  if (v.status === "ready") return ready(v);
+  return v.status === "deletingAudio" ? deleting(v) : labels[v.status];
+};
 
 export const group = (v) => {
   if (["starting", "resuming", "reopening", "recording", "paused"].includes(v.status)) {
     return "Capture";
   }
-  if (["finishing", "draining", "confirming", "finalizing", "deletingAudio"].includes(v.status)) {
+  const finishing = ["finishing", "draining", "confirming", "finalizing"];
+  if ([...finishing, "deletingAudio", "deletingKeptAudio"].includes(v.status)) {
     return "Finishing";
   }
   return v.status === "ready" ? "Done" : "No meeting";
@@ -92,10 +103,15 @@ export function step(action, from, to) {
       return "you press Try again";
     case "YouDeleteAudio":
       return "you press Delete audio";
+    case "KeptAudioDeleted":
+      return "the audio files are deleted";
+    case "KeptAudioDeleteFails":
+      return "deleting fails, so Voice says it could not delete the audio";
     case "VoiceRestarts":
       if (to.status === "gone")
         return "the start fails, you press Stop, or Voice closes before any audio";
-      if (["ready", "deletingAudio", "reopening"].includes(from.status)) return restart;
+      if (["ready", "deletingAudio", "deletingKeptAudio", "reopening"].includes(from.status))
+        return restart;
       if (["paused", "resuming"].includes(from.status)) return `you press Stop, or ${restart}`;
       if (from.status === "recording") return stopOrLimit;
       if (from.status === "starting")
