@@ -982,6 +982,38 @@ describe("meeting recorder", () => {
     expect(audioFilesIn(h.folder(id))).toEqual([]);
   });
 
+  test("a resume that fails to start keeps the audio a failed final pass kept", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    h.emit({ type: "meeting.finalizeFailed", id, reason: "transcript", message: "no model" });
+    await h.settle();
+
+    expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    h.emit({ type: "meeting.failed", id, message: "the microphone could not be opened" });
+    await h.settle();
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: "other" });
+    expect(audioFilesIn(h.folder(id))).toEqual(AUDIO);
+  });
+
+  test("a resume that fails to start while meeting.json cannot be written still stops and returns to ready", async () => {
+    const h = harness();
+    const id = await finishedMeeting(h);
+    await h.recorder.resume(id);
+    await h.settle();
+    await meetingWritesFail(h.folder(id), async () => {
+      h.emit({ type: "meeting.failed", id, message: "the microphone could not be opened" });
+      await h.settle();
+    });
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
+    expect(h.notices.at(-1)).toBe("resumeFailed");
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
+  });
+
   test("deleting a meeting that records stops its capture, its timers and its folder", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const h = harness();
