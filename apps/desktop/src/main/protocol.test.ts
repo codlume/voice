@@ -17,6 +17,7 @@ import {
   type HelperCommand,
   type HelperEvent,
 } from "./protocol.ts";
+import { INSERT_TIMEOUT_MS } from "./session.ts";
 
 vi.mock("node:child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:child_process")>()),
@@ -462,6 +463,7 @@ const InvalidCaseSchema = Schema.Struct({ name: Schema.String, line: Schema.Stri
 const CorpusSchema = Schema.Struct({
   protocolVersion: Schema.Int,
   selectionReadMaxMs: Schema.Finite,
+  insertMaxMs: Schema.Finite,
   languages: Schema.Array(Schema.String),
   versions: Schema.Array(Schema.Struct({ version: Schema.Int, compatible: Schema.Boolean })),
   commands: Schema.Array(RequiredCaseSchema),
@@ -686,6 +688,10 @@ function startContractHelper(configure: () => HelperCommand[] = () => []) {
 describe("shared helper protocol corpus", () => {
   test("main waits for a selection read longer than the helper can take to answer", () => {
     expect(READ_TIMEOUT_MS).toBeGreaterThan(corpus.selectionReadMaxMs);
+  });
+
+  test("main waits for an insert longer than the helper can take to answer", () => {
+    expect(INSERT_TIMEOUT_MS).toBeGreaterThan(corpus.insertMaxMs);
   });
 
   test("covers every command, event and language without duplicate cases", () => {

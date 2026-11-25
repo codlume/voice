@@ -1,6 +1,7 @@
 {
   "protocolVersion": 21,
   "selectionReadMaxMs": 4400,
+  "insertMaxMs": 6150,
   "languages": [
     "auto",
     "en",
