@@ -6,6 +6,8 @@ import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { DayKey } from "../shared/insights.ts";
 import type { Assignment } from "../shared/style.ts";
 import { Card } from "./Card.tsx";
+import { Popover, PopoverPopup, PopoverTrigger } from "./Popover.tsx";
+import { ProgressBar } from "./Skeleton.tsx";
 import {
   cellLabel,
   DAY_MS,
@@ -20,7 +22,7 @@ import {
 import type { HelpAnchor } from "./help.ts";
 import { HelpTitle } from "./HelpPopover.tsx";
 import { appNames, CATEGORY_LABELS } from "./styleView.ts";
-import { color, font, leading, radius, space, text } from "./tokens.stylex.ts";
+import { color, icon, leading, motion, radius, space, text } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useInsights } from "./useInsights.ts";
 import { useInstalledApps } from "./useInstalledApps.ts";
@@ -32,16 +34,20 @@ const MAX_WEEKS = 53;
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
-  lede: { margin: 0, marginTop: space.sm, color: color.mutedForeground, fontSize: 15 },
-  stats: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: space.md },
-  stat: { display: "flex", flexDirection: "column", gap: 6, padding: space.lg },
+  header: { display: "flex", flexDirection: "column", gap: space.md },
+  lede: { margin: 0, color: color.mutedForeground, fontSize: text.sm, lineHeight: leading.sm },
+  cards: { display: "flex", flexDirection: "column", gap: space.base },
+  stats: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: space.base },
+  // Adapted settings group text (MIT, see THIRD_PARTY_NOTICES.md): 500 for labels, 600 for numbers.
+  stat: { display: "flex", flexDirection: "column", gap: space.xs, padding: space.base },
   label: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    gap: space.xxs,
     margin: 0,
-    fontSize: 13,
-    fontWeight: 600,
+    fontSize: text.sm,
+    fontWeight: 500,
+    lineHeight: leading.sm,
   },
   value: {
     margin: 0,
@@ -51,46 +57,64 @@ const styles = stylex.create({
     letterSpacing: "-0.025em",
     fontVariantNumeric: "tabular-nums",
   },
-  unit: { fontFamily: font.sans, fontSize: 14, color: color.mutedForeground },
-  detail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  fixes: { margin: 0, padding: 0, listStyle: "none" },
+  unit: {
+    color: color.mutedForeground,
+    fontSize: text.sm,
+    fontWeight: 400,
+    lineHeight: leading.sm,
+    letterSpacing: "normal",
+  },
+  detail: { margin: 0, color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
+  fixes: { display: "flex", flexDirection: "column", margin: 0, padding: 0, listStyle: "none" },
   fix: {
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    gap: space.xxs,
     color: color.mutedForeground,
-    fontSize: 12.5,
+    fontSize: text.xs,
+    lineHeight: leading.xs,
   },
-  fixCount: { marginInlineStart: "auto", fontVariantNumeric: "tabular-nums" },
+  count: { marginInlineStart: "auto", fontVariantNumeric: "tabular-nums" },
+  // Adapted ghost icon button (MIT, see THIRD_PARTY_NOTICES.md), sized for a line of text.
   info: {
     display: "grid",
     placeItems: "center",
-    width: 16,
-    height: 16,
+    flexShrink: 0,
+    width: 20,
+    height: 20,
     padding: 0,
     borderWidth: 0,
-    borderRadius: radius.round,
-    backgroundColor: "transparent",
-    color: { default: color.mutedForeground, ":hover": color.foreground },
+    borderRadius: radius.small,
+    backgroundColor: {
+      default: "transparent",
+      ":hover": color.accent,
+      ":is([data-popup-open])": color.accent,
+    },
+    color: {
+      default: color.mutedForeground,
+      ":hover": color.foreground,
+      ":is([data-popup-open])": color.foreground,
+    },
+    transitionProperty: "background-color, color",
+    transitionDuration: { default: motion.fast, [motion.reduced]: "0s" },
     cursor: "default",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
   },
-  wrap: { maxWidth: 260, whiteSpace: "normal" },
   streaks: { display: "flex", gap: space.xl },
   heatmap: {
     display: "grid",
     gridTemplateColumns: "auto minmax(0, 1fr)",
     columnGap: space.sm,
-    rowGap: 4,
-    marginTop: space.md,
+    rowGap: space.xxs,
+    marginTop: space.sm,
   },
   months: {
     display: "grid",
     gridAutoColumns: CELL,
     columnGap: GAP,
-    height: 14,
+    height: leading.xxs,
     color: color.mutedForeground,
-    fontSize: 11,
+    fontSize: text.xxs,
+    lineHeight: leading.xxs,
   },
   month: (column: number) => ({
     gridColumnStart: column + 1,
@@ -102,7 +126,7 @@ const styles = stylex.create({
     gridTemplateRows: `repeat(7, ${CELL}px)`,
     rowGap: GAP,
     color: color.mutedForeground,
-    fontSize: 10,
+    fontSize: text.xxs,
     lineHeight: `${CELL}px`,
   },
   grid: {
@@ -112,9 +136,10 @@ const styles = stylex.create({
     gridAutoColumns: CELL,
     gap: GAP,
   },
+  // The global focus ring sits inside a control, which a 12px cell cannot fit, so it sits outside.
   cell: {
     borderRadius: 3,
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
+    outline: { default: "none", ":focus-visible": `2px solid ${color.foreground}` },
     outlineOffset: 1,
   },
   legend: {
@@ -123,12 +148,13 @@ const styles = stylex.create({
     alignItems: "center",
     justifyContent: "flex-end",
     gap: GAP,
-    marginTop: 4,
+    marginTop: space.xxs,
     color: color.mutedForeground,
-    fontSize: 11,
+    fontSize: text.xxs,
+    lineHeight: leading.xxs,
   },
   legendCell: { width: CELL, height: CELL },
-  legendLabel: { marginInline: 4 },
+  legendLabel: { marginInline: space.xxs },
   usage: {
     display: "flex",
     flexWrap: "wrap",
@@ -151,36 +177,38 @@ const styles = stylex.create({
     gridTemplateColumns: "9.5rem minmax(0, 1fr) 2.5rem 6.5rem",
     alignItems: "center",
     gap: space.md,
-    fontSize: 13,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     fontVariantNumeric: "tabular-nums",
   },
   unused: { color: color.mutedForeground },
-  bar: { height: 6, overflow: "hidden", borderRadius: radius.round, backgroundColor: color.border },
-  fill: (share: number) => ({
-    display: "block",
-    width: `${share}%`,
-    height: "100%",
-    borderRadius: radius.round,
-    backgroundColor: color.primary,
-  }),
   share: { textAlign: "right" },
-  sessions: { color: color.mutedForeground, fontSize: 12.5 },
-  subhead: { margin: 0, marginBottom: space.sm, fontSize: 12.5, fontWeight: 600 },
+  sessions: { color: color.mutedForeground, fontSize: text.xs, lineHeight: leading.xs },
+  subhead: {
+    margin: 0,
+    marginBottom: space.sm,
+    color: color.mutedForeground,
+    fontSize: text.xs,
+    fontWeight: 500,
+    lineHeight: leading.xs,
+  },
   app: {
     display: "flex",
     gap: space.md,
-    color: color.mutedForeground,
-    fontSize: 12.5,
+    fontSize: text.sm,
+    lineHeight: leading.sm,
     fontVariantNumeric: "tabular-nums",
   },
   appName: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  appShare: { marginInlineStart: "auto", color: color.mutedForeground },
 });
 
+// The heatmap ramps the accent over transparent, so cells read the same on any card fill.
 const shades = stylex.create({
-  none: { backgroundColor: color.border },
-  low: { backgroundColor: `color-mix(in srgb, ${color.primary} 30%, ${color.card})` },
-  medium: { backgroundColor: `color-mix(in srgb, ${color.primary} 55%, ${color.card})` },
-  high: { backgroundColor: `color-mix(in srgb, ${color.primary} 78%, ${color.card})` },
+  none: { backgroundColor: `color-mix(in srgb, ${color.foreground} 7%, transparent)` },
+  low: { backgroundColor: `color-mix(in srgb, ${color.primary} 30%, transparent)` },
+  medium: { backgroundColor: `color-mix(in srgb, ${color.primary} 55%, transparent)` },
+  high: { backgroundColor: `color-mix(in srgb, ${color.primary} 78%, transparent)` },
   top: { backgroundColor: color.primary },
 });
 const levels = [shades.none, shades.low, shades.medium, shades.high, shades.top] as const;
@@ -203,21 +231,20 @@ function useWeeksThatFit(): [(element: HTMLElement | null) => void, number | nul
 
 function Info({ label, children }: { label: string; children: string }) {
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger
-        render={<button type="button" />}
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={150}
         aria-label={`About ${label}`}
         aria-description={children}
         {...stylex.props(styles.info)}
       >
-        <InfoIcon size={13} aria-hidden="true" />
-      </Tooltip.Trigger>
-      <Tooltip.Portal>
-        <Tooltip.Positioner side="top" sideOffset={6} className={tooltipPositionerClass()}>
-          <Tooltip.Popup className={tooltipPopupClass(styles.wrap)}>{children}</Tooltip.Popup>
-        </Tooltip.Positioner>
-      </Tooltip.Portal>
-    </Tooltip.Root>
+        <InfoIcon size={icon.sm} aria-hidden="true" />
+      </PopoverTrigger>
+      <PopoverPopup side="top" title={label.charAt(0).toUpperCase() + label.slice(1)}>
+        {children}
+      </PopoverPopup>
+    </Popover>
   );
 }
 
@@ -351,8 +378,8 @@ function WhereYouDictate({ where }: { where: UsageView }) {
               {where.categories.map(({ category, words, sessions, share }) => (
                 <li key={category} {...stylex.props(styles.row, words === 0 && styles.unused)}>
                   <span>{CATEGORY_LABELS[category]}</span>
-                  <span aria-hidden="true" {...stylex.props(styles.bar)}>
-                    <span {...stylex.props(styles.fill(share))} />
+                  <span aria-hidden="true">
+                    <ProgressBar value={share} label={CATEGORY_LABELS[category]} />
                   </span>
                   <span {...stylex.props(styles.share)}>{share}%</span>
                   <span {...stylex.props(styles.sessions)}>
@@ -369,7 +396,7 @@ function WhereYouDictate({ where }: { where: UsageView }) {
                     <span title={name} {...stylex.props(styles.appName)}>
                       {name}
                     </span>
-                    <span {...stylex.props(styles.fixCount)}>{share}%</span>
+                    <span {...stylex.props(styles.appShare)}>{share}%</span>
                   </li>
                 ))}
               </ol>
@@ -401,15 +428,20 @@ export const Insights = memo(function Insights({
 
   return (
     <div {...stylex.props(styles.page)}>
-      <header>
+      <header {...stylex.props(styles.header)}>
         <HelpTitle page="insights">Insights</HelpTitle>
         <p {...stylex.props(styles.lede)}>
           Counted on this Mac from your dictations. Voice keeps the numbers and the apps, never your
           words.
         </p>
+        {view?.totalWords === 0 && (
+          <p {...stylex.props(styles.lede)}>
+            Dictate in any app, or in Try it on Home, to start counting.
+          </p>
+        )}
       </header>
       {view && (
-        <>
+        <div {...stylex.props(styles.cards)}>
           <div {...stylex.props(styles.stats)}>
             <Stat
               label="Pace"
@@ -452,7 +484,7 @@ export const Insights = memo(function Insights({
                         Filler words like "um," false starts, and other words cleanup corrected
                       </Info>
                       {view.fixes.corrected < view.fixes.total && (
-                        <span {...stylex.props(styles.fixCount)}>
+                        <span {...stylex.props(styles.count)}>
                           {view.fixes.corrected.toLocaleString()}
                         </span>
                       )}
@@ -463,7 +495,7 @@ export const Insights = memo(function Insights({
                       Dictionary fixes
                       <Info label="dictionary fixes">Corrections from your dictionary</Info>
                       {view.fixes.dictionaryFixes < view.fixes.total && (
-                        <span {...stylex.props(styles.fixCount)}>
+                        <span {...stylex.props(styles.count)}>
                           {view.fixes.dictionaryFixes.toLocaleString()}
                         </span>
                       )}
@@ -491,7 +523,7 @@ export const Insights = memo(function Insights({
             <Activity heatmap={weeks === null ? null : view.heatmap} fit={fit} />
           </Stat>
           {where && <WhereYouDictate where={where} />}
-        </>
+        </div>
       )}
     </div>
   );
