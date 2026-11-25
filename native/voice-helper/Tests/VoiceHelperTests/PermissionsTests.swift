@@ -51,7 +51,7 @@ struct PermissionsTests {
         _ = try? await lines.wait(for: "permissions", timeout: .milliseconds(200))
         firstMayAnswer.signal()
 
-        let deadline = ContinuousClock.now + hangBound
+        let deadline = ContinuousClock.now + .seconds(5)
         while lines.snapshot().count < 2, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
         #expect(lines.snapshot().map { $0["microphone"] as? String } == ["denied", "granted"])
     }

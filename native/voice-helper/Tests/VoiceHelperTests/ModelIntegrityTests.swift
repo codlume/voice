@@ -62,8 +62,8 @@ struct ModelIntegrityTests {
         }
         let transcriber = Transcriber(modelsDir: dir, output: output)
         transcriber.prepare(download: false)
-        let events = try await lines.wait(for: "asr.status").filter { $0["type"] as? String == "asr.status" }
-        let final = try await waitForTerminal(lines)
+        let events = try await lines.wait(for: "asr.status", timeout: .seconds(20)).filter { $0["type"] as? String == "asr.status" }
+        let final = try await waitForTerminal(lines, timeout: .seconds(20))
         #expect(events.first?["state"] as? String == "loading", "files that stat as present start as a load, never a download")
         #expect(final["state"] as? String == "failed")
         #expect(final["message"] as? String == "The speech model is damaged: 21 files are missing or altered. Retry downloads only those files.")
@@ -96,13 +96,13 @@ struct ModelIntegrityTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let transcriber = Transcriber(modelsDir: dir, output: output, downloads: StalledDownloads.configuration())
         transcriber.prepare(download: true)
-        let deadline = ContinuousClock.now + hangBound
+        let deadline = ContinuousClock.now + .seconds(5)
         while !StalledDownloads.started, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(transcriber.sessionState == .downloading)
 
         transcriber.remove()
 
-        let final = try await waitForTerminal(lines)
+        let final = try await waitForTerminal(lines, timeout: .seconds(5))
         let states = lines.snapshot().filter { $0["type"] as? String == "asr.status" }.compactMap { $0["state"] as? String }
         #expect(final["state"] as? String == "missing")
         #expect(!states.contains("failed"), "a cancel never flashes a failure first")
@@ -183,7 +183,7 @@ struct ModelIntegrityTests {
         try Data("{}".utf8).write(to: dir.appendingPathComponent("plda-parameters.json"))
         let diarizer = SpeakerDiarizer(modelsDir: dir, output: output)
         diarizer.download()
-        let deadline = ContinuousClock.now + hangBound
+        let deadline = ContinuousClock.now + .seconds(20)
         while diarizer.state == .downloading, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(diarizer.state == .failed)
         var message = ""
@@ -204,7 +204,7 @@ struct ModelIntegrityTests {
         }
     }
 
-    private func waitForTerminal(_ lines: EmittedLines, timeout: Duration = hangBound) async throws -> [String: Any] {
+    private func waitForTerminal(_ lines: EmittedLines, timeout: Duration) async throws -> [String: Any] {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             let statuses = lines.snapshot().filter { $0["type"] as? String == "asr.status" }

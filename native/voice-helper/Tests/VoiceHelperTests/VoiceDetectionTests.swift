@@ -13,7 +13,7 @@ struct VoiceDetectionTests {
     }
 
     private func logged(_ prefix: String) async throws -> String {
-        let deadline = ContinuousClock.now + hangBound
+        let deadline = ContinuousClock.now + .seconds(20)
         while true {
             if let message = logs().first(where: { $0.hasPrefix(prefix) }) { return message }
             guard ContinuousClock.now < deadline else { throw ProtocolError("no log starting \(prefix): \(logs())") }

@@ -5,11 +5,6 @@ import VoiceHelperCore
 import os
 @testable import VoiceHelper
 
-/// A wait ends when its signal arrives, however long a loaded machine takes to produce it.
-/// This bound only stops a helper that never sends the signal from hanging the run,
-/// so it is several times longer than the whole suite takes.
-let hangBound: Duration = .seconds(120)
-
 final class EmittedLines: @unchecked Sendable {
     private let pipe = Pipe()
     private let lock = NSLock()
@@ -57,7 +52,7 @@ final class EmittedLines: @unchecked Sendable {
         return unparseable.first
     }
 
-    func wait(for type: String, timeout: Duration = hangBound) async throws -> [[String: Any]] {
+    func wait(for type: String, timeout: Duration = .seconds(5)) async throws -> [[String: Any]] {
         let deadline = ContinuousClock.now + timeout
         while true {
             if let line = firstUnparseable() { throw ProtocolError("unparseable helper line: \(line)") }
