@@ -75,7 +75,8 @@ const styles = stylex.create({
     transitionTimingFunction: motion.drawer,
   },
   size: (width: number, height: number) => ({ width, height }),
-  idle: { opacity: 0.55, boxShadow: "none" },
+  // The hairline alone, so the resting handle still reads over a dark app.
+  idle: { opacity: 0.55, boxShadow: `inset 0 0 0 1px ${darkPill.line}` },
   open: {
     opacity: 1,
     boxShadow: `inset 0 0 0 1px ${darkPill.line}, ${darkPill.elevation}`,
