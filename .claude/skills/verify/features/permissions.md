@@ -35,10 +35,10 @@ node $V wait pill 'document.querySelector("[role=status]")?.dataset.view === "al
 node $V shot mic-refused pill
 printf 'up\n' | nc -U -w1 "$S"
 node $V click "Microphone is off. Click to allow" pill
-grep "permissions: opening System Settings for microphone" "$LOG"   # main.log from the launch output
+grep "permissions: opening System Settings for microphone" "$LOG"   # LOG is logPath from the launch output
 ```
 
-A test instance logs instead of opening System Settings. Without the click the pill goes back to `idle` after about 6 s.
+A test instance logs instead of opening System Settings. The pill goes back to `idle` about 6 s after the look appears, whether or not it was clicked.
 
 ### Tray
 
@@ -50,10 +50,11 @@ printf '{"type":"permissions","microphone":"granted","accessibility":"denied"}\n
 node $V tray                        # allow-accessibility first, then the usual items
 node $V tray allow-accessibility    # logs "opening System Settings for accessibility"
 printf '{"type":"permissions","accessibility":"notDetermined"}\n' | nc -U -w1 "$S"
-node $V tray allow-accessibility    # the fake helper answers Allow, and the item goes away
+node $V tray allow-accessibility    # the fake helper answers Allow
+node $V tray                        # a moment later the item is gone
 ```
 
-`globalThis.voiceTest.trayIconPng()` in main returns the tray icon as base64 PNG, so you can see the dot.
+`doctor` needs the Voice window, so it fails while the window is closed; `tray` still works. `globalThis.voiceTest.trayIconPng()` in main (through `evaluateInMain` in `scripts/voice-app.mjs`) returns the tray icon as base64 PNG, so you can see the dot.
 
 Stop with `node $V stop`.
 
