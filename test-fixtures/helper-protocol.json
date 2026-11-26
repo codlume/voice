@@ -918,6 +918,7 @@
       "parsed": {
         "type": "capture.failed",
         "id": "s1",
+        "reason": "device",
         "message": "Synthetic device gone"
       },
       "required": ["type", "id", "message"]

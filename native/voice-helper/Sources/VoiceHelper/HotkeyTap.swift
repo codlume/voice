@@ -20,7 +20,6 @@ final class HotkeyTap {
     private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
     private var tapSource: CFRunLoopSource?
-    private var retry: Timer?
     private var backstop: Timer?
     private var reportedFailure = false
 
@@ -68,10 +67,11 @@ final class HotkeyTap {
         perform { self.installOnTapThread() }
     }
 
+    /// Safe to repeat. Without the tap no release can arrive, so a hold still down ends here
+    /// rather than leaving the microphone open.
     func remove() {
         perform {
-            self.retry?.invalidate()
-            self.retry = nil
+            self.emit(self.hotkeys.reconcile(flags: 0))
             self.backstop?.invalidate()
             self.backstop = nil
             self.removeTap()
@@ -88,17 +88,7 @@ final class HotkeyTap {
             guard !CGEvent.tapIsEnabled(tap: tap) else { return }
             removeTap()
         }
-        if tryInstall() {
-            retry?.invalidate()
-            retry = nil
-            return
-        }
-        guard retry == nil else { return }
-        retry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            guard let self, self.tryInstall() else { return }
-            self.retry?.invalidate()
-            self.retry = nil
-        }
+        tryInstall()
     }
 
     private func removeTap() {
@@ -108,7 +98,7 @@ final class HotkeyTap {
         tap = nil
     }
 
-    private func tryInstall() -> Bool {
+    private func tryInstall() {
         let mask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.keyUp.rawValue)
         guard let port = CGEvent.tapCreate(
@@ -128,18 +118,18 @@ final class HotkeyTap {
                         : "hotkey tap unavailable: accessibility not granted"
                 ))
             }
-            return false
+            return
         }
         let source = CFMachPortCreateRunLoopSource(nil, port, 0)
         CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         tap = port
         tapSource = source
+        reportedFailure = false
         hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, meeting: meeting,
                           initialFlags: currentFlags())
         syncBackstop()
         send(.log(level: .info, message: "hotkey tap installed"))
-        return true
     }
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Bool {
@@ -148,7 +138,7 @@ final class HotkeyTap {
             // Anything that happened while the tap was off is gone; the release may be among it.
             reconcile()
             // A tap that stays off has lost Accessibility. It is replaced after this callback
-            // returns, at once or, until the grant is back, by the retry timer.
+            // returns, at once or, once the grant is back, by the Accessibility watch.
             if let tap, !CGEvent.tapIsEnabled(tap: tap) { perform { self.installOnTapThread() } }
             return false
         }

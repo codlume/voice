@@ -47,7 +47,7 @@ final class Helper {
             capture.isActive ? .capturing : selection.isActive ? .transforming : .idle
         }
         self.hotkeyTap = hotkeyTap
-        permissions = Permissions(output: output) { hotkeyTap.install() }
+        permissions = Permissions(output: output) { trusted in trusted ? hotkeyTap.install() : hotkeyTap.remove() }
         installedApps = InstalledApps(output: output)
         let transcriber = transcriber
         let diarizer = SpeakerDiarizer(modelsDir: modelsDir, output: output)
@@ -64,8 +64,9 @@ final class Helper {
         diarizer.reportStatus()
     }
 
-    func installHotkeyTap() {
+    func startHotkeyTap() {
         hotkeyTap.install()
+        permissions.startWatching()
     }
 
     @MainActor
@@ -156,6 +157,7 @@ final class Helper {
     func shutdown(then done: @escaping () -> Void) {
         guard !shuttingDown else { return }
         shuttingDown = true
+        permissions.stopWatching()
         hotkeyTap.remove()
         devices.shutdown()
         meetings.shutdown()
@@ -212,5 +214,5 @@ sigterm.setEventHandler {
 }
 sigterm.resume()
 
-helper.installHotkeyTap()
+helper.startHotkeyTap()
 RunLoop.main.run()

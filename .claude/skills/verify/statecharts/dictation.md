@@ -31,34 +31,37 @@ stateDiagram-v2
   }
   state "Flow Bar shows the result" as s5 {
     s6: Too short, Nothing heard, or an error
-    s7: Inserted or Pasted
-    s8: Not inserted
-    s9: Not confirmed
+    s7: Microphone is off. Click to allow
+    s8: Inserted or Pasted
+    s9: Not inserted
+    s10: Not confirmed
   }
-  state "Flow Bar shows processing" as s10 {
-    s11: Transcribing
-    s12: Cleaning up
-    s13: Inserting
+  state "Flow Bar shows processing" as s11 {
+    s12: Transcribing
+    s13: Cleaning up
+    s14: Inserting
   }
   [*] --> s0
   s0 --> s2: you press the key
   s2 --> s6: the mic fails or takes 3 s
+  s2 --> s7: macOS refuses the microphone
   s2 --> s3: the mic delivers audio
   s2 --> s4: you let go
   s3 --> s6: you let go within 250 ms
-  s3 --> s11: you let go or the mic changes or 10 min pass
+  s3 --> s12: you let go or the mic changes or 10 min pass
   s4 --> s6: the mic fails or takes 3 s or the mic delivers audio [you held under 250 ms]
-  s4 --> s11: the mic delivers audio [you held 250 ms or more]
-  s11 --> s0: you press Escape
-  s11 --> s6: the helper crashes or transcription fails or Voice hears nothing or transcription takes too long
-  s11 --> s12: Voice hears words [cleanup on]
-  s11 --> s13: Voice hears words [cleanup off]
-  s12 --> s13: cleanup returns text, or fails and the raw text goes in
-  s12 --> s6: cleanup returns nothing
-  s12 --> s8: the helper crashes
-  s13 --> s7: the app takes the text
-  s13 --> s8: the app refuses the text or the helper crashes or 6.5 s pass with no answer
-  s13 --> s9: the app does not answer the write in time
+  s4 --> s7: macOS refuses the microphone
+  s4 --> s12: the mic delivers audio [you held 250 ms or more]
+  s12 --> s0: you press Escape
+  s12 --> s6: the helper crashes or transcription fails or Voice hears nothing or transcription takes too long
+  s12 --> s13: Voice hears words [cleanup on]
+  s12 --> s14: Voice hears words [cleanup off]
+  s13 --> s14: cleanup returns text, or fails and the raw text goes in
+  s13 --> s6: cleanup returns nothing
+  s13 --> s9: the helper crashes
+  s14 --> s8: the app takes the text
+  s14 --> s9: the app refuses the text or the helper crashes or 6.5 s pass with no answer
+  s14 --> s10: the app does not answer the write in time
   s1 --> s0: you press Escape
   s1 --> s6: the helper crashes
   s5 --> s0: the Flow Bar clears
@@ -71,15 +74,16 @@ stateDiagram-v2
   class s4 breaks
   class s4 bugPath
   class s6 tan
-  class s7 teal
-  class s8 tan
-  class s9 yellow
-  class s11 blue
+  class s7 tan
+  class s8 teal
+  class s9 tan
+  class s10 yellow
   class s12 blue
   class s13 blue
+  class s14 blue
 ```
 
-The Flow Bar's `data-view` is `idle` while the mic starts, `listening` in Listening, and `processing` while Voice transcribes, cleans up, or inserts. After 30 s of transcribing, or 60 s while the speech model loads, it reads "Still transcribing". Escape in Transcribing, "Still transcribing" included, discards the session as it does in Listening. Inserted or Pasted shows `inserted`, and "Pasted" after a paste. Every other result shows `message`. After a focus change, Not inserted reads "Not inserted. Focus changed" with Copy to clipboard off, or "Focus changed. Copied to clipboard" once the copy worked. Not confirmed reads "Not confirmed. Check the app" with Copy to clipboard off, or "Not confirmed. Check before pasting" with it on. The last result reads "Too short. Hold to talk", "Nothing heard", or an error such as "Voice helper stopped".
+The Flow Bar's `data-view` is `idle` while the mic starts, `listening` in Listening, and `processing` while Voice transcribes, cleans up, or inserts. After 30 s of transcribing, or 60 s while the speech model loads, it reads "Still transcribing". Escape in Transcribing, "Still transcribing" included, discards the session as it does in Listening. Inserted or Pasted shows `inserted`, and "Pasted" after a paste. When macOS refuses the microphone, the Flow Bar shows `allow`, a button that reads "Microphone is off. Click to allow", for 6 s instead of 2.5 s. A click shows the system prompt, or the Privacy & Security › Microphone pane once you have said no. Every other result shows `message`. After a focus change, Not inserted reads "Not inserted. Focus changed" with Copy to clipboard off, or "Focus changed. Copied to clipboard" once the copy worked. Not confirmed reads "Not confirmed. Check the app" with Copy to clipboard off, or "Not confirmed. Check before pasting" with it on. The last result reads "Too short. Hold to talk", "Nothing heard", or an error such as "Voice helper stopped".
 
 ## Rules
 
@@ -126,6 +130,16 @@ To check it, run `swift test --package-path native/voice-helper --filter "PasteK
 The accessibility write has a 0.3 s timeout. When it runs out and nothing shows the text landed, the request was still sent, and a busy app can apply it later or never. The helper answers `insert.result` with method `none` and reason `unconfirmed`. Main ends the session `notInserted` with that reason, settles history to `unconfirmed`, and copies the text when Copy to clipboard is on. The hub row shows a "Not confirmed" badge with Copy. The text may be in the app now, later, or not at all, so the Flow Bar asks you to check the app. A refused write and a write past the insert deadline still answer their own reasons and mean the text is not in the app.
 
 To check it, run `swift test --package-path native/voice-helper --filter "AccessibilityWriteTests|ProtocolTests"` and `pnpm --filter @voice/desktop exec vp test run src/main/dictation.test.ts src/renderer/pillView.test.ts src/renderer/History.test.tsx`.
+
+## Microphone refused
+
+0. Idle
+1. you press the key: Mic starting
+2. macOS refuses the microphone: Microphone is off. Click to allow
+
+The helper answers `capture.failed` with reason `permission`. Main ends the session `permissionMissing` rather than `failed`, keeps the Flow Bar up for 6 s (`IDLE_AFTER_PERMISSION_MS`), and asks the helper for permissions again so the tray's Allow item appears even with the Voice window hidden. Any other reason, or one this build does not know, still ends `failed` with the helper's message.
+
+To check it, run `pnpm --filter @voice/desktop exec vp test run src/main/session.test.ts src/main/dictation.test.ts src/renderer/pillView.test.ts src/renderer/PillCapsule.test.tsx`, and drive it live as [the Permissions feature map](../features/permissions.md) says.
 
 ## Giving up on a transcription
 

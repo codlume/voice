@@ -188,6 +188,7 @@ function harness(opts: Options = {}) {
         onHelperEvent({
           type: "capture.failed",
           id: command.id,
+          reason: "busy",
           message: "capture is busy with another session",
         });
       }
@@ -365,6 +366,28 @@ describe("createDictation", () => {
     }));
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
+  });
+
+  test("a refused microphone asks the helper to report permissions again, and nothing else does", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
+    const id = h.commands.find((c) => c.type === "capture.start")?.id ?? "";
+    h.dictation.onHelperEvent({ type: "capture.failed", id, reason: "device", message: "gone" });
+    expect(h.commands.map((c) => c.type)).not.toContain("permissions.check");
+
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
+    const next = h.commands.findLast((c) => c.type === "capture.start")?.id ?? "";
+    h.dictation.onHelperEvent({
+      type: "capture.failed",
+      id: next,
+      reason: "permission",
+      message: "microphone access is not granted",
+    });
+    expect(h.commands.at(-1)).toEqual({ type: "permissions.check" });
+    expect(h.store.state.session).toMatchObject({
+      phase: "done",
+      outcome: { kind: "permissionMissing", permission: "microphone" },
+    });
   });
 
   test("capture.start, capture.stop, and insert reach the helper before subscribers hear the phase", async () => {

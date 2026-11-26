@@ -8,17 +8,48 @@ final class Permissions {
 
     private let output: Output
     private let read: Read
-    private let onAccessibilityGranted: () -> Void
+    private let isTrusted: @Sendable () -> Bool
+    private let onAccessibility: (_ trusted: Bool) -> Void
     // There is no API that distinguishes "never asked" from "denied", so a
     // request issued by this process is the only signal we have.
     private var accessibilityRequested = false
-    private var poll: DispatchSourceTimer?
+    private var lastTrusted: Bool?
+    private var watch: DispatchSourceTimer?
     private let reads = DispatchQueue(label: "voice.permissions", qos: .userInitiated)
 
-    init(output: Output, read: @escaping Read = Permissions.readSystem(accessibilityRequested:), onAccessibilityGranted: @escaping () -> Void) {
+    init(output: Output, read: @escaping Read = Permissions.readSystem(accessibilityRequested:),
+         isTrusted: @escaping @Sendable () -> Bool = { AXIsProcessTrusted() },
+         onAccessibility: @escaping (_ trusted: Bool) -> Void) {
         self.output = output
         self.read = read
-        self.onAccessibilityGranted = onAccessibilityGranted
+        self.isTrusted = isTrusted
+        self.onAccessibility = onAccessibility
+    }
+
+    /// macOS announces no Accessibility change, so a slow poll keeps the hotkey tap and main's
+    /// view of the grant in step with System Settings, even while no Voice window is open.
+    func startWatching() {
+        guard watch == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 2, repeating: 2, leeway: .seconds(1))
+        timer.setEventHandler { [weak self] in self?.tick() }
+        watch = timer
+        timer.resume()
+    }
+
+    func stopWatching() {
+        watch?.cancel()
+        watch = nil
+    }
+
+    /// Hands every reading to `onAccessibility`, which must be idempotent, so a tap the system
+    /// dropped is replaced; reports to main only when the grant changed.
+    func tick() {
+        let trusted = isTrusted()
+        onAccessibility(trusted)
+        guard trusted != lastTrusted else { return }
+        lastTrusted = trusted
+        check()
     }
 
     func check() {
@@ -37,7 +68,6 @@ final class Permissions {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             AXIsProcessTrustedWithOptions(options)
             check()
-            pollUntilAccessibilityGranted()
         case .systemAudio:
             SystemAudioAccess.request { self.check() }
         }
@@ -53,26 +83,5 @@ final class Permissions {
             }
         let accessibility: PermissionState = AXIsProcessTrusted() ? .granted : accessibilityRequested ? .denied : .notDetermined
         return .permissions(microphone: microphone, accessibility: accessibility, systemAudio: SystemAudioAccess.state)
-    }
-
-    private func pollUntilAccessibilityGranted() {
-        poll?.cancel()
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        let deadline = DispatchTime.now() + 120
-        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            if AXIsProcessTrusted() {
-                self.poll?.cancel()
-                self.poll = nil
-                self.check()
-                self.onAccessibilityGranted()
-            } else if DispatchTime.now() > deadline {
-                self.poll?.cancel()
-                self.poll = nil
-            }
-        }
-        poll = timer
-        timer.resume()
     }
 }

@@ -44,7 +44,7 @@ describe("parseHelperEvent", () => {
       { type: "capture.started", id: "a", startMs: 42, relayMs: null, asrState: null },
       { type: "capture.started", id: "a", startMs: 42, relayMs: 3.25, asrState: null },
       { type: "capture.level", id: "a", level: 0.5 },
-      { type: "capture.failed", id: "a", message: "denied" },
+      { type: "capture.failed", id: "a", reason: "permission", message: "denied" },
       { type: "capture.cancelled", id: "a" },
       { type: "capture.stopped", id: "a", reason: "deviceChanged" },
       { type: "capture.stopped", id: "a", reason: "maxDuration" },
@@ -209,7 +209,13 @@ describe("parseHelperEvent", () => {
     });
     expect(
       parseHelperEvent(line({ type: "capture.failed", id: "a", reason: "novel", message: "m" })),
-    ).toEqual({ type: "capture.failed", id: "a", message: "m" });
+    ).toEqual({ type: "capture.failed", id: "a", reason: "unknown", message: "m" });
+    expect(parseHelperEvent(line({ type: "capture.failed", id: "a", message: "m" }))).toEqual({
+      type: "capture.failed",
+      id: "a",
+      reason: "unknown",
+      message: "m",
+    });
   });
 
   test("accepts a busy capture failure, which the helper reports while it still holds a capture", () => {
@@ -217,7 +223,7 @@ describe("parseHelperEvent", () => {
       parseHelperEvent(
         line({ type: "capture.failed", id: "a", reason: "busy", message: "still capturing" }),
       ),
-    ).toEqual({ type: "capture.failed", id: "a", message: "still capturing" });
+    ).toEqual({ type: "capture.failed", id: "a", reason: "busy", message: "still capturing" });
   });
 
   test("clamps levels into 0..1", () => {

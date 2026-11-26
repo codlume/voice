@@ -25,7 +25,7 @@ import type * as ElectronUpdater from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
-  showsMeeting,
+  pillTakesClicks,
   type LoginItem,
   type PermissionKind,
   type PillApi,
@@ -77,6 +77,7 @@ import { createSettingsQueue, type SettingsQueue } from "./settings-queue.ts";
 import { applyPatch, openSettings } from "./settings.ts";
 import { createStore, pillSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
+import { trayStatus, trayStatusItems, type TrayStatus } from "./tray.ts";
 import { createTransformModel } from "./transform-model.ts";
 import { createTransforms, followTransformSettings, type Transforms } from "./transforms.ts";
 import { idleRun } from "./transform-run.ts";
@@ -407,6 +408,10 @@ async function main() {
         return;
       }
       dictation.onHelperEvent(event);
+      if (event.type === "permissions" && !permissionsReported) {
+        permissionsReported = true;
+        refreshTray(store.state);
+      }
       transforms.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
       installedApps.onHelperEvent(event);
@@ -661,11 +666,23 @@ async function main() {
     log,
   });
 
-  const tray = new Tray(createTrayIcon());
+  // The store starts at notDetermined; until the helper answers, the tray has nothing to warn about.
+  let permissionsReported = false;
+  let trayAlert = false;
+  let trayIcon = createTrayIcon();
+  const tray = new Tray(trayIcon);
   tray.setToolTip("Voice");
   let trayMenu: Menu | null = null;
   function refreshTray(state: AppState) {
+    const status: TrayStatus = permissionsReported ? trayStatus(state.permissions) : { kind: "ok" };
+    const alert = status.kind !== "ok";
+    if (alert !== trayAlert) {
+      trayAlert = alert;
+      trayIcon = createTrayIcon({ alert });
+      tray.setImage(trayIcon);
+    }
     trayMenu = Menu.buildFromTemplate([
+      ...trayStatusItems(status, requestPermission),
       { label: "Open Voice", click: showHub },
       meetingsApp.trayItem(),
       {
@@ -707,7 +724,7 @@ async function main() {
   let pillHovered = false;
   let pillMouse = { clickable: false, forward: false };
   function syncPillMouse() {
-    const forward = showsMeeting(pillSnapshot(store.state));
+    const forward = pillTakesClicks(pillSnapshot(store.state));
     if (!forward) pillHovered = false;
     const next = { clickable: forward && pillHovered, forward };
     if (isDeepStrictEqual(next, pillMouse) || pill.isDestroyed()) return;
@@ -725,7 +742,8 @@ async function main() {
     if (state.session.phase === "starting" && previous.session.phase !== "starting") {
       positionPill(pill);
     }
-    if (state.updates !== previous.updates) refreshTray(state);
+    if (state.updates !== previous.updates || state.permissions !== previous.permissions)
+      refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
     followSettings(cleanup, state, previous);
     followTransformSettings(transformModel, transforms, state, previous);
@@ -792,7 +810,9 @@ async function main() {
     if (store.state.permissions[kind] === "unavailable") return;
     if (store.state.permissions[kind] === "denied") {
       // The system prompt never reappears once denied; the user has to flip it in Settings.
-      void shell.openExternal(PERMISSION_PANES[kind]);
+      log(`permissions: opening System Settings for ${kind}`);
+      // A test instance must not take over the desktop; the log line is its proof.
+      if (!testMode) void shell.openExternal(PERMISSION_PANES[kind]);
       return;
     }
     helper.send({ type: "permissions.request", kind });
@@ -835,6 +855,9 @@ async function main() {
     syncPillMouse();
   });
   pillCommands.handle(Channel.openNotepad, () => meetingsApp.openNotepad());
+  pillCommands.handle(Channel.allowPermission, (_event, kind: unknown) => {
+    if (kind === "microphone") requestPermission(kind);
+  });
 
   const hubCommandDeps: HubCommandDeps = {
     store,
@@ -962,6 +985,7 @@ async function main() {
           if (!item) throw new Error(`no menu item ${id}`);
           item.click();
         },
+        trayIconPng: () => trayIcon.toPNG({ scaleFactor: 2 }).toString("base64"),
         trayItems: () =>
           trayMenu?.items.map(({ id, label, enabled, type }) => ({ id, label, enabled, type })),
         clickTrayItem: (id: string) => {

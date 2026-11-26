@@ -500,7 +500,14 @@ export function createDictation(options: DictationOptions): Dictation {
         options.onLevel(event.level);
         return;
       case "capture.failed":
-        dispatch({ type: "captureFailed", id: event.id, message: event.message });
+        dispatch({
+          type: "captureFailed",
+          id: event.id,
+          reason: event.reason,
+          message: event.message,
+        });
+        // Main polls permissions only while the Voice window shows, so the tray learns here.
+        if (event.reason === "permission") send({ type: "permissions.check" });
         return;
       case "capture.cancelled":
         return;

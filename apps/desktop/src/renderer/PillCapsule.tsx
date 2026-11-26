@@ -38,6 +38,7 @@ const lookSize: Record<LookKey, { width: number; height: number }> = {
   processing: { width: 124, height: OPEN_HEIGHT },
   inserted: { width: 112, height: OPEN_HEIGHT },
   message: { width: 296, height: OPEN_HEIGHT },
+  allow: { width: 296, height: OPEN_HEIGHT },
   recording: { width: 112, height: OPEN_HEIGHT },
   recordingPrompt: { width: 200, height: OPEN_HEIGHT },
   paused: { width: 200, height: OPEN_HEIGHT },
@@ -310,6 +311,20 @@ function MeetingButton({ look, text }: { look: MeetingLook; text: string }) {
   );
 }
 
+function AllowButton({ permission, text }: Extract<PillView, { kind: "allow" }>) {
+  return (
+    <button
+      type="button"
+      onPointerEnter={() => void pillApi().setPillClickable(true)}
+      onPointerLeave={() => void pillApi().setPillClickable(false)}
+      onClick={() => void pillApi().allowPermission(permission)}
+      {...stylex.props(styles.text, styles.button)}
+    >
+      <span {...stylex.props(styles.ellipsis)}>{text}</span>
+    </button>
+  );
+}
+
 function Content({ view }: { view: PillView }) {
   switch (view.kind) {
     case "idle":
@@ -324,6 +339,8 @@ function Content({ view }: { view: PillView }) {
       return <div {...stylex.props(styles.text, styles.message)}>{view.text}</div>;
     case "meeting":
       return <MeetingButton look={view.look} text={view.text} />;
+    case "allow":
+      return <AllowButton {...view} />;
   }
 }
 
