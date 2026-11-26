@@ -12,17 +12,15 @@ stateDiagram-v2
     lg1: Finishing
     lg2: Done
     lg3: No meeting
-    lg4: Breaks AudioDeletedOnlyAfterFinal or VoiceKeepsUnfinishedAudio
-    lg5: Breaks VoiceKeepsUnfinishedAudio in some cases
-    lg6: Path to the AudioDeletedOnlyAfterFinal or VoiceKeepsUnfinishedAudio bug
+    lg4: Breaks AudioDeletedOnlyAfterFinal
+    lg5: Path to the AudioDeletedOnlyAfterFinal bug
   }
   class lg0 orange
   class lg1 blue
   class lg2 teal
   class lg3 tan
   class lg4 breaks
-  class lg5 mayBreak
-  class lg6 bugPath
+  class lg5 bugPath
   s0: No meeting
   s1: Starting
   s2: Removed
@@ -32,19 +30,14 @@ stateDiagram-v2
   s6: Paused
   s7: Started by mistake?
   s8: Ready, final pass failed, audio kept
-  s9: Final transcript saved, deleting audio
+  s9: Ready, deleting audio
   s10: Resuming
-  s11: Deleting the kept audio
-  s12: Ready, audio deleted
-  s13: Ready, audio left on disk
+  s11: Ready, deleting audio, live transcript only
+  s12: Ready, could not delete the audio
+  s13: Ready, audio deleted
   s14: Resuming a finished meeting
-  s15: Ready, live transcript only, audio deleted
-  s16: Live transcript only, deleting audio
-  s17: Ready, Resume deleting the audio left on disk
-  s18: Ready, final pass failed, part of the audio deleted
-  s19: Ready, audio without a final transcript left on disk
-  s20: Ready, empty audio files left on disk
-  s21: Ready, live transcript only, empty audio files left on disk
+  s15: Ready, could not delete the audio, live transcript only
+  s16: Ready, audio deleted, live transcript only
   [*] --> s0
   s0 --> s1: you press Start meeting (tray, shortcut or hub)
   s1 --> s2: the start fails, you press Stop, or Voice closes before any audio
@@ -61,98 +54,54 @@ stateDiagram-v2
   s6 --> s10: you press Resume
   s7 --> s2: you press Discard
   s7 --> s5: you press Keep
-  s8 --> s11: you press Delete audio
   s8 --> s5: you press Try again
+  s8 --> s11: you press Delete audio
   s8 --> s14: you press Resume
-  s9 --> s12: the audio files are deleted
-  s9 --> s13: deleting fails
+  s9 --> s12: deleting fails or the old audio cannot be deleted, so Voice refuses the resume
+  s9 --> s13: the audio files are deleted
   s10 --> s3: you press Stop, or Voice quits or crashes, then opens again
   s10 --> s6: the resume fails, or you press Pause
-  s11 --> s8: deleting fails, so Voice says it could not delete the audio
-  s11 --> s15: the audio files are deleted
-  s11 --> s16: Voice quits or crashes, then opens again
-  s11 --> s18: deleting fails, so Voice says it could not delete the audio
-  s12 --> s14: you press Resume
-  s13 --> s9: Voice quits or crashes, then opens again
-  s13 --> s17: you press Resume
-  s14 --> s8: the resume fails, or you press Pause or Stop
-  s14 --> s3: Voice quits or crashes, then opens again
+  s11 --> s15: deleting fails or the old audio cannot be deleted, so Voice refuses the resume
+  s11 --> s16: the audio files are deleted
+  s12 --> s9: Voice quits or crashes, then opens again or you press Delete audio or you press Resume or the helper answers the cancelled start, so Voice deletes again
+  s13 --> s14: you press Resume
   s10 --> s4: recording begins
-  s15 --> s14: you press Resume
-  s16 --> s15: the audio files are deleted
-  s16 --> s19: deleting fails
-  s17 --> s9: Voice quits or crashes, then opens again
-  s17 --> s13: the audio left on disk cannot be deleted, so Voice refuses the resume
-  s17 --> s14: the audio left on disk is deleted, so the resume begins
-  s18 --> s11: you press Delete audio
-  s14 --> s9: the resume fails, or you press Pause or Stop or Voice quits or crashes, then opens again
+  s14 --> s3: Voice quits or crashes, then opens again
+  s14 --> s8: the resume fails, or you press Pause or Stop
+  s15 --> s11: Voice quits or crashes, then opens again or you press Delete audio or you press Resume or the helper answers the cancelled start, so Voice deletes again
+  s16 --> s14: you press Resume
+  s9 --> s14: the old audio is deleted, so the resume begins
   s14 --> s4: recording begins
-  s19 --> s16: Voice quits or crashes, then opens again
-  s19 --> s17: you press Resume
-  s9 --> s20: deleting fails
-  s14 --> s16: the resume fails, or you press Pause or Stop or Voice quits or crashes, then opens again
-  s16 --> s21: deleting fails
-  s17 --> s16: Voice quits or crashes, then opens again
-  s17 --> s19: the audio left on disk cannot be deleted, so Voice refuses the resume
-  s20 --> s14: you press Resume
-  s20 --> s9: Voice quits or crashes, then opens again
-  s21 --> s14: you press Resume
-  s21 --> s16: Voice quits or crashes, then opens again
+  s14 --> s9: Voice quits or crashes, then opens again or the resume fails, or you press Pause or Stop
+  s11 --> s14: the old audio is deleted, so the resume begins
+  s14 --> s11: the resume fails, or you press Pause or Stop or Voice quits or crashes, then opens again
   classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
-  classDef mayBreak fill:#fff3e6,stroke:#e8730c,stroke-width:2.5px,color:#b85a06
   class s0 tan
   class s0 bugPath
   class s1 orange
   class s1 bugPath
   class s2 tan
-  class s2 mayBreak
   class s3 blue
-  class s3 mayBreak
   class s3 bugPath
   class s4 orange
-  class s4 mayBreak
   class s5 blue
-  class s5 mayBreak
   class s5 bugPath
   class s6 orange
-  class s6 mayBreak
   class s7 blue
-  class s7 mayBreak
   class s8 teal
-  class s8 mayBreak
   class s8 bugPath
-  class s9 blue
-  class s9 mayBreak
+  class s9 teal
   class s10 orange
-  class s10 mayBreak
-  class s11 blue
-  class s11 mayBreak
+  class s11 teal
+  class s11 breaks
   class s11 bugPath
   class s12 teal
-  class s12 mayBreak
   class s13 teal
-  class s13 mayBreak
   class s14 orange
-  class s14 mayBreak
-  class s14 bugPath
   class s15 teal
   class s15 breaks
-  class s15 bugPath
-  class s16 blue
-  class s16 mayBreak
-  class s16 bugPath
-  class s17 teal
-  class s17 mayBreak
-  class s17 bugPath
-  class s18 teal
-  class s18 mayBreak
-  class s19 teal
-  class s19 mayBreak
-  class s19 bugPath
-  class s20 teal
-  class s20 mayBreak
-  class s21 teal
-  class s21 mayBreak
+  class s16 teal
+  class s16 breaks
 ```
 
 ## Rules
@@ -161,13 +110,18 @@ stateDiagram-v2
 - `TrayStopExactlyWhileLive` holds. The tray item reads "Stop meeting" exactly while a meeting is recording or paused. It also reads "Stop meeting" while paused, because Stop then ends the paused meeting (`meetingToggle` in `shared/meetings.ts`). While a meeting starts or resumes, it reads "Starting meeting…" and does nothing.
 - `TrayNeverOffersStartWhileRecording` holds. While the helper records, the tray never offers Start meeting.
 - `RecordingMeansCapturing` holds. A meeting reads Recording only while the helper records.
-- `AudioDeletedOnlyAfterFinal` breaks, by design. Audio is deleted only after its final transcript is saved, except when you press Delete audio on the "final pass failed" notice. That keeps the live transcript only.
-- `VoiceKeepsUnfinishedAudio` breaks, by design. A quit, a crash, a relaunch or a failure never throws away audio that has no final transcript, except the audio of a cancelled resume. Voice deletes audio without a final transcript otherwise only after you press Delete audio, also when a relaunch finishes that delete. The helper only appends to `mic.pcm` and `system.pcm`, and a relaunch removes a meeting only when its files hold no audio.
-- `AudioGoneOnceFinal` holds. Once the final transcript is saved, the next launch deletes any audio file still on disk, also an empty one. A meeting keeps audio files after that only while the delete runs, or after the delete fails and until Voice opens again or you press Resume.
+- `AudioDeletedOnlyAfterFinal` breaks, by design. Audio starts going only after its final transcript is saved, except when you press Delete audio on the "final pass failed" notice. That keeps the live transcript only.
+- `VoiceKeepsUnfinishedAudio` holds. A quit, a crash, a relaunch or a failure never throws away audio that has no final transcript. Voice deletes such audio only after you press Delete audio, or after you end a resume of a finished meeting before it records. Each of those saves `deleting`, so a relaunch that finishes the delete finishes your request.
+- `AudioGoneOnceFinal` holds. Once the final transcript is saved, any audio file still on disk is being deleted, or the next launch deletes it.
 - `EndedResumeDeletesItsFiles` holds. A resume of a finished meeting that ends before it records deletes the files that its start made, unless they hold audio kept for Try again (#456).
-- `NoStaleAppend` holds. A resume never adds to audio that already has its final transcript, unless the final pass failed and the audio is kept for Try again. Resume on a finished meeting deletes the audio left on disk before it saves the resume, so the new leg starts new files.
-- `PartialAudioIsOnlyDeleted` holds. Audio that a failed delete left part of only waits to be deleted. Voice never records onto it.
+- `NoStaleAppend` holds. A resume never adds to audio that already has its final transcript, unless the final pass failed and the audio is kept for Try again.
+- `PartialAudioIsOnlyDeleted` holds. Audio that a failed delete left part of is `deleting`, so Voice only deletes it.
 - `NoFinalPassOnPartialAudio` holds. No final pass runs over audio that a failed delete left part of, also after a quit while Resume deletes it (#451).
+- `RecordsOnlyIntoPresentAudio` holds. The helper records only while `meeting.json` says the audio is `present`.
+- `ReadyPresentOnlyForRetry` holds. A finished meeting keeps `present` audio only after a failed final pass, for Try again.
+- `FilesOnlyWhenPresent` holds. Audio files are on disk only while the audio is `present` or `deleting`, or while a delete runs.
+- `RecoveryIdempotent` holds. Recovery run twice ends where recovery run once ends. A recovery whose delete fails or is cut off ends there on the next launch.
+- `NoDeadlock` holds. Every state has a way out, or is a finished or removed meeting.
 
 ## The `AudioDeletedOnlyAfterFinal` break
 
@@ -177,46 +131,27 @@ stateDiagram-v2
 3. Voice quits or crashes after the audio began, then opens again: Catching up the live transcript
 4. the transcript catches up: Final pass
 5. the final pass fails: Ready, final pass failed, audio kept
-6. you press Delete audio: Deleting the kept audio
-7. the audio files are deleted: Ready, live transcript only, audio deleted
+6. you press Delete audio: Ready, deleting audio, live transcript only
 
-The notice offers Try again and Delete audio. Delete audio first saves `meeting.json` with `finalPassFailed: null`, then removes `mic.pcm`, `system.pcm`, `output.ndjson` and `audio.json` and keeps the live transcript. `meeting-recorder.test.ts` checks this in "a failed final pass can be tried again, or its audio deleted, after a relaunch too".
+The notice offers Try again and Delete audio. Delete audio saves `meeting.json` with `finalPassFailed: null` and `audio: "deleting"` in one write. It then removes `mic.pcm`, `system.pcm`, `output.ndjson` and `audio.json`, saves `gone`, and keeps the live transcript. `meeting-recorder.test.ts` checks this in "a failed final pass can be tried again, or its audio deleted, after a relaunch too".
 
-If `rm` throws, `audioDeleteFailed` restores `finalPassFailed` and the notice, so Try again and Delete audio come back, and the command is refused with "The audio could not be deleted. Try again." The audio stays. `meeting-recorder.test.ts` checks this in "Delete audio whose delete fails is refused and keeps the audio and both actions".
+If `rm` throws, the audio stays `deleting`, and the command is refused with "The audio could not be deleted. Try again." The notice says Voice could not delete the audio and offers Delete audio only. Try again never comes back, because the audio is no longer `present`. The chart shows this as "Ready, could not delete the audio, live transcript only". The failed delete can be partial. It can remove `system.pcm` and keep `mic.pcm`. That changes nothing, because audio that is `deleting` is never transcribed or recorded onto. Resume finishes the delete first, and the next launch finishes it too. `meeting-recorder.test.ts` checks this in "Delete audio whose delete fails is refused, says so, and offers only Delete audio until it works", "after a partial Delete audio, Try again refuses and Resume deletes the rest before it records", "a relaunch finishes a Delete audio that failed part way, and runs no final pass" and "a relaunch whose delete fails again says so, and running recovery twice changes nothing more".
 
-The failed delete can be partial. It can remove `system.pcm` and keep `mic.pcm`. The chart shows this as "Ready, final pass failed, part of the audio deleted". Try again would run a final pass over `mic.pcm` alone. That pass would drop the live lines of the system audio, because it has no audio for them. Resume would add to the incomplete files, and the final pass after Stop would drop the same lines. So both refuse while a source has live lines but no audio on disk (`audioIncomplete` in `meeting-recorder.ts`). The notice then says that part of the audio was already deleted, and it offers Delete audio only. The next launch raises it the same way. Once Delete audio succeeds, the meeting keeps its live transcript, and Resume starts new files. `meeting-recorder.test.ts` checks this in "after a partial Delete audio, Try again and Resume refuse and keep the deleted side's live lines", "after a partial Delete audio, the notice says part of the audio was deleted" and "a relaunch after a partial Delete audio says again that part of the audio was deleted". If Voice quits or crashes before the delete, the next launch finds a ready meeting with `finalPassFailed: null` and deletes its audio, as below.
+## The audio field
 
-## The `VoiceKeepsUnfinishedAudio` break
+`meeting.json` saves the meeting's audio as one field: `present`, `deleting` or `gone`. Every delete saves `deleting` before it removes the first file, in the same write as the status change that asks for it. It then removes every audio file and saves `gone`. A delete that fails or is cut off by a quit leaves `deleting`, never `present`.
 
-0. No meeting
-1. you press Start meeting (tray, shortcut or hub): Starting
-2. the helper opens the microphone and system audio: Starting
-3. Voice quits or crashes after the audio began, then opens again: Catching up the live transcript
-4. the transcript catches up: Final pass
-5. the final pass fails: Ready, final pass failed, audio kept
-6. you press Delete audio: Deleting the kept audio
-7. Voice quits or crashes, then opens again: Live transcript only, deleting audio
-8. deleting fails: Ready, audio without a final transcript left on disk
-9. you press Resume: Ready, Resume deleting the audio left on disk
-10. the audio left on disk is deleted, so the resume begins: Resuming a finished meeting
+On `finalized`, main saves the final transcript, `ready` (or `summarizing` first when summaries are on), `finalPassFailed: null` and `deleting` in one write, and then it deletes the audio files. The chart shows this as "Ready, deleting audio". If `rm` throws, the chart shows "Ready, could not delete the audio". `meeting-recorder.test.ts` checks this in "stop transcribes the tail, asks for the final pass while the audio exists, then deletes the audio".
 
-You pressed Delete audio, and Voice quit before the files were removed. The next launch deletes them as audio of a finished meeting. If that delete fails, the next Resume deletes them as leftover audio, which is what you asked for.
+Resume on a finished meeting whose audio is `deleting` finishes the delete before it dispatches the resume (`finishDelete` in `meeting-recorder.ts`). If the delete throws, Resume is refused with "Voice could not clear this meeting's old audio. Try again." Nothing was saved, so the meeting stays `ready` and nothing records. Once the delete ends, the new leg starts new files with a fresh `audio.json`. `meeting-recorder.test.ts` checks this in "a resume after the audio delete failed starts new files instead of adding to the old ones" and "a resume whose leftover audio cannot be deleted does not record, and a later resume does". If Voice quits or crashes during that delete, the next launch deletes the audio. It never finishes that audio as a new leg, so no final pass runs over it (#451). `meeting-recorder.test.ts` checks this in "a relaunch after Voice quit while a resume cleared leftover audio does not transcribe that audio".
 
-Pause or Stop while a finished meeting resumes returns it to `ready` with `finalPassFailed: null`, and Voice then deletes the files that the start made. If the helper already opened the devices, the files hold the audio from that moment until `meeting.stop`. No leg holds that audio, because the meeting never showed Recording, so it goes with the files. The model counts that delete as yours, so this path does not break the rule. If the delete fails, the next Resume deletes the files as leftover audio, and so does the next launch.
+A resume that never records leaves files too. Resume on a finished meeting whose audio is gone saves `present` and writes a new `audio.json`, and the helper makes `mic.pcm` before it opens the microphone. That resume ends before it records when the start fails or times out, when the helper exits, and when you press Pause or Stop. The meeting then goes back to `ready`, saves `deleting` and deletes those files (`resumeEnded` in `meeting-lifecycle.ts`). Audio kept for Try again stays, and so does the audio of a paused meeting. `meeting-recorder.test.ts` checks this in "a resume that fails to start leaves the finished meeting without audio files" and "a resume that fails to start keeps the audio a failed final pass kept" (#456).
 
-## Leftover audio
+The helper can make files after that delete, because it makes `system.pcm` only after the microphone opens. So while a `meeting.start` is unanswered, the delete removes the files but does not save `gone`. The helper always answers a start with `meeting.started` or `meeting.failed`, or exits. Each answer runs the delete again, and that delete saves `gone`. The chart keeps the meeting in "Ready, deleting audio" until then. `meeting-recorder.test.ts` checks this in "a resume stopped before it records leaves no audio files, also when the helper opens the devices late" and "a resume stopped before it records ends gone even when the helper fails after opening a file late".
 
-On `finalized`, main writes `meeting.json` as finished (`ready`, or `summarizing` first when summaries are on) with `finalPassFailed: null`, and then it deletes the audio files. If `rm` throws, `runOrFail` only logs it, and nothing retries it while Voice runs. If Voice quits or crashes before the delete, the audio stays too.
+A Resume pressed in that moment is refused with "Voice could not clear this meeting's old audio. Try again.", because the audio is still `deleting`. Nothing failed, and Resume works once the helper answers. No watchdog bounds that wait, because the start watchdog ends with the resume. No test in the repository checks this refusal.
 
-Resume on a finished meeting with `finalPassFailed: null` deletes that audio before it dispatches the resume (`clearLeftoverAudio` in `command`). The chart shows this as "Ready, Resume deleting the audio left on disk". `meeting.json` still says `ready` while the delete runs. The new leg then starts new files with a fresh `audio.json`. If the delete throws, Resume is refused with "Voice could not clear this meeting's old audio. Try again." Nothing was saved, so the meeting stays `ready` and nothing records. `meeting-recorder.test.ts` checks this in "a resume after the audio delete failed starts new files instead of adding to the old ones" and "a resume whose leftover audio cannot be deleted does not record, and a later resume does".
-
-If Voice quits or crashes during that delete, the meeting is still `ready` with leftover audio. The next launch deletes it, as below. It never finishes that audio as a new leg, so no final pass runs over it (#451). `meeting-recorder.test.ts` checks this in "a relaunch after Voice quit while a resume cleared leftover audio does not transcribe that audio".
-
-A resume that never records leaves files too. Resume on a finished meeting whose audio is gone writes a new `audio.json`, and the helper makes `mic.pcm` before it opens the microphone. That resume ends before it records when the start fails or times out, when the helper exits, and when you press Pause or Stop. The meeting then goes back to `ready` and deletes those files (`resumeEnded` in `meeting-lifecycle.ts`). The chart shows that delete as "Final transcript saved, deleting audio". Audio kept for Try again stays, and so does the audio of a paused meeting. If the delete fails, the chart shows "Ready, empty audio files left on disk", and the next Resume or the next launch deletes the files. `meeting-recorder.test.ts` checks this in "a resume that fails to start leaves the finished meeting without audio files" and "a resume that fails to start keeps the audio a failed final pass kept" (#456).
-
-The helper can make files after that delete, because it makes `system.pcm` only after the microphone opens. It then reports the start. A `ready` meeting answers that `meeting.started` with `meeting.stop` and the same delete. `meeting-recorder.test.ts` checks this in "a resume stopped before it records leaves no audio files, also when the helper opens the devices late".
-
-On the next launch, `recover()` sends `audioFound` to each meeting whose folder holds an audio file. An empty file counts, and so does an `audio.json` alone. A finished meeting with `finalPassFailed: null` then deletes its audio files. If that delete fails too, the launch after it tries again. A meeting whose final pass failed keeps its audio for Try again and Delete audio, and a resume adds to it. `meeting-recorder.test.ts` checks this in the tests whose names start with "a relaunch deletes the audio of", in "a relaunch deletes the empty audio files a resume that never recorded left on a finished meeting", and in "a relaunch after Voice quit while a finished meeting resumed leaves no audio files".
+On the next launch, `recover()` finishes each unfinished meeting from its files. It then sends `audioFound` to each meeting whose audio is `deleting`, and to each meeting whose audio is `gone` but whose folder still holds an audio file. An empty file counts, and so does an `audio.json` alone. Each of those meetings deletes its audio again, unless a failed final pass keeps it `present`. Running the delete again changes nothing once the files are gone. `meeting-recorder.test.ts` checks this in the tests whose names start with "a relaunch deletes the audio of", in "a relaunch after the audio was deleted but meeting.json could not say so saves gone and says nothing", in "a relaunch deletes the empty audio files a resume that never recorded left on a finished meeting", and in "a relaunch after Voice quit while a finished meeting resumed leaves no audio files".
 
 ## What the model leaves out
 
@@ -226,8 +161,12 @@ On the next launch, `recover()` sends `audioFound` to each meeting whose folder 
 - A meeting that records the microphone only, because system audio is denied or unavailable.
 - The echo gate and the voice detector. They decide which words reach the transcript, not which state the meeting is in. The `vv meeting` fixtures check them.
 - The helper exit count. A drain or a final pass that loses the helper twice moves on or fails.
-- A `meeting.started` that arrives after you paused or after a resume ended. Main answers with `meeting.stop`. On a finished meeting with no kept audio, it also deletes the audio files again.
-- A start that fails after its resume already ended. If the helper made `mic.pcm` after the delete, that empty file stays until the next Resume or the next launch deletes it.
+- A `meeting.started` that arrives after you paused. Main answers with `meeting.stop`. The model leaves out the audio the helper appends until then.
+- A `meeting.json` write that fails. The model saves every write. In the code, a write that must land first (the start of a leg, and the `deleting` write before a delete, except the one that ends a resume) refuses the step. A `gone` write that fails is finished by the next launch.
+- Meetings saved by older builds. They get the audio field once, at load, from their status and files. `meetings-store.test.ts` checks this in "a meeting saved before audio was a field reads it once from its status and files".
+- One flag stands for every unanswered `meeting.start`. A helper exit answers it at once. The model lets that answer come as its own step.
+- The model lets a delete fail even when no file is left.
+- Resume pressed while a delete runs. The code waits for that delete. The model lets you press Resume only after it ends.
 - The moment between Resume and the new `audio.json`. The model writes that file in the Resume step, and the `startCapture` effect writes it moments later.
 - A start watchdog that fires while the helper already writes audio. The meeting is removed with its folder.
 - Power loss. The helper syncs the files every 5 s, so the last seconds can go.
@@ -237,8 +176,13 @@ On the next launch, `recover()` sends `audioFound` to each meeting whose folder 
 ## What the chart hides
 
 - A quit or crash in `Started by mistake?` or in Final pass. Both lead to "Catching up the live transcript", as from Paused.
+
+The chart does not draw steps that stay in one state. These are:
+
 - A quit or crash while catching up. It stays in "Catching up the live transcript".
-- A quit or crash while deleting the audio. The next launch deletes it again, so it stays in "Final transcript saved, deleting audio" or "Live transcript only, deleting audio".
+- A quit or crash while deleting the audio. The next launch deletes it again.
+- A delete that ends while a cancelled start is unanswered, and a Resume refused for that reason. Both stay in "Ready, deleting audio".
+- The helper answering a cancelled start on a paused meeting, or on audio kept for Try again. The audio stays, and main stops a capture that started.
 
 ## Regenerate
 

@@ -115,11 +115,12 @@ YouResumeAfterDelete ==
     /\ Moved(FALSE)
 
 \* The delete removes every file. deleting becomes gone, unless an unanswered meeting.start can still
-\* make a file, or a waiting Resume saves present and starts new files.
+\* make a file, or a waiting Resume saves present and starts new files. While that start is
+\* unanswered the audio stays deleting, so finishDelete refuses the waiting Resume.
 AudioDeleted ==
     /\ removing = "running"
     /\ removing' = "idle" /\ after' = "none"
-    /\ IF after = "resume"
+    /\ IF after = "resume" /\ ~late
          THEN /\ status' = "reopening" /\ audio' = "present" /\ files' = "empty"
               /\ helper' = "opening" /\ intent' = TRUE
          ELSE /\ files' = "none"
