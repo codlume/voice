@@ -52,8 +52,11 @@ const kinds = (effects: MeetingEffect[]) => effects.map((effect) => effect.type)
 const notices = (effects: MeetingEffect[]) =>
   effects.flatMap((effect) => (effect.type === "notify" ? [effect.notice.kind] : []));
 
+/** A finished meeting has audio only while a failed final pass keeps it for Try again. */
 function meetingAt(status: MeetingStatus, overrides: Partial<Meeting> = {}): Meeting {
+  const finished = status.kind === "ready" || status.kind === "summarizing";
   return {
+    audio: { kind: finished && !overrides.finalPassFailed ? "gone" : "present" },
     id: ID,
     title: null,
     createdAt: T0,
@@ -231,9 +234,10 @@ describe("meeting lifecycle", () => {
     for (const event of ended) {
       const next = step(meetingAt(resuming), event, T0 + 30 * MIN, config);
       expect(next.meeting?.status, event.type).toEqual({ kind: "ready" });
+      expect(next.meeting?.audio.kind, event.type).toBe("deleting");
       expect(next.effects.slice(0, 2), event.type).toEqual([
         { type: "stopCapture" },
-        { type: "deleteAudio", keptFor: null },
+        { type: "deleteAudio" },
       ]);
 
       const kept = meetingAt(resuming, { finalPassFailed: "other" });
@@ -413,7 +417,7 @@ describe("meeting lifecycle", () => {
       [{ type: "drained", words: 4000 }, 30 * MIN],
       [{ type: "finalizeFailed", reason: "speakerModels" }, 31 * MIN],
     ]);
-    const notice = { kind: "finalPassFailed", reason: "speakerModels", audio: "whole" } as const;
+    const notice = { kind: "finalPassFailed", reason: "speakerModels" } as const;
     expect(effects).toContainEqual({ type: "notify", notice });
     expect(noticeText(notice)).toContain("Download it in Set up Meetings, then try again.");
     expect(noticeText({ ...notice, reason: "other" })).not.toContain("Speaker detection");
@@ -447,18 +451,21 @@ describe("meeting lifecycle", () => {
       expect(kinds(done.effects)).toContain("deleteAudio");
 
       const deleted = step(meeting, { type: "deleteAudio" }, T0 + 40 * MIN, config);
-      expect(deleted.meeting).toEqual({ ...meeting, finalPassFailed: null });
-      expect(deleted.effects).toEqual([{ type: "deleteAudio", keptFor: meeting!.finalPassFailed }]);
+      expect(deleted.meeting).toEqual({
+        ...meeting,
+        finalPassFailed: null,
+        audio: { kind: "deleting" },
+      });
+      expect(deleted.effects).toEqual([{ type: "deleteAudio" }]);
 
-      const reason = meeting!.finalPassFailed!;
-      for (const audio of ["whole", "partlyDeleted"] as const) {
-        const failed = { type: "audioDeleteFailed", reason, audio } as const;
-        const kept = step(deleted.meeting, failed, T0, config);
-        expect(kept.meeting).toEqual(meeting);
-        expect(kept.effects).toEqual([
-          { type: "notify", notice: { kind: "finalPassFailed", reason, audio } },
-        ]);
-      }
+      const stuck = step(deleted.meeting, { type: "audioDeleteFailed" }, T0, config);
+      expect(stuck).toEqual({
+        meeting: deleted.meeting,
+        effects: [{ type: "notify", notice: { kind: "audioDeleteFailed" } }],
+      });
+      expect(step(deleted.meeting, { type: "retryFinalPass" }, T0, config).effects).toEqual([]);
+      expect(step(deleted.meeting, { type: "resume" }, T0, config).effects).toEqual([]);
+      expect(step(deleted.meeting, { type: "deleteAudio" }, T0, config)).toEqual(deleted);
     }
     const fine = meetingAt({ kind: "ready" });
     expect(step(fine, { type: "retryFinalPass" }, T0, config).effects).toEqual([]);
@@ -676,10 +683,14 @@ describe("meeting lifecycle", () => {
     for (const status of statuses) {
       const transcribed = status.kind === "ready" || status.kind === "summarizing";
       const meeting = meetingAt(status);
-      expect(step(meeting, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual({
-        meeting,
-        effects: transcribed ? [{ type: "deleteAudio", keptFor: null }] : [],
-      });
+      expect(step(meeting, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual(
+        transcribed
+          ? {
+              meeting: { ...meeting, audio: { kind: "deleting" } },
+              effects: [{ type: "deleteAudio" }],
+            }
+          : { meeting, effects: [] },
+      );
       const kept = meetingAt(status, { finalPassFailed: "other" });
       expect(step(kept, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual({
         meeting: kept,

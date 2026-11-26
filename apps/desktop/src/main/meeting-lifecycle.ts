@@ -4,7 +4,6 @@ import {
   summarizesOnStop,
   type AudioLoss,
   type FinalPassFailure,
-  type KeptAudio,
   type MarkerKind,
   type MaxLength,
   type Meeting,
@@ -48,13 +47,13 @@ export type MeetingEvent =
   | { type: "delete" }
   | { type: "retryFinalPass" }
   | { type: "deleteAudio" }
-  /** `audio` is what the failed delete left on disk. */
-  | { type: "audioDeleteFailed"; reason: FinalPassFailure; audio: KeptAudio }
+  | { type: "audioDeleteFailed" }
   | { type: "generateSummary" }
   | { type: "summaryProgress"; progress: SummaryProgress }
   | { type: "summarized" }
   | { type: "summaryFailed" }
   | { type: "recover"; lastAudioAt: number; hasAudio: boolean }
+  /** A launch found a delete still owed, or files a meeting whose audio is gone should not have. */
   | { type: "audioFound" };
 
 export type MeetingEffect =
@@ -63,8 +62,8 @@ export type MeetingEffect =
   | { type: "drain" }
   | { type: "finalize" }
   | { type: "applyFinalPass"; segments: readonly FinalSegment[] }
-  /** `keptFor` is the `finalPassFailed` this delete cleared, which a failed delete restores. */
-  | { type: "deleteAudio"; keptFor: FinalPassFailure | null }
+  /** Removes every audio file. Only a meeting whose audio is `deleting` asks for it. */
+  | { type: "deleteAudio" }
   | { type: "watch"; watch: Watch }
   | { type: "schedule"; leg: number; timer: Timer; inMs: number }
   | { type: "mark"; marker: MarkerKind }
@@ -139,15 +138,20 @@ function afterTranscript(meeting: Meeting, effects: MeetingEffect[]): Step {
 
 const finalPassFailed = (meeting: Meeting, reason: FinalPassFailure): Step =>
   afterTranscript({ ...meeting, finalPassFailed: reason }, [
-    notify({ kind: "finalPassFailed", reason, audio: "whole" }),
+    notify({ kind: "finalPassFailed", reason }),
   ]);
 
+/**
+ * A resume of a finished meeting whose audio is gone starts new files. One whose delete is still
+ * owed waits for it, because the new leg would add to what is left of the old audio.
+ */
 function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleConfig): Step {
+  if (meeting.audio.kind === "deleting") return { meeting, effects: [] };
   if (recordedMs(meeting, 0) >= maxLengthMs[config.maxLength]) {
     return { meeting, effects: [notify({ kind: "atMaxLength" })] };
   }
   return {
-    meeting: withStatus(meeting, { kind: "starting", from }),
+    meeting: { ...withStatus(meeting, { kind: "starting", from }), audio: { kind: "present" } },
     effects: [watch("start"), { type: "startCapture", leg: meeting.spans.length }],
   };
 }
@@ -155,14 +159,13 @@ function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleCon
 /**
  * A resume that ends before it records puts the meeting back where the resume began. A finished
  * meeting has audio only while a failed final pass keeps it, so the files this start made are
- * deleted. The helper can still be opening the devices and make its files after that delete. It
- * then reports the start, and `ready` answers with the same stop and delete. A start that fails
- * that late can leave an empty `mic.pcm`, which the next Resume or the next launch deletes.
+ * deleted. The helper can still be opening the devices and make its files after that delete, so
+ * the audio stays `deleting` until the helper answers the start, and the answer deletes again.
  */
 function resumeEnded(meeting: Meeting, from: "paused" | "ready", then: MeetingEffect[]): Step {
   const back = withStatus(meeting, { kind: from });
-  const made = from === "ready" ? deleteAudioUnlessKeptForRetry(back).effects : [];
-  return { meeting: back, effects: [{ type: "stopCapture" }, ...made, ...then] };
+  const ended = from === "ready" ? dropAudio(back) : { meeting: back, effects: [] };
+  return { meeting: ended.meeting, effects: [{ type: "stopCapture" }, ...ended.effects, ...then] };
 }
 
 const lossMessage = ({ source, reason }: AudioLoss) => {
@@ -208,6 +211,7 @@ export function step(
         summary: { kind: "none" },
         speakers: [],
         finalPassFailed: null,
+        audio: { kind: "present" },
         transcriptRevision: 0,
       },
       effects: [watch("start"), { type: "startCapture", leg: 0 }],
@@ -225,7 +229,7 @@ export function step(
         if (!event.hasAudio && status.from !== "paused") {
           return status.from === "new"
             ? gone([])
-            : { meeting: withStatus(meeting, { kind: "ready" }), effects: [] };
+            : dropAudio(withStatus(meeting, { kind: "ready" }));
         }
         const end = Math.max(event.lastAudioAt, meeting.spans.at(-1)?.endedAt ?? meeting.createdAt);
         const since = status.from === "new" ? meeting.createdAt : end;
@@ -402,9 +406,10 @@ export function step(
         case "finalPass":
           return { meeting, effects: [{ type: "applyFinalPass", segments: event.segments }] };
         case "finalized":
-          return afterTranscript({ ...meeting, finalPassFailed: null }, [
-            { type: "deleteAudio", keptFor: null },
-          ]);
+          return afterTranscript(
+            { ...meeting, finalPassFailed: null, audio: { kind: "deleting" } },
+            [{ type: "deleteAudio" }],
+          );
         case "stalled":
           return event.watch === "finalPass" ? finalPassFailed(meeting, "other") : same;
         case "finalizeFailed":
@@ -442,14 +447,8 @@ export function step(
             ? next
             : { ...next, effects: [{ type: "cancelSummary" }, ...next.effects] };
         }
-        case "deleteAudio":
-          return audioDeleted(meeting);
-        case "audioDeleteFailed":
-          return audioKept(meeting, event.reason, event.audio);
-        case "audioFound":
-          return deleteAudioUnlessKeptForRetry(meeting);
         default:
-          return same;
+          return finishedAudio(meeting, event) ?? same;
       }
     case "ready":
       switch (event.type) {
@@ -458,38 +457,52 @@ export function step(
         case "generateSummary":
           return summarizing(meeting);
         case "retryFinalPass":
-          return meeting.finalPassFailed ? finalizing(meeting) : same;
-        case "deleteAudio":
-          return audioDeleted(meeting);
-        case "audioDeleteFailed":
-          return audioKept(meeting, event.reason, event.audio);
-        case "audioFound":
-          return deleteAudioUnlessKeptForRetry(meeting);
-        case "captureStarted":
-          return {
-            meeting,
-            effects: [{ type: "stopCapture" }, ...deleteAudioUnlessKeptForRetry(meeting).effects],
-          };
+          return meeting.finalPassFailed && meeting.audio.kind === "present"
+            ? finalizing(meeting)
+            : same;
         default:
-          return same;
+          return finishedAudio(meeting, event) ?? same;
       }
   }
 }
 
-const audioDeleted = (meeting: Meeting): Step =>
-  meeting.finalPassFailed
-    ? {
-        meeting: { ...meeting, finalPassFailed: null },
-        effects: [{ type: "deleteAudio", keptFor: meeting.finalPassFailed }],
-      }
-    : { meeting, effects: [] };
-
-const audioKept = (meeting: Meeting, reason: FinalPassFailure, audio: KeptAudio): Step => ({
-  meeting: { ...meeting, finalPassFailed: reason },
-  effects: [notify({ kind: "finalPassFailed", reason, audio })],
+/** A delete already owed keeps the same meeting, so a retry writes nothing before it removes. */
+const deleting = (meeting: Meeting): Step => ({
+  meeting:
+    meeting.audio.kind === "deleting" && meeting.finalPassFailed === null
+      ? meeting
+      : { ...meeting, finalPassFailed: null, audio: { kind: "deleting" } },
+  effects: [{ type: "deleteAudio" }],
 });
 
-const deleteAudioUnlessKeptForRetry = (meeting: Meeting): Step =>
-  meeting.finalPassFailed
+/** A finished meeting keeps its audio only for Try again after a failed final pass. */
+const dropAudio = (meeting: Meeting): Step =>
+  meeting.finalPassFailed && meeting.audio.kind === "present"
     ? { meeting, effects: [] }
-    : { meeting, effects: [{ type: "deleteAudio", keptFor: null }] };
+    : deleting(meeting);
+
+/**
+ * Audio events of a finished meeting. Once deleting, the audio only goes: Delete audio and each
+ * answer the helper gives to a start it may have opened files for delete again, and a failed
+ * delete says so.
+ */
+function finishedAudio(meeting: Meeting, event: MeetingEvent): Step | null {
+  const owed = meeting.audio.kind === "deleting";
+  switch (event.type) {
+    case "deleteAudio":
+      return owed || meeting.finalPassFailed ? deleting(meeting) : null;
+    case "audioDeleteFailed":
+      return owed ? { meeting, effects: [notify({ kind: "audioDeleteFailed" })] } : null;
+    case "audioFound":
+      return dropAudio(meeting);
+    case "captureStarted": {
+      const dropped = dropAudio(meeting);
+      return { meeting: dropped.meeting, effects: [{ type: "stopCapture" }, ...dropped.effects] };
+    }
+    case "captureFailed":
+    case "helperExited":
+      return owed ? deleting(meeting) : null;
+    default:
+      return null;
+  }
+}
