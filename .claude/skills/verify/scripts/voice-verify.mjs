@@ -1080,7 +1080,7 @@ const commands = {
         "0",
         "-i",
         listPath,
-        "-vsync",
+        "-fps_mode",
         "vfr",
         "-pix_fmt",
         "yuv420p",
