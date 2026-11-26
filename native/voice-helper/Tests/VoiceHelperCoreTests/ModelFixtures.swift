@@ -119,12 +119,19 @@ final class StubHub: URLProtocol, @unchecked Sendable {
     private struct State {
         var scripts: [String: [Reply]] = [:]
         var requests: [URLRequest] = []
+        var stalls: [String: String] = [:]
     }
 
     private static let state = OSAllocatedUnfairLock(initialState: State())
 
     static func script(_ url: URL, _ replies: [Reply]) {
         state.withLock { $0.scripts[url.path] = replies }
+    }
+
+    /// Why a scripted failure held for `file` was sent before the file filled. The stub's queue
+    /// has no test attached, so the test reads this from its own task.
+    static func stall(in file: URL) -> String? {
+        state.withLock { $0.stalls[file.path] }
     }
 
     static func requests(for release: ModelRelease) -> [URLRequest] {
@@ -173,7 +180,7 @@ final class StubHub: URLProtocol, @unchecked Sendable {
         case .finish: steps.append { client.urlProtocolDidFinishLoading(self) }
         case .fail(let code, let file):
             let stored = (reply.status == 206 ? offset : 0) + reply.chunks.reduce(0) { $0 + $1.count }
-            steps.append { [self] in whenStored(stored, in: file) { client.urlProtocol(self, didFailWithError: URLError(code)) } }
+            steps.append { [self] in whenStored(stored, in: file, by: .now + .seconds(30)) { client.urlProtocol(self, didFailWithError: URLError(code)) } }
         case .hang: break
         }
         for (index, step) in steps.enumerated() {
@@ -184,11 +191,16 @@ final class StubHub: URLProtocol, @unchecked Sendable {
         }
     }
 
-    private func whenStored(_ bytes: Int, in file: URL?, _ step: @escaping () -> Void) {
+    /// `deadline` only stops a file that never fills from polling forever. It is far above how long a loaded run takes.
+    private func whenStored(_ bytes: Int, in file: URL?, by deadline: ContinuousClock.Instant, _ step: @escaping () -> Void) {
         if stopped.withLock({ $0 }) { return }
         var status = stat()
         if let file, lstat(file.path, &status) != 0 || status.st_size < bytes {
-            return Self.delivery.asyncAfter(deadline: .now() + .milliseconds(1)) { [self] in whenStored(bytes, in: file, step) }
+            guard ContinuousClock.now < deadline else {
+                Self.state.withLock { $0.stalls[file.path] = "\(file.lastPathComponent) never reached \(bytes) bytes within 30 s, so its scripted transport error was sent early" }
+                return step()
+            }
+            return Self.delivery.asyncAfter(deadline: .now() + .milliseconds(1)) { [self] in whenStored(bytes, in: file, by: deadline, step) }
         }
         step()
     }

@@ -26,6 +26,12 @@ private struct Scenario {
     var requests: [URLRequest] { StubHub.requests(for: fixture.release) }
     var stagedExists: Bool { FileManager.default.fileExists(atPath: staged.path) }
 
+    /// For replies that hold a failure until the staged file fills.
+    func fetch(with fetcher: ModelFetcher) async throws {
+        defer { if let stall = StubHub.stall(in: staged) { Issue.record("\(stall)") } }
+        try await fetcher.fetch(file, of: fixture.release, to: staged)
+    }
+
     func expectFailure(_ failure: ModelFetcher.Failure, _ body: () async throws -> Void) async {
         do {
             try await body()
@@ -65,7 +71,7 @@ struct ModelFetcherTests {
         let scenario = try Scenario()
         defer { try? FileManager.default.removeItem(at: scenario.dir) }
         scenario.script([.resume(scenario.bytes, end: .fail(.networkConnectionLost, onceStoredIn: scenario.staged))])
-        try await RecordedSleeps().fetcher().fetch(scenario.file, of: scenario.fixture.release, to: scenario.staged)
+        try await scenario.fetch(with: RecordedSleeps().fetcher())
         #expect(try Data(contentsOf: scenario.staged) == scenario.bytes)
         #expect(scenario.requests.count == 1)
     }
@@ -181,7 +187,7 @@ struct ModelFetcherTests {
             StubHub.Reply(status: 200, chunks: scenario.bytes.prefix(50_000).chunked(10_000), end: .fail(.networkConnectionLost, onceStoredIn: scenario.staged)),
             .ok(scenario.bytes),
         ])
-        try await RecordedSleeps().fetcher().fetch(scenario.file, of: scenario.fixture.release, to: scenario.staged)
+        try await scenario.fetch(with: RecordedSleeps().fetcher())
         #expect(try Data(contentsOf: scenario.staged) == scenario.bytes)
         #expect(scenario.requests.map { $0.value(forHTTPHeaderField: "Range") } == [nil, "bytes=50000-"])
     }
@@ -237,7 +243,7 @@ struct ModelFetcherTests {
             .resume(scenario.bytes),
         ])
         let sleeps = RecordedSleeps()
-        try await sleeps.fetcher().fetch(scenario.file, of: scenario.fixture.release, to: scenario.staged)
+        try await scenario.fetch(with: sleeps.fetcher())
         #expect(try Data(contentsOf: scenario.staged) == scenario.bytes)
         let ranges = scenario.requests.map { $0.value(forHTTPHeaderField: "Range") }
         #expect(ranges == [nil, "bytes=30000-", "bytes=60000-"], "each attempt carries on from what reached disk")
