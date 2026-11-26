@@ -2,7 +2,8 @@
 \* One dictation session as main's session reducer (apps/desktop/src/main/session.ts) runs it,
 \* with the helper's capture and insertion (native/voice-helper) reduced to the events they send.
 \* A helper event and main's reaction to it are one step, and so are a command and the helper's
-\* reaction, except an insertion: main can give up on it while the helper still works on it.
+\* reaction, except an insertion and a transcription: main can give up on either while the
+\* helper still works on it.
 \* The helper starts no write later than 4 s after it received the insert (InsertDeadline),
 \* and main waits 6.5 s (INSERT_TIMEOUT_MS), longer than the helper's worst-case answer for an
 \* insert that wrote (insertMaxMs in test-fixtures/helper-protocol.json). So once main gave
@@ -20,10 +21,12 @@ VARIABLES
     history,          \* this session's history entry: "none", "pending", "inserted", "notInserted",
                       \* "unconfirmed"
     heard,            \* the helper delivered a final transcript with words
-    outcome           \* in "done": what the Flow Bar reports
+    outcome,          \* in "done": what the Flow Bar reports
+    lateTranscript    \* the helper still transcribes a session main gave up on; a new session
+                      \* does not forget it
 
 vars == <<phase, released, short, intent, mic, helperInserting, inApp, onClipboard, history,
-          heard, outcome>>
+          heard, outcome, lateTranscript>>
 
 Init ==
     /\ phase = "idle"
@@ -37,6 +40,7 @@ Init ==
     /\ history = "none"
     /\ heard = FALSE
     /\ outcome = "none"
+    /\ lateTranscript = FALSE
 
 \* What the Flow Bar shows: session.ts toPillState, then renderer/pillView.ts.
 Pill ==
@@ -61,12 +65,14 @@ Fresh ==
 
 \* session.ts finish() for an outcome that inserts nothing; dictation.ts finish() then settles
 \* a pending history entry to notInserted.
-EndWith(o) ==
+Finish(o) ==
     /\ phase' = "done"
     /\ outcome' = o
     /\ mic' = "off"
     /\ history' = IF history = "pending" THEN "notInserted" ELSE history
     /\ UNCHANGED <<released, short, helperInserting, inApp, onClipboard, heard>>
+
+EndWith(o) == Finish(o) /\ UNCHANGED lateTranscript
 
 \* hotkeyDown or toggle while idle or done: capture.start. The model never has the speech
 \* model missing, which ends the session at once without a capture.
@@ -77,6 +83,7 @@ YouPress ==
     /\ intent' = TRUE
     /\ mic' = "opening"
     /\ Fresh
+    /\ UNCHANGED lateTranscript
 
 \* endCapture in "starting": main records the release and sends the helper nothing.
 YouLetGoEarly ==
@@ -85,7 +92,8 @@ YouLetGoEarly ==
     /\ intent' = FALSE
     /\ released' = TRUE
     /\ short' \in BOOLEAN
-    /\ UNCHANGED <<phase, mic, helperInserting, inApp, onClipboard, history, heard, outcome>>
+    /\ UNCHANGED <<phase, mic, helperInserting, inApp, onClipboard, history, heard, outcome,
+                   lateTranscript>>
 
 \* stopOrCancel after 250 ms or more: capture.stop, and the helper transcribes.
 YouLetGo ==
@@ -94,7 +102,8 @@ YouLetGo ==
     /\ phase' = "transcribing"
     /\ intent' = FALSE
     /\ mic' = "off"
-    /\ UNCHANGED <<released, short, helperInserting, inApp, onClipboard, history, heard, outcome>>
+    /\ UNCHANGED <<released, short, helperInserting, inApp, onClipboard, history, heard, outcome,
+                   lateTranscript>>
 
 \* stopOrCancel under 250 ms: capture.cancel, tooShort.
 YouLetGoTooSoon ==
@@ -109,17 +118,18 @@ YouLetGoAfterTheMicStopped ==
     /\ intent
     /\ intent' = FALSE
     /\ UNCHANGED <<phase, released, short, mic, helperInserting, inApp, onClipboard, history,
-                   heard, outcome>>
+                   heard, outcome, lateTranscript>>
 
 \* cancel (Escape, in either mode) or hotkeyChord (another key while holding): capture.cancel.
+\* While transcribing, also once the transcription is overdue, the helper drops the transcript.
 YouPressEscape ==
-    /\ phase \in {"starting", "recording"}
+    /\ phase \in {"starting", "recording", "transcribing"}
     /\ phase' = "idle"
     /\ intent' = FALSE
     /\ mic' = "off"
     /\ released' = FALSE
     /\ short' = FALSE
-    /\ UNCHANGED <<helperInserting, inApp, onClipboard, history, heard, outcome>>
+    /\ UNCHANGED <<helperInserting, inApp, onClipboard, history, heard, outcome, lateTranscript>>
 
 \* capture.started: the helper's first audio chunk.
 MicRecords ==
@@ -128,7 +138,7 @@ MicRecords ==
     /\ phase' = "recording"
     /\ mic' = "on"
     /\ UNCHANGED <<released, short, intent, helperInserting, inApp, onClipboard, history, heard,
-                   outcome>>
+                   outcome, lateTranscript>>
 
 \* capture.started after an early release of 250 ms or more: capture.stop.
 MicRecordsAfterYouLetGo ==
@@ -138,7 +148,8 @@ MicRecordsAfterYouLetGo ==
     /\ phase' = "transcribing"
     /\ mic' = "off"
     /\ released' = FALSE
-    /\ UNCHANGED <<short, intent, helperInserting, inApp, onClipboard, history, heard, outcome>>
+    /\ UNCHANGED <<short, intent, helperInserting, inApp, onClipboard, history, heard, outcome,
+                   lateTranscript>>
 
 \* capture.started after an early release under 250 ms: capture.cancel, tooShort.
 MicRecordsAfterATap ==
@@ -161,7 +172,7 @@ MicStopsOnItsOwn ==
     /\ phase' = "transcribing"
     /\ mic' = "off"
     /\ UNCHANGED <<released, short, intent, helperInserting, inApp, onClipboard, history, heard,
-                   outcome>>
+                   outcome, lateTranscript>>
 
 \* transcript with words, cleanup (or an auto-applied transform) on: remember pending, clean.
 HearsWordsCleanupOn ==
@@ -169,7 +180,8 @@ HearsWordsCleanupOn ==
     /\ phase' = "cleaning"
     /\ heard' = TRUE
     /\ history' = "pending"
-    /\ UNCHANGED <<released, short, intent, mic, helperInserting, inApp, onClipboard, outcome>>
+    /\ UNCHANGED <<released, short, intent, mic, helperInserting, inApp, onClipboard, outcome,
+                   lateTranscript>>
 
 \* transcript with words, cleanup off or the whole dictation is a snippet: remember, insert.
 HearsWordsCleanupOff ==
@@ -178,7 +190,7 @@ HearsWordsCleanupOff ==
     /\ heard' = TRUE
     /\ history' = "pending"
     /\ helperInserting' = TRUE
-    /\ UNCHANGED <<released, short, intent, mic, inApp, onClipboard, outcome>>
+    /\ UNCHANGED <<released, short, intent, mic, inApp, onClipboard, outcome, lateTranscript>>
 
 \* transcript with no words: empty, "Nothing heard".
 HearsNothing ==
@@ -186,25 +198,44 @@ HearsNothing ==
     /\ EndWith("empty")
     /\ UNCHANGED intent
 
-\* transcript.failed, or the watchdog gives up after it marked the transcription overdue.
+\* transcript.failed.
 TranscriptionFails ==
     /\ phase = "transcribing"
     /\ EndWith("failed")
     /\ UNCHANGED intent
+
+\* The watchdog gives up after it marked the transcription overdue: failed "Transcription did
+\* not finish", and capture.detach, so the helper keeps transcribing.
+MainGivesUp ==
+    /\ phase = "transcribing"
+    /\ Finish("failed")
+    /\ lateTranscript' = TRUE
+    /\ UNCHANGED intent
+
+\* The transcript of a session main gave up on: session.ts remembers it as notInserted and
+\* changes nothing else, whatever the current session does. One with no words, or a late
+\* transcript.failed, leaves no entry.
+LateTranscriptArrives ==
+    /\ lateTranscript
+    /\ lateTranscript' = FALSE
+    /\ UNCHANGED <<phase, released, short, intent, mic, helperInserting, inApp, onClipboard,
+                   history, heard, outcome>>
 
 \* cleaned with text: the cleaned text goes to insert.
 CleanupReturnsText ==
     /\ phase = "cleaning"
     /\ phase' = "inserting"
     /\ helperInserting' = TRUE
-    /\ UNCHANGED <<released, short, intent, mic, inApp, onClipboard, history, heard, outcome>>
+    /\ UNCHANGED <<released, short, intent, mic, inApp, onClipboard, history, heard, outcome,
+                   lateTranscript>>
 
 \* cleanupFailed or the cleanup budget runs out: the raw text goes to insert.
 CleanupFails ==
     /\ phase = "cleaning"
     /\ phase' = "inserting"
     /\ helperInserting' = TRUE
-    /\ UNCHANGED <<released, short, intent, mic, inApp, onClipboard, history, heard, outcome>>
+    /\ UNCHANGED <<released, short, intent, mic, inApp, onClipboard, history, heard, outcome,
+                   lateTranscript>>
 
 \* cleaned with no text (filler only): empty, and the raw text stays in history.
 CleanupReturnsNothing ==
@@ -221,7 +252,7 @@ AppTakesText ==
     /\ inApp' = TRUE
     /\ history' = "inserted"
     /\ helperInserting' = FALSE
-    /\ UNCHANGED <<released, short, intent, mic, onClipboard, heard>>
+    /\ UNCHANGED <<released, short, intent, mic, onClipboard, heard, lateTranscript>>
 
 \* insert.result none (focus changed, no text field, secure input, failed). With Copy to
 \* clipboard on, main copies the text; the copy can fail.
@@ -233,7 +264,7 @@ AppRefusesText ==
     /\ history' = "notInserted"
     /\ helperInserting' = FALSE
     /\ onClipboard' \in BOOLEAN
-    /\ UNCHANGED <<released, short, intent, mic, inApp, heard>>
+    /\ UNCHANGED <<released, short, intent, mic, inApp, heard, lateTranscript>>
 
 \* insert.result none unconfirmed: the accessibility write ran out its 0.3 s timeout and nothing
 \* shows it landed. The app may apply the queued write or drop it. Main ends notInserted with
@@ -247,7 +278,7 @@ AppDoesNotAnswer ==
     /\ helperInserting' = FALSE
     /\ inApp' \in BOOLEAN
     /\ onClipboard' \in BOOLEAN
-    /\ UNCHANGED <<released, short, intent, mic, heard>>
+    /\ UNCHANGED <<released, short, intent, mic, heard, lateTranscript>>
 
 \* The 6.5 s insert watchdog. The helper's write deadline passed before it, so the helper
 \* writes nothing from here on.
@@ -257,7 +288,7 @@ InsertTimesOut ==
     /\ outcome' = "notInserted"
     /\ history' = "notInserted"
     /\ onClipboard' \in BOOLEAN
-    /\ UNCHANGED <<released, short, intent, mic, helperInserting, inApp, heard>>
+    /\ UNCHANGED <<released, short, intent, mic, helperInserting, inApp, heard, lateTranscript>>
 
 \* A late insert.result is a refusal, for example after a clipboard save that outlasted the
 \* write deadline. Main logs it and changes nothing.
@@ -266,28 +297,34 @@ LateInsertRefused ==
     /\ helperInserting
     /\ helperInserting' = FALSE
     /\ UNCHANGED <<phase, released, short, intent, mic, inApp, onClipboard, history, heard,
-                   outcome>>
+                   outcome, lateTranscript>>
 
 \* helperExited. Before a transcript: failed "Voice helper stopped". After one: notInserted
-\* with the uncleaned text, copied when Copy to clipboard is on.
+\* with the uncleaned text, copied when Copy to clipboard is on. Idle or showing a result, main
+\* ignores it. In every phase the crash loses a transcription main gave up on.
 HelperCrashes ==
-    \/ /\ phase \in {"starting", "recording", "transcribing"}
-       /\ EndWith("failed")
-       /\ UNCHANGED intent
-    \/ /\ phase \in {"cleaning", "inserting"}
-       /\ phase' = "done"
-       /\ outcome' = "notInserted"
-       /\ history' = "notInserted"
-       /\ helperInserting' = FALSE
-       /\ onClipboard' \in BOOLEAN
-       /\ UNCHANGED <<released, short, intent, mic, inApp, heard>>
+    /\ lateTranscript' = FALSE
+    /\ \/ /\ phase \in {"starting", "recording", "transcribing"}
+          /\ Finish("failed")
+          /\ UNCHANGED intent
+       \/ /\ phase \in {"cleaning", "inserting"}
+          /\ phase' = "done"
+          /\ outcome' = "notInserted"
+          /\ history' = "notInserted"
+          /\ helperInserting' = FALSE
+          /\ onClipboard' \in BOOLEAN
+          /\ UNCHANGED <<released, short, intent, mic, inApp, heard>>
+       \/ /\ phase \in {"idle", "done"}
+          /\ lateTranscript
+          /\ UNCHANGED <<phase, released, short, intent, mic, helperInserting, inApp, onClipboard,
+                         history, heard, outcome>>
 
 \* idleTimeout, 1.3 s after an insert and 2.5 s after anything else.
 FlowBarClears ==
     /\ phase = "done"
     /\ phase' = "idle"
     /\ mic' = "off"
-    /\ UNCHANGED intent
+    /\ UNCHANGED <<intent, lateTranscript>>
     /\ Fresh
 
 Next ==
@@ -306,6 +343,8 @@ Next ==
     \/ HearsWordsCleanupOff
     \/ HearsNothing
     \/ TranscriptionFails
+    \/ MainGivesUp
+    \/ LateTranscriptArrives
     \/ CleanupReturnsText
     \/ CleanupFails
     \/ CleanupReturnsNothing

@@ -64,12 +64,23 @@ private struct Harness {
                           outputLowering: OutputLowering(output: output, stateDir: dir), source: .fixture(file.path))
     }
 
-    func start() {
-        capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil)
+    func start(_ id: String = "s1") {
+        capture.start(id: id, language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil)
     }
 
-    func waitForAudioToEnd() async throws {
-        try await waitUntil { lines.snapshot().contains { $0["message"] as? String == "test.audioFile ended" } }
+    func waitForAudioToEnd(times: Int = 1) async throws {
+        try await waitUntil { lines.snapshot().count { $0["message"] as? String == "test.audioFile ended" } >= times }
+    }
+
+    func transcripts() -> [(id: String, text: String)] {
+        sessionEvents(lines.snapshot()).compactMap { event in
+            guard event["type"] as? String == "transcript", let id = event["id"] as? String, let text = event["text"] as? String else { return nil }
+            return (id, text)
+        }
+    }
+
+    func sessionTypes(_ id: String) -> [String] {
+        sessionEvents(lines.snapshot()).filter { $0["id"] as? String == id }.compactMap { $0["type"] as? String }
     }
 
     func waitUntil(_ condition: @MainActor () -> Bool) async throws {
@@ -152,5 +163,74 @@ struct CapturePauseDecodeTests {
         #expect(sessionEvents(try await h.lines.wait(for: "capture.cancelled")).last?["id"] as? String == "s1")
         #expect(h.transcriber.decodes.first?.task.isCancelled == true)
         #expect(h.transcriber.releases.isEmpty)
+    }
+
+    @Test @MainActor func captureStaysActiveUntilTheTranscriptLands() async throws {
+        let h = try Harness(segments: [(1, false), (0.5, true)])
+        defer { h.tearDown() }
+        h.transcriber.hold = true
+        h.start()
+        try await h.waitForAudioToEnd()
+        h.capture.stop(id: "s1", receivedAt: .now())
+        #expect(h.capture.isActive, "Escape reaches main only while capture reports active")
+        h.transcriber.releaseHeldDecodes()
+        #expect(try await h.transcriptText() == "from pause 1")
+        #expect(!h.capture.isActive)
+    }
+
+    @Test @MainActor func cancelWhileTranscribingDiscardsTheText() async throws {
+        let h = try Harness(segments: [(1, false), (0.5, true)])
+        defer { h.tearDown() }
+        h.transcriber.hold = true
+        h.start()
+        try await h.waitForAudioToEnd()
+        h.capture.stop(id: "s1", receivedAt: .now())
+        h.capture.cancel(id: "s1")
+        #expect(!h.capture.isActive)
+        h.transcriber.hold = false
+        h.transcriber.releaseHeldDecodes()
+        h.start("s2")
+        try await h.waitForAudioToEnd(times: 2)
+        h.capture.stop(id: "s2", receivedAt: .now())
+        try await h.waitUntil { !h.transcripts().isEmpty }
+        #expect(h.transcripts().map(\.id) == ["s2"])
+        #expect(h.sessionTypes("s1") == ["capture.started", "capture.cancelled"])
+    }
+
+    @Test @MainActor func detachFreesCaptureAndStillEmitsTheTranscript() async throws {
+        let h = try Harness(segments: [(1, false), (0.5, true)])
+        defer { h.tearDown() }
+        h.transcriber.hold = true
+        h.start()
+        try await h.waitForAudioToEnd()
+        h.capture.stop(id: "s1", receivedAt: .now())
+        h.capture.detach(id: "s1")
+        #expect(!h.capture.isActive)
+        h.transcriber.hold = false
+        h.start("s2")
+        #expect(h.capture.isActive)
+        h.transcriber.releaseHeldDecodes()
+        try await h.waitUntil { h.transcripts().contains { $0.id == "s1" } }
+        #expect(h.transcripts().map(\.text) == ["from pause 1"])
+        #expect(h.capture.isActive, "the detached transcript leaves the new session alone")
+        try await h.waitForAudioToEnd(times: 2)
+        h.capture.stop(id: "s2", receivedAt: .now())
+        try await h.waitUntil { h.transcripts().count == 2 }
+        #expect(h.transcripts().map(\.id) == ["s1", "s2"])
+        #expect(h.transcripts().last?.text == "from pause 2")
+        #expect(!h.sessionTypes("s2").contains("capture.failed"))
+        #expect(h.capture.takeLastTarget(id: "s1") == nil)
+        #expect(h.capture.takeLastTarget(id: "s2") != nil)
+    }
+
+    @Test @MainActor func detachWhileRecordingCancels() async throws {
+        let h = try Harness(segments: [(1, false), (0.5, true)])
+        defer { h.tearDown() }
+        h.start()
+        try await h.waitUntil { h.sessionTypes("s1").contains("capture.started") }
+        h.capture.detach(id: "s1")
+        #expect(!h.capture.isActive)
+        _ = try await h.lines.wait(for: "capture.cancelled")
+        #expect(h.sessionTypes("s1") == ["capture.started", "capture.cancelled"])
     }
 }

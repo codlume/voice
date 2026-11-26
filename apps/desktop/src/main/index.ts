@@ -976,6 +976,10 @@ async function main() {
           }
           helper.send({ type: "test.target", target: target.value });
         },
+        setAsrDelay: (ms: number) => {
+          if (!Number.isFinite(ms) || ms < 0) throw new Error("setAsrDelay takes a delay in ms");
+          helper.send({ type: "test.asrDelay", ms });
+        },
       },
     });
   }
