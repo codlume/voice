@@ -47,16 +47,24 @@ struct SyntheticRelease {
     }
 }
 
+private let patterns = OSAllocatedUnfairLock(initialState: [String: Data]())
+
+/// Tests start together and a debug build fills megabytes slowly, so each pattern is built once.
+/// Building under the lock makes the tests that ask meanwhile wait for that build, not start their own.
 func patternedData(_ count: Int, seed: UInt8) -> Data {
-    var data = Data(count: count)
-    data.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) in
-        var state = UInt32(seed) &* 2_654_435_761 &+ 1
-        for index in 0..<count {
-            state = state &* 1_664_525 &+ 1_013_904_223
-            bytes[index] = UInt8(truncatingIfNeeded: state >> 24)
+    patterns.withLock { built in
+        if let data = built["\(count)/\(seed)"] { return data }
+        var data = Data(count: count)
+        data.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) in
+            var state = UInt32(seed) &* 2_654_435_761 &+ 1
+            for index in 0..<count {
+                state = state &* 1_664_525 &+ 1_013_904_223
+                bytes[index] = UInt8(truncatingIfNeeded: state >> 24)
+            }
         }
+        built["\(count)/\(seed)"] = data
+        return data
     }
-    return data
 }
 
 struct FileIdentity: Equatable {
