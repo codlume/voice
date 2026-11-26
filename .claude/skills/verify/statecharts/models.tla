@@ -108,7 +108,8 @@ LoadFails ==
 
 \* Cancel calls uninstallModel. Cleanup aborts the download, then removes the weights and .part.
 \* The helper cancels the download task, hash check and load included, and deletes the speech
-\* model folder once the task has stopped.
+\* model folder once the task has stopped. It cancels the voice detector download that Install
+\* started too, and deletes the detector folder once that task has stopped.
 YouCancel ==
     /\ "Cancel" \in Offers
     /\ work \in {"fetching", "stalled", "verifying", "loading"}

@@ -100,7 +100,8 @@ struct ModelIntegrityTests {
         while !StalledDownloads.started, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(transcriber.sessionState == .downloading)
 
-        transcriber.remove()
+        #expect(transcriber.remove(), "the speech model is going, so what came with it goes too")
+        #expect(!transcriber.prepare(download: true), "an Install during the cancel does not bring back what came with it")
 
         let final = try await waitForTerminal(lines, timeout: .seconds(5))
         let states = lines.snapshot().filter { $0["type"] as? String == "asr.status" }.compactMap { $0["state"] as? String }

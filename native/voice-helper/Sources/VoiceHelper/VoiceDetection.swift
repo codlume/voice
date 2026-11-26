@@ -8,7 +8,10 @@ final class VoiceDetection {
     private enum Load {
         case absent
         case loading(Task<VadManager?, Error>)
-        case fetching
+        case fetching(Task<VadManager, Error>)
+        /// remove() cancelled the preparation. The folder goes once that has stopped writing to
+        /// it, and `thenPrepare` says prepare() was asked for in the meantime.
+        case removing(thenPrepare: Bool)
         case ready(VadManager)
         case failed
     }
@@ -31,6 +34,7 @@ final class VoiceDetection {
     func prepare() {
         switch load {
         case .loading, .fetching, .ready: return
+        case .removing: return load = .removing(thenPrepare: true)
         case .absent, .failed: break
         }
         let cache = cache
@@ -53,15 +57,20 @@ final class VoiceDetection {
                 if let checked = try await check.value {
                     manager = checked
                 } else {
-                    load = .fetching
-                    manager = try await Task.detached(priority: .utility) {
+                    if finishRemoval() { return }
+                    let fetch = Task.detached(priority: .utility) {
                         try await cache.prepare(download: true, fetcher: fetcher)
                         return try await Self.loadModel(from: cache.folder)
-                    }.value
+                    }
+                    load = .fetching(fetch)
+                    output.log(.info, "voice detector download started")
+                    manager = try await fetch.value
                 }
+                if finishRemoval() { return }
                 load = .ready(manager)
                 output.log(.info, "voice detector ready")
             } catch {
+                if finishRemoval() { return }
                 load = .failed
                 output.log(.error, "voice detector unavailable: \((error as? ModelCacheError)?.errorDescription ?? "\(error)")")
             }
@@ -80,12 +89,33 @@ final class VoiceDetection {
 
     func remove() {
         switch load {
-        case .loading, .fetching: return output.log(.info, "voice detector kept: it is still being prepared")
-        case .absent, .ready, .failed: break
+        case .loading(let check):
+            check.cancel()
+            load = .removing(thenPrepare: false)
+        case .fetching(let fetch):
+            fetch.cancel()
+            load = .removing(thenPrepare: false)
+        case .removing:
+            load = .removing(thenPrepare: false)
+        case .absent, .ready, .failed:
+            deleteFolder()
         }
+    }
+
+    /// Whether remove() cancelled the preparation under way. That preparation asks each time one
+    /// of its tasks has stopped: nothing writes to the folder then, so the folder goes.
+    private func finishRemoval() -> Bool {
+        guard case .removing(let thenPrepare) = load else { return false }
+        deleteFolder()
+        if thenPrepare { prepare() }
+        return true
+    }
+
+    private func deleteFolder() {
         load = .absent
         do {
             try FileManager.default.removeItem(at: cache.folder)
+            output.log(.info, "voice detector removed")
         } catch let error as CocoaError where error.code == .fileNoSuchFile {
         } catch {
             output.log(.error, "voice detector not removed: \(error.localizedDescription)")
@@ -100,7 +130,7 @@ final class VoiceDetection {
         case .loading(let check):
             guard let loaded = try? await check.value else { return nil }
             manager = loaded
-        case .absent, .fetching, .failed:
+        case .absent, .fetching, .removing, .failed:
             return nil
         }
         return SileroDetector(manager: manager) { [weak self] error in

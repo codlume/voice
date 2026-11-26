@@ -83,17 +83,23 @@ final class Transcriber: Transcribing {
         self.output = output
     }
 
-    func prepare(download: Bool) {
+    /// Whether the speech model is installed or on its way, so that what is installed with it
+    /// can be prepared too.
+    @discardableResult
+    func prepare(download: Bool) -> Bool {
         switch load {
         case .ready:
             output.emit(.asrStatus(state: .ready, message: nil))
-            return
-        case .downloading, .cancelling:
+            return true
+        case .downloading:
             output.emit(.asrStatus(state: .downloading, message: nil))
-            return
+            return true
+        case .cancelling:
+            output.emit(.asrStatus(state: .downloading, message: nil))
+            return false
         case .loading:
             output.emit(.asrStatus(state: .loading, message: nil))
-            return
+            return true
         case .missing, .failed:
             break
         }
@@ -101,13 +107,14 @@ final class Transcriber: Transcribing {
         do {
             presence = try cache.presence()
         } catch {
-            return fail(error)
+            fail(error)
+            return false
         }
         let needsDownload = !presence.missing.isEmpty
         if needsDownload && !download {
             load = .missing
             output.emit(.asrStatus(state: .missing, message: nil))
-            return
+            return false
         }
         let directory = directory
         let cache = cache
@@ -130,7 +137,10 @@ final class Transcriber: Transcribing {
         output.emit(.asrStatus(state: needsDownload ? .downloading : .loading, message: nil))
         Task { @MainActor in
             let result = await task.result
-            if case .cancelling = load { return deleteModel() }
+            if case .cancelling = load {
+                deleteModel()
+                return
+            }
             switch result {
             case .success(let manager):
                 load = .ready(manager)
@@ -140,6 +150,7 @@ final class Transcriber: Transcribing {
                 fail(error)
             }
         }
+        return true
     }
 
     /// What `AsrModels.load(from:version: .v3)` returns, with the encoder loading beside the other
@@ -190,22 +201,28 @@ final class Transcriber: Transcribing {
         (error as? ModelCacheError)?.errorDescription ?? "\(error)"
     }
 
-    func remove() {
+    /// Whether the speech model is going, now or once its download has stopped, so that what
+    /// was installed with it can go too.
+    @discardableResult
+    func remove() -> Bool {
         switch load {
         case .downloading(let task):
             load = .cancelling(task)
             task.cancel()
+            return true
         case .cancelling:
-            break
+            return true
         case .loading:
             output.log(.info, "asr.remove ignored while the speech model loads")
             output.emit(.asrStatus(state: .loading, message: nil))
+            return false
         case .missing, .ready, .failed:
-            deleteModel()
+            return deleteModel()
         }
     }
 
-    private func deleteModel() {
+    @discardableResult
+    private func deleteModel() -> Bool {
         load = .missing
         meetingManager = nil
         do {
@@ -215,9 +232,10 @@ final class Transcriber: Transcribing {
             let message = error.localizedDescription
             load = .failed(message)
             output.emit(.asrStatus(state: .failed, message: message))
-            return
+            return false
         }
         output.emit(.asrStatus(state: .missing, message: nil))
+        return true
     }
 
     func beginStreaming(language: DictationLanguage) -> StreamingTranscription? {
