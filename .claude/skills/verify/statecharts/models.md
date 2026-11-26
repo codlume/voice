@@ -69,7 +69,7 @@ stateDiagram-v2
 
 - `ReadyMeansComplete` holds. The row reads "Installed" only when every file is on disk with the right bytes.
 - `WayOut` holds. A stalled or failed download always offers Retry or Cancel. Both rows show Cancel while they download, stalled or not.
-- `UninstallClears` breaks. After you confirm Uninstall or press Cancel, the files are gone, the row reads "Not installed", and dictation no longer uses the model. On the speech row the voice detector goes too, with no download left running.
+- `UninstallClears` holds. After you confirm Uninstall or press Cancel, the files are gone, the row reads "Not installed", and dictation no longer uses the model. On the speech row the voice detector goes too, with no download left running.
 - `NoPartialUse` holds. Dictation never uses a partial download.
 - `StallEnds` holds. A stall never keeps the row in "Downloading" for good, because each download gives up on its own. S1-mini gives up after 30 s with no bytes. Parakeet gives up after 4 tries that each hit URLSession's 60 s idle timeout, about 4 minutes. Then the row shows the failure message and Retry.
 
