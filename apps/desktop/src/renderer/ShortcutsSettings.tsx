@@ -93,7 +93,7 @@ export function ShortcutsSettings({
           </Row>
           <ShortcutRow
             title="Cancel dictation"
-            detail="Press while dictating to stop without inserting."
+            detail="Press while dictating or transcribing to stop without inserting."
             keys={["Esc"]}
           />
         </Card>

@@ -1,6 +1,6 @@
 # Dictation
 
-The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle key set, the user can instead tap it once to start and again to stop. The Flow Bar shows listening, then processing. Voice transcribes on the Mac, optionally cleans up the text, inserts it into the app that had focus when the key went down, and shows the outcome on the Flow Bar. Escape cancels a hold or toggle session without inserting.
+The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle key set, the user can instead tap it once to start and again to stop. The Flow Bar shows listening, then processing. Voice transcribes on the Mac, optionally cleans up the text, inserts it into the app that had focus when the key went down, and shows the outcome on the Flow Bar. Escape cancels a hold or toggle session while it listens or transcribes, without inserting.
 
 ## Sub-features
 
@@ -9,7 +9,8 @@ The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle
 - `dictate-cleanup-failure`: a rejected cleanup preserves and inserts the raw transcript. A subsequent session can clean up normally.
 - `dictate-raw`: with cleanup off, the inserted text equals the raw transcript.
 - `dictate-toggle`: a tap of the toggle key (press and release with no other key between) starts listening, and the next tap stops and inserts. The toggle key used in a shortcut, such as Right Option + a, does nothing.
-- `dictate-cancel`: Escape during listening, in a hold or toggle session, returns to idle and inserts nothing.
+- `dictate-cancel`: Escape during listening or transcribing ("Transcribing" or "Still transcribing"), in a hold or toggle session, returns to idle, inserts nothing, and keeps no history entry. Escape while Voice cleans up or inserts does nothing.
+- `dictate-gave-up`: a transcription that does not finish ends `failed` with "Transcription did not finish". The helper keeps transcribing, and the late transcript goes into history as `notInserted` without being inserted. A new dictation can start right after the give-up.
 - `dictate-too-short`: a press-and-release with almost no audio ends as `tooShort` and inserts nothing.
 - `dictate-empty`: silence ends as `empty` and inserts nothing.
 - `dictate-not-inserted`: no focused field, a focus change, or secure input ends as `notInserted`, and the transcript is still kept in the history, where `latest.status` is `notInserted`.
@@ -33,6 +34,8 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 - **Raw insert.** Turn cleanup off as in [Style](./style.md), then run `vv dictate short.wav`. The output has `inserted === latest.raw` and no `cleanupMs`.
 - **Toggle.** Choose a key under `Toggle dictation` (`click css:#setting-toggle-hotkey`, then `click "Right Option"`), then `vv dictate short.wav --key=toggle`. The output has `mode` `toggle` and `outcome.kind` `inserted`. `vv dictate short.wav --key=toggle --end=escape` ends `idle`.
 - **Cancel.** `vv dictate short.wav --end=escape`. The output has `outcome` `idle` and an empty `inserted`.
+- **Cancel while transcribing.** `vv dictate short.wav --key=toggle --end=escape-processing --asr-delay=8000`. The output has `outcome` `idle`, an empty `inserted`, and `latest` `null`. `--end=escape-processing` waits for the Flow Bar to show `processing`, then presses Escape. `--asr-delay=<ms>` holds this session's final transcription, in test mode only.
+- **Gave up.** `vv dictate short.wav --key=toggle --asr-delay=75000` ends after about 60 s with `outcome.kind` `failed`, "Transcription did not finish", and `latest` `null`. Run `vv dictate short.wav` at once, and it ends `inserted`. Then `vv wait hub 'window.voice.getHistory().then((h) => h.entries[0]?.status === "notInserted")' 30000` passes about 15 s after the give-up, and that newest entry holds the delayed transcript.
 - **Too short.** `vv dictate short.wav --end=immediate`. The output has `outcome.kind` `tooShort` and an empty `inserted`.
 - **Silence.** `vv dictate silence.wav`. The output has `outcome.kind` `empty` and an empty `inserted`.
 - **Flow Bar.** `dictate` blocks, so run `vv dictate long.wav` in the background. Then `vv wait pill 'document.querySelector("[role=status]").dataset.view === "listening"'` and `vv shot flow-bar-listening pill`, and the same for `processing` and `inserted`. Read the label from the `[role=status]` element, not `document.body`, which also holds the previous look while it fades out. The status element's `textContent` reads "Listening" while listening, "Transcribing" while processing, and "Pasted" after a paste.

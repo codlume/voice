@@ -31,6 +31,7 @@ const startedAt = Date.now();
 let recording: { since: number; levels: NodeJS.Timeout } | null = null;
 let target: unknown = null;
 let captured: unknown = null;
+const transcribing = new Map<string, NodeJS.Timeout>();
 
 const installedApps = [
   {
@@ -100,7 +101,8 @@ function handle(command: Record<string, unknown>) {
       if (recording) clearInterval(recording.levels);
       const audioMs = recording ? Date.now() - recording.since : 0;
       recording = null;
-      setTimeout(() => {
+      const pending = setTimeout(() => {
+        transcribing.delete(id);
         emit({
           type: "transcript",
           id,
@@ -111,15 +113,23 @@ function handle(command: Record<string, unknown>) {
           target: captured,
         });
       }, config.transcriptMs ?? 40);
+      transcribing.set(id, pending);
       return;
     }
     case "capture.cancel":
       if (recording) clearInterval(recording.levels);
       recording = null;
+      clearTimeout(transcribing.get(id));
+      transcribing.delete(id);
       emit({ type: "capture.cancelled", id });
+      return;
+    // The pending transcript still arrives; main saves it as a late result.
+    case "capture.detach":
       return;
     case "test.target":
       target = command.target;
+      return;
+    case "test.asrDelay":
       return;
     case "insert":
       setTimeout(
@@ -157,7 +167,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 21 });
+const ready = () => emit({ type: "ready", version: config.version ?? 22 });
 
 if (config.control) {
   const path = config.control;

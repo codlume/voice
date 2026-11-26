@@ -22,6 +22,8 @@ final class Recording {
     var stream: StreamingTranscription?
     var transcription: Task<Void, Never>?
     var releaseRelayMs: Double?
+    /// Main stopped waiting: capture is free for the next session, but this transcript is still emitted.
+    var detached = false
 
     init(session: CaptureSession) {
         self.session = session
@@ -55,8 +57,9 @@ final class Capture {
         didSet {
             let active: Bool
             switch state {
-            case .starting, .recording: active = true
-            case .idle, .transcribing, .testing: active = false
+            // Transcribing counts so Escape reaches main and can discard the text.
+            case .starting, .recording, .transcribing: active = true
+            case .idle, .testing: active = false
             }
             activeFlag.withLock { $0 = active }
         }
@@ -71,6 +74,8 @@ final class Capture {
     private let authorizationStatus: @Sendable () -> AVAuthorizationStatus
     private var lastTarget = SelectionShelf<InsertTarget>()
     private(set) var source: CaptureSource
+    /// Test mode only: the next final transcription waits this long first, so a run can act while it processes.
+    var testAsrDelayMs: Double?
     var testAudioPath: String? {
         get {
             if case .fixture(let path) = source { return path }
@@ -206,22 +211,25 @@ final class Capture {
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
             recording.stream?.cancel()
             recording.pauseDecode?.cancel()
-            finish(session, with: .transcript(Transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs,
+            finish(recording, with: .transcript(Transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs,
                                                          relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget())))
             return
         }
         let pauseDecode = recording.pauseDecode.flatMap { $0.stale ? nil : $0 }
         if pauseDecode == nil { recording.pauseDecode?.cancel() }
+        let delayMs = testAsrDelayMs
+        testAsrDelayMs = nil
         recording.transcription = Task { @MainActor in
             do {
+                if let delayMs { try await Task.sleep(for: .milliseconds(delayMs)) }
                 let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream, pauseDecode: pauseDecode)
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                finish(session, with: .transcript(Transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs,
+                finish(recording, with: .transcript(Transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs,
                                                              relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget())))
             } catch let error as TranscribeError {
-                finish(session, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
+                finish(recording, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
             } catch {
-                finish(session, with: .transcriptFailed(id: session.id, reason: .unknown, message: "\(error)"))
+                finish(recording, with: .transcriptFailed(id: session.id, reason: .unknown, message: "\(error)"))
             }
         }
     }
@@ -254,6 +262,25 @@ final class Capture {
             output.log(.error, "capture.cancel \(id) ignored: no such active session")
         }
         prepareIdleMic()
+    }
+
+    /// Frees capture for the next session without losing a transcript still in flight. Leaves the
+    /// stream and decodes running, since cancelling them would discard the text.
+    func detach(id: String) {
+        if let finished = lastTarget.take(id: id) { return finished.cancel() }
+        switch state {
+        case .transcribing(let recording) where recording.session.id == id:
+            recording.session.target.cancel()
+            recording.detached = true
+            state = .idle
+            prepareIdleMic()
+        case .starting(let session) where session.id == id:
+            cancel(id: id)
+        case .recording(let recording) where recording.session.id == id:
+            cancel(id: id)
+        default:
+            output.log(.error, "capture.detach \(id) ignored: no such active session")
+        }
     }
 
     func shutdown() {
@@ -499,8 +526,10 @@ final class Capture {
         prepareIdleMic()
     }
 
-    private func finish(_ session: CaptureSession, with event: HelperEvent) {
-        guard case .transcribing(let current) = state, current.session.input === session.input else { return }
+    private func finish(_ recording: Recording, with event: HelperEvent) {
+        if recording.detached { return output.emit(event) }
+        guard case .transcribing(let current) = state, current === recording else { return }
+        let session = recording.session
         if case .transcript(let transcript) = event, !transcript.text.isEmpty {
             lastTarget.put(id: session.id, session.target)
         } else {
