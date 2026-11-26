@@ -100,6 +100,8 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
       return isLive(meeting);
     case "finalPassFailed":
       return meeting.finalPassFailed !== null;
+    case "audioDeleteFailed":
+      return meeting.audio.kind === "deleting";
     case "summaryFailed":
       return meeting.summary.kind === "failed" && meeting.status.kind !== "summarizing";
     case "summaryReady":
@@ -139,7 +141,7 @@ export function raise(
     kind: notice.kind,
     text,
     actions: noticeActions(notice),
-    dismissable: notice.kind !== "finalPassFailed",
+    dismissable: notice.kind !== "finalPassFailed" && notice.kind !== "audioDeleteFailed",
   };
   return {
     ...focus,
@@ -152,7 +154,9 @@ export function raise(
 function noticeActions(notice: MeetingNotice): readonly MeetingNoticeAction[] {
   switch (notice.kind) {
     case "finalPassFailed":
-      return notice.audio === "whole" ? ["retryFinalPass", "deleteAudio"] : ["deleteAudio"];
+      return ["retryFinalPass", "deleteAudio"];
+    case "audioDeleteFailed":
+      return ["deleteAudio"];
     case "summaryReady":
       return ["viewSummary"];
     default:

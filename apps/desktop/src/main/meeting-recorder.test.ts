@@ -1000,6 +1000,25 @@ describe("meeting recorder", () => {
     expect(audioFilesIn(h.folder(id))).toEqual([]);
   });
 
+  test("a resume stopped before it records ends gone even when the helper fails after opening a file late", async () => {
+    const h = harness();
+    const id = await finishedMeeting(h);
+
+    await h.recorder.resume(id);
+    await h.settle();
+    expect(await h.recorder.stop(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    await writeFile(NodePath.join(h.folder(id), "mic.pcm"), "");
+    h.emit({ type: "meeting.failed", id, message: "the microphone could not be opened" });
+    await h.settle();
+
+    expect(audioFilesIn(h.folder(id))).toEqual([]);
+    expect(await h.onDisk(id)).toMatchObject({
+      status: { kind: "ready" },
+      audio: { kind: "gone" },
+    });
+  });
+
   test("a resume that fails to start keeps the audio a failed final pass kept", async () => {
     const h = harness();
     const id = await h.start();
@@ -1246,7 +1265,7 @@ describe("meeting recorder", () => {
     });
   });
 
-  test("Delete audio whose delete fails is refused and keeps the audio and both actions", async () => {
+  test("Delete audio whose delete fails is refused, says so, and offers only Delete audio until it works", async () => {
     const h = harness();
     const id = await h.start();
     await h.segment(id, "mic", 0, TEN_WORDS);
@@ -1254,7 +1273,7 @@ describe("meeting recorder", () => {
     await h.drained(id);
     h.emit({ type: "meeting.finalizeFailed", id, reason: "transcript", message: "model missing" });
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    expect(h.store.get(id)).toMatchObject({ finalPassFailed: "other", audio: { kind: "present" } });
     const mic = NodePath.join(h.folder(id), "mic.pcm");
 
     disk.nextAudioDelete = "throws";
@@ -1263,80 +1282,81 @@ describe("meeting recorder", () => {
       message: "The audio could not be deleted. Try again.",
     });
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBe("other");
-    expect((await h.onDisk(id)).finalPassFailed).toBe("other");
-    expect(h.notices).toEqual(["finalPassFailed", "finalPassFailed"]);
-    expect(h.noticed.at(-1)).toEqual({ kind: "finalPassFailed", reason: "other", audio: "whole" });
+    expect(h.store.get(id)).toMatchObject({ finalPassFailed: null, audio: { kind: "deleting" } });
+    expect(await h.onDisk(id)).toMatchObject({
+      finalPassFailed: null,
+      audio: { kind: "deleting" },
+    });
+    expect(h.noticed.at(-1)).toEqual({ kind: "audioDeleteFailed" });
     expect(existsSync(mic)).toBe(true);
+    expect((await h.recorder.retryFinalPass(id)).kind).toBe("refused");
 
     expect(await h.recorder.deleteAudio(id)).toEqual({ kind: "ok", id });
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBeNull();
+    expect(await h.onDisk(id)).toMatchObject({ finalPassFailed: null, audio: { kind: "gone" } });
     for (const name of AUDIO) {
       expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
     }
   });
 
-  test("after a partial Delete audio, Try again and Resume refuse and keep the deleted side's live lines", async () => {
-    const h = harness();
-    const id = await h.start();
-    await h.segment(id, "mic", 0, TEN_WORDS);
-    await h.segment(id, "system", 3000, "the other side said the date works for them");
-    await h.recorder.stop(id);
-    await h.drained(id);
-    h.emit({ type: "meeting.finalizeFailed", id, reason: "transcript", message: "model missing" });
-    await h.settle();
+  test("after a partial Delete audio, Try again refuses and Resume deletes the rest before it records", async () => {
+    const { h, id } = await partlyDeletedAudio();
     const helperCommands = h.sentTypes().length;
-
-    disk.nextAudioDelete = "throws";
-    expect((await h.recorder.deleteAudio(id)).kind).toBe("refused");
-    await h.settle();
-    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
-    expect(existsSync(NodePath.join(h.folder(id), "system.pcm"))).toBe(false);
-    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    expect(h.noticed.at(-1)).toEqual({ kind: "audioDeleteFailed" });
 
     expect(await h.recorder.retryFinalPass(id)).toEqual({
       kind: "refused",
-      message:
-        "Part of this meeting's audio was already deleted, so it cannot be transcribed again. Delete audio to remove the rest.",
+      message: "There is no kept audio to transcribe again.",
     });
-    expect((await h.recorder.resume(id)).kind).toBe("refused");
-    await h.settle();
     expect(h.sentTypes().slice(helperCommands)).toEqual([]);
     expect(await h.store.transcript(id)).toMatchObject([
       { kind: "segment", source: "mic", text: TEN_WORDS },
       { kind: "segment", source: "system", text: "the other side said the date works for them" },
     ]);
 
-    expect(await h.recorder.deleteAudio(id)).toEqual({ kind: "ok", id });
+    expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBeNull();
+    expect(h.sentTypes().slice(helperCommands)).toEqual(["meeting.start"]);
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+    expect(h.store.get(id)).toMatchObject({
+      status: { kind: "starting" },
+      audio: { kind: "present" },
+    });
   });
 
-  test("after a partial Delete audio, the notice says part of the audio was deleted", async () => {
-    const { h } = await partlyDeletedAudio();
-    expect(h.noticed).toEqual([
-      { kind: "finalPassFailed", reason: "other", audio: "whole" },
-      { kind: "finalPassFailed", reason: "other", audio: "partlyDeleted" },
-    ]);
-  });
-
-  test("a relaunch after a partial Delete audio says again that part of the audio was deleted", async () => {
+  test("a relaunch finishes a Delete audio that failed part way, and runs no final pass", async () => {
     const { h: first, id } = await partlyDeletedAudio();
     await first.store.settled();
 
     const h = harness();
     await h.recorder.recover();
     await h.settle();
-    expect(h.noticed).toEqual([
-      { kind: "finalPassFailed", reason: "other", audio: "partlyDeleted" },
-    ]);
+    expect(h.noticed).toEqual([]);
+    expect(h.sentTypes()).toEqual([]);
+    expect(await h.onDisk(id)).toMatchObject({ finalPassFailed: null, audio: { kind: "gone" } });
+    for (const name of AUDIO)
+      expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
+  });
 
-    expect(await h.recorder.deleteAudio(id)).toEqual({ kind: "ok", id });
+  test("a relaunch whose delete fails again says so, and running recovery twice changes nothing more", async () => {
+    const { h: first, id } = await partlyDeletedAudio();
+    await first.store.settled();
+
+    const h = harness();
+    disk.nextAudioDelete = "throws";
+    await h.recorder.recover();
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBeNull();
-    expect(h.noticed).toHaveLength(1);
+    expect(h.noticed).toEqual([{ kind: "audioDeleteFailed" }]);
+    expect(await h.onDisk(id)).toMatchObject({ audio: { kind: "deleting" } });
+
+    await h.recorder.recover();
+    await h.settle();
+    const settled = await h.onDisk(id);
+    expect(settled).toMatchObject({ audio: { kind: "gone" } });
+    await h.recorder.recover();
+    await h.settle();
+    expect(await h.onDisk(id)).toEqual(settled);
+    expect(h.sentTypes()).toEqual([]);
   });
 
   test("a relaunch raises the notice of a failed final pass again, with its reason and whole audio", async () => {
@@ -1357,9 +1377,7 @@ describe("meeting recorder", () => {
     const h = harness();
     await h.recorder.recover();
     await h.settle();
-    expect(h.noticed).toEqual([
-      { kind: "finalPassFailed", reason: "speakerModels", audio: "whole" },
-    ]);
+    expect(h.noticed).toEqual([{ kind: "finalPassFailed", reason: "speakerModels" }]);
   });
 
   test("a new meeting whose folder cannot be made is refused and asks the helper for nothing", async () => {
@@ -2005,6 +2023,22 @@ describe("meeting recorder", () => {
     for (const name of AUDIO) expect(existsSync(NodePath.join(dir, id, name)), name).toBe(false);
   });
 
+  test("a relaunch after the audio was deleted but meeting.json could not say so saves gone and says nothing", async () => {
+    const { id, audio } = await quitBeforeAudioDelete(0);
+    expect(audio).toEqual({ kind: "deleting" });
+    for (const name of AUDIO) await rm(NodePath.join(dir, id, name), { force: true });
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    expect(await h.onDisk(id)).toMatchObject({
+      status: { kind: "ready" },
+      audio: { kind: "gone" },
+    });
+    expect(h.notices).toEqual([]);
+    expect(h.sentTypes()).toEqual([]);
+  });
+
   test("a relaunch deletes the empty audio files a resume that never recorded left on a finished meeting", async () => {
     const first = harness();
     const id = await finishedMeeting(first);
@@ -2014,8 +2048,11 @@ describe("meeting recorder", () => {
     disk.nextAudioDelete = "throws";
     first.emit({ type: "meeting.failed", id, message: "the microphone could not be opened" });
     await first.settle();
-    expect(await first.onDisk(id)).toMatchObject({ status: { kind: "ready" } });
-    expect(audioFilesIn(first.folder(id))).toEqual(["mic.pcm", "audio.json"]);
+    expect(await first.onDisk(id)).toMatchObject({
+      status: { kind: "ready" },
+      audio: { kind: "deleting" },
+    });
+    expect(audioFilesIn(first.folder(id))).toEqual(["mic.pcm"]);
 
     const h = harness();
     await h.recorder.recover();
