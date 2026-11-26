@@ -274,10 +274,17 @@ describe("hold and release", () => {
     expect(effects).toEqual([{ type: "send", command: { type: "capture.cancel", id: ID } }]);
   });
 
-  test("Escape while processing is ignored", () => {
+  test("Escape while transcribing cancels the helper and returns straight to idle", () => {
     const { state, effects } = run([...toTranscribing, escape(1100)]);
-    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
-    expect(effects).toEqual([]);
+    expect(state).toEqual(idle);
+    expect(effects).toEqual([{ type: "send", command: { type: "capture.cancel", id: ID } }]);
+  });
+
+  test("Escape once the transcript is in hand changes nothing", () => {
+    const copying: Session = { phase: "copying", id: ID, reason: "focusChanged", source: "helper" };
+    for (const state of [run(toCleaning).state, run(toInserting).state, copying]) {
+      expect(step(state, { type: "cancel" }, 2100)).toEqual({ state, effects: [] });
+    }
   });
 
   test("capture failure ends the session failed with the helper's message", () => {
@@ -1289,7 +1296,7 @@ describe("idle and stale events", () => {
     expect(toPillState(state)).toEqual({ kind: "processing", overdue: true });
   });
 
-  test("an overdue transcription that times out again ends failed and cancels the helper", () => {
+  test("an overdue transcription that times out again ends failed and detaches the helper", () => {
     const { state, effects } = run(toGaveUp);
     expect(state).toEqual({
       phase: "done",
@@ -1297,7 +1304,7 @@ describe("idle and stale events", () => {
       outcome: { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
     });
     expect(effects).toEqual([
-      { type: "send", command: { type: "capture.cancel", id: ID } },
+      { type: "send", command: { type: "capture.detach", id: ID } },
       { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
     ]);
   });
@@ -1324,17 +1331,22 @@ describe("idle and stale events", () => {
     });
   });
 
-  test("the hotkey and Escape while overdue change nothing, so the busy helper is never asked", () => {
+  test("the hotkey while overdue changes nothing, so the busy helper is never asked", () => {
     const overdue = run(toOverdue).state;
     for (const event of [
       { type: "hotkeyDown", id: "s2", asr: "ready" },
       { type: "hotkeyUp" },
       { type: "hotkeyChord" },
       { type: "toggle", id: "s2", asr: "ready" },
-      { type: "cancel" },
     ] satisfies SessionEvent[]) {
       expect(step(overdue, event, 50_000)).toEqual({ state: overdue, effects: [] });
     }
+  });
+
+  test("Escape while overdue cancels the helper and returns straight to idle", () => {
+    const { state, effects } = run([...toOverdue, escape(50_000)]);
+    expect(state).toEqual(idle);
+    expect(effects).toEqual([{ type: "send", command: { type: "capture.cancel", id: ID } }]);
   });
 
   test("a transcript that lands after main gave up is remembered but not inserted", () => {

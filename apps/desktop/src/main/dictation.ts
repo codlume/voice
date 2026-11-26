@@ -267,7 +267,8 @@ export function createDictation(options: DictationOptions): Dictation {
         send({ type: "capture.stop", id: command.id, hotkeyUptimeMs: command.hotkeyUptimeMs });
         return;
       case "capture.cancel":
-        send({ type: "capture.cancel", id: command.id });
+      case "capture.detach":
+        send({ type: command.type, id: command.id });
         return;
       case "insert":
         track(command.id, { insertStartedAt: now() });

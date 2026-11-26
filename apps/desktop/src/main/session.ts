@@ -95,6 +95,7 @@ export type Command =
   | ({ type: "capture.start"; id: string } & HotkeyTime)
   | ({ type: "capture.stop"; id: string; releasedAt: number } & HotkeyTime)
   | { type: "capture.cancel"; id: string }
+  | { type: "capture.detach"; id: string }
   | { type: "insert"; id: string; output: Output; keepOnClipboard: boolean };
 
 export type Effect =
@@ -274,7 +275,12 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return { state: idle, effects: [send({ type: "capture.cancel", id: state.id })] };
     }
     case "cancel": {
-      if (state.phase !== "starting" && state.phase !== "recording") return same;
+      if (
+        state.phase !== "starting" &&
+        state.phase !== "recording" &&
+        state.phase !== "transcribing"
+      )
+        return same;
       return { state: idle, effects: [send({ type: "capture.cancel", id: state.id })] };
     }
     case "captureStarted": {
@@ -408,7 +414,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         return finish(
           state.id,
           { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
-          send({ type: "capture.cancel", id: state.id }),
+          send({ type: "capture.detach", id: state.id }),
         );
       }
       if (state.phase === "inserting") {
