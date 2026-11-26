@@ -13,6 +13,7 @@ import {
   HELPER_TIMEOUT_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
+  IDLE_AFTER_PERMISSION_MS,
   TRANSCRIBE_GAVE_UP_MESSAGE,
   idle,
   step,
@@ -290,7 +291,7 @@ describe("hold and release", () => {
   test("capture failure ends the session failed with the helper's message", () => {
     const { state, effects } = run([
       down(0),
-      [{ type: "captureFailed", id: ID, message: "no mic" }, 60],
+      [{ type: "captureFailed", id: ID, reason: "device", message: "no mic" }, 60],
     ]);
     expect(state).toEqual({
       phase: "done",
@@ -298,6 +299,28 @@ describe("hold and release", () => {
       outcome: { kind: "failed", message: "no mic" },
     });
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
+  });
+
+  test("a refused microphone ends the session asking for it, and stays up long enough to click", () => {
+    const { state, effects } = run([
+      down(0),
+      [
+        {
+          type: "captureFailed",
+          id: ID,
+          reason: "permission",
+          message: "microphone access is not granted",
+        },
+        40,
+      ],
+    ]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "permissionMissing", permission: "microphone" },
+    });
+    expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_PERMISSION_MS }]);
+    expect(IDLE_AFTER_PERMISSION_MS).toBeGreaterThan(IDLE_AFTER_OTHER_MS);
   });
 });
 
@@ -1196,7 +1219,7 @@ describe("idle and stale events", () => {
   test("events for a stale session id are dropped", () => {
     const stale: SessionEvent[] = [
       { type: "captureStarted", id: "old" },
-      { type: "captureFailed", id: "old", message: "x" },
+      { type: "captureFailed", id: "old", reason: "unknown", message: "x" },
       { type: "insertResult", id: "old", method: "paste", reason: null },
     ];
     for (const event of stale) {

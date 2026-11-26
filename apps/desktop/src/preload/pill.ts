@@ -12,6 +12,7 @@ const voice: PillApi = {
   onLevel: (listener) => subscribe<number>(Channel.level, listener),
   setPillClickable: (clickable) => ipcRenderer.invoke(Channel.setPillClickable, clickable),
   openNotepad: () => ipcRenderer.invoke(Channel.openNotepad),
+  allowPermission: (kind) => ipcRenderer.invoke(Channel.allowPermission, kind),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

@@ -176,12 +176,15 @@ Recipes: [account.md](./account.md#driving-it-with-voice-verify). State chart: [
 
 ### Home setup and permissions
 
-No feature file yet.
+Recipes: [permissions.md](./permissions.md#driving-it-with-voice-verify). State chart: [statecharts/dictation.md](../statecharts/dictation.md#microphone-refused).
 
-| Flow               | Live check                                                                                                                        | Tests                                                                                    | Proof           |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------- |
-| Setup checklist    | **Home checklist** in [models.md](./models.md#driving-it-with-voice-verify), and preview scene `preview.html?hub=setup-not-ready` | `apps/desktop/src/renderer/checklist.test.ts`, `apps/desktop/src/renderer/Home.test.tsx` | `vv text`, shot |
-| Permission prompts | No live recipe. The instance never reads the microphone, and only a human grants Accessibility.                                   | `swift: PermissionsTests`, `apps/desktop/src/renderer/checklist.test.ts`                 | Test output     |
+| Flow                       | Live check                                                                                                                        | Tests                                                                                     | Proof                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Setup checklist            | **Home checklist** in [models.md](./models.md#driving-it-with-voice-verify), and preview scene `preview.html?hub=setup-not-ready` | `apps/desktop/src/renderer/checklist.test.ts`, `apps/desktop/src/renderer/Home.test.tsx`  | `vv text`, shot                                  |
+| Permission prompts         | No live recipe. Only a person grants Accessibility or answers the microphone prompt.                                              | `swift: PermissionsTests`, `apps/desktop/src/renderer/checklist.test.ts`                  | Test output                                      |
+| Microphone refused         | **Microphone refused** in [permissions.md](./permissions.md#driving-it-with-voice-verify)                                         | `apps/desktop/src/main/session.test.ts`, `apps/desktop/src/renderer/PillCapsule.test.tsx` | Shot or `vv record` of the pill, `main.log` line |
+| Tray alert and Allow items | **Tray** in [permissions.md](./permissions.md#driving-it-with-voice-verify)                                                       | `apps/desktop/src/main/tray.test.ts`                                                      | `vv tray` output, `trayIconPng`                  |
+| Accessibility watch        | No live recipe.                                                                                                                   | `swift: PermissionsWatchTests`                                                            | Test output                                      |
 
 ### Updates
 

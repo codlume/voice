@@ -10,6 +10,7 @@ import type {
 } from "../shared/api.ts";
 import type { BundleId, Category } from "../shared/app-categories.ts";
 import type { Transcript } from "../shared/history.ts";
+import type { CaptureFailure } from "./protocol.ts";
 import type { TransformId } from "../shared/transforms.ts";
 import {
   finalRewrite,
@@ -71,7 +72,7 @@ export type SessionEvent =
   | { type: "cancel" }
   | ({ type: "toggle"; id: string; asr: ModelStatus["state"] } & HotkeyTime)
   | { type: "captureStarted"; id: string }
-  | { type: "captureFailed"; id: string; message: string }
+  | { type: "captureFailed"; id: string; reason: CaptureFailure; message: string }
   | { type: "captureStopped"; id: string }
   | {
       type: "transcript";
@@ -122,6 +123,8 @@ const send = (command: Command): Effect => ({ type: "send", command });
 const MIN_HOLD_MS = 250;
 export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
+// Long enough to read the hint and reach the Flow Bar with the pointer.
+export const IDLE_AFTER_PERMISSION_MS = 6000;
 // Longer than the helper's slowest answer for an insert that wrote, `insertMaxMs` in
 // test-fixtures/helper-protocol.json, so a timeout means the text did not reach the app.
 export const INSERT_TIMEOUT_MS = 6500;
@@ -137,7 +140,12 @@ export const idle: Session = { phase: "idle" };
 export const dictating = (session: Session) => session.phase !== "idle" && session.phase !== "done";
 
 function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
-  const ms = outcome.kind === "inserted" ? IDLE_AFTER_INSERTED_MS : IDLE_AFTER_OTHER_MS;
+  const ms =
+    outcome.kind === "inserted"
+      ? IDLE_AFTER_INSERTED_MS
+      : outcome.kind === "permissionMissing"
+        ? IDLE_AFTER_PERMISSION_MS
+        : IDLE_AFTER_OTHER_MS;
   return {
     state: { phase: "done", id, outcome },
     effects: [...effects, { type: "scheduleIdle", id, ms }],
@@ -292,7 +300,12 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "captureFailed": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
-      return finish(state.id, { kind: "failed", message: event.message });
+      return finish(
+        state.id,
+        event.reason === "permission"
+          ? { kind: "permissionMissing", permission: "microphone" }
+          : { kind: "failed", message: event.message },
+      );
     }
     case "captureStopped": {
       if (state.phase !== "recording") return same;

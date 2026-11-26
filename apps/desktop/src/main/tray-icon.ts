@@ -22,7 +22,17 @@ function insideGlyph(x: number, y: number): boolean {
   });
 }
 
-function rasterize(size: number): Buffer {
+// The alert dot sits in the bottom-right corner, with a gap cut out of the glyph around it.
+const DOT = { x: 30, y: 30, radius: 5.5, gap: 2.5 };
+
+function insideIcon(x: number, y: number, alert: boolean): boolean {
+  if (!alert) return insideGlyph(x, y);
+  const fromDot = Math.hypot(x * GRID - DOT.x, y * GRID - DOT.y);
+  if (fromDot <= DOT.radius) return true;
+  return fromDot > DOT.radius + DOT.gap && insideGlyph(x, y);
+}
+
+function rasterize(size: number, alert: boolean): Buffer {
   const samples = 4;
   const pixels = Buffer.alloc(size * size * 4);
   for (let py = 0; py < size; py += 1) {
@@ -32,7 +42,7 @@ function rasterize(size: number): Buffer {
         for (let sx = 0; sx < samples; sx += 1) {
           const x = (px + (sx + 0.5) / samples) / size;
           const y = (py + (sy + 0.5) / samples) / size;
-          if (insideGlyph(x, y)) covered += 1;
+          if (insideIcon(x, y, alert)) covered += 1;
         }
       }
       pixels[(py * size + px) * 4 + 3] = Math.round((255 * covered) / (samples * samples));
@@ -41,9 +51,10 @@ function rasterize(size: number): Buffer {
   return pixels;
 }
 
-export function createTrayIcon(): NativeImage {
-  const image = nativeImage.createFromBitmap(rasterize(18), { width: 18, height: 18 });
-  image.addRepresentation({ scaleFactor: 2, width: 36, height: 36, buffer: rasterize(36) });
+/** `alert` adds the dot that says something in the tray menu needs the user. */
+export function createTrayIcon({ alert = false }: { alert?: boolean } = {}): NativeImage {
+  const image = nativeImage.createFromBitmap(rasterize(18, alert), { width: 18, height: 18 });
+  image.addRepresentation({ scaleFactor: 2, width: 36, height: 36, buffer: rasterize(36, alert) });
   image.setTemplateImage(true);
   return image;
 }
