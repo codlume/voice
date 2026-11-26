@@ -17,7 +17,8 @@ VARIABLES
     helperInserting,  \* the helper still works on an insert command
     inApp,            \* the text reached the target app
     onClipboard,      \* main copied the text to the clipboard after a failed insert
-    history,          \* this session's history entry: "none", "pending", "inserted", "notInserted"
+    history,          \* this session's history entry: "none", "pending", "inserted", "notInserted",
+                      \* "unconfirmed"
     heard,            \* the helper delivered a final transcript with words
     outcome           \* in "done": what the Flow Bar reports
 
@@ -44,6 +45,7 @@ Pill ==
       [] phase \in {"transcribing", "cleaning", "inserting"} -> "processing"
       [] outcome = "inserted" -> "inserted"
       [] outcome = "notInserted" -> "notInserted"
+      [] outcome = "unconfirmed" -> "notConfirmed"
       [] OTHER -> "message"
 
 \* A new session forgets the last one, including an insertion the helper may still run.
@@ -233,6 +235,20 @@ AppRefusesText ==
     /\ onClipboard' \in BOOLEAN
     /\ UNCHANGED <<released, short, intent, mic, inApp, heard>>
 
+\* insert.result none unconfirmed: the accessibility write ran out its 0.3 s timeout and nothing
+\* shows it landed. The app may apply the queued write or drop it. Main ends notInserted with
+\* reason unconfirmed, settles history to unconfirmed, and copies as for a failed insert.
+AppDoesNotAnswer ==
+    /\ phase = "inserting"
+    /\ helperInserting
+    /\ phase' = "done"
+    /\ outcome' = "unconfirmed"
+    /\ history' = "unconfirmed"
+    /\ helperInserting' = FALSE
+    /\ inApp' \in BOOLEAN
+    /\ onClipboard' \in BOOLEAN
+    /\ UNCHANGED <<released, short, intent, mic, heard>>
+
 \* The 6.5 s insert watchdog. The helper's write deadline passed before it, so the helper
 \* writes nothing from here on.
 InsertTimesOut ==
@@ -295,6 +311,7 @@ Next ==
     \/ CleanupReturnsNothing
     \/ AppTakesText
     \/ AppRefusesText
+    \/ AppDoesNotAnswer
     \/ InsertTimesOut
     \/ LateInsertRefused
     \/ HelperCrashes
@@ -315,7 +332,8 @@ InsertedMeansInApp == (Pill = "inserted" \/ history = "inserted") => inApp
 \* The Flow Bar or history says not inserted only when the text is not in the app.
 NotInsertedMeansNotInApp == (Pill = "notInserted" \/ history = "notInserted") => ~inApp
 
-\* A final transcript with words always ends up in the app, on the clipboard, or in history.
+\* A final transcript with words always ends up in the app, on the clipboard, or in history,
+\* including an unconfirmed entry.
 TranscriptKept == heard => (inApp \/ onClipboard \/ history # "none")
 
 ====

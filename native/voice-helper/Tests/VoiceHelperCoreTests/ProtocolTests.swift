@@ -168,6 +168,8 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
          ["type": "insert.result", "id": "s", "method": "none", "reason": "focusChanged"]),
         (.insertResult(id: "r", outcome: .refused(.selectionChanged)),
          ["type": "insert.result", "id": "r", "method": "none", "reason": "selectionChanged"]),
+        (.insertResult(id: "s", outcome: .refused(.unconfirmed)),
+         ["type": "insert.result", "id": "s", "method": "none", "reason": "unconfirmed"]),
         (.insertResult(id: "s", outcome: .accessibility(.late)),
          ["type": "insert.result", "id": "s", "method": "accessibility", "route": "late"]),
         (.insertResult(id: "s", outcome: .paste(.pasteOnlyApp, clipboardSaveMs: 1.5)),

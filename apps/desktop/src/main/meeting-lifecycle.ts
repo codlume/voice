@@ -4,6 +4,7 @@ import {
   summarizesOnStop,
   type AudioLoss,
   type FinalPassFailure,
+  type KeptAudio,
   type MarkerKind,
   type MaxLength,
   type Meeting,
@@ -47,7 +48,8 @@ export type MeetingEvent =
   | { type: "delete" }
   | { type: "retryFinalPass" }
   | { type: "deleteAudio" }
-  | { type: "audioDeleteFailed"; reason: FinalPassFailure }
+  /** `audio` is what the failed delete left on disk. */
+  | { type: "audioDeleteFailed"; reason: FinalPassFailure; audio: KeptAudio }
   | { type: "generateSummary" }
   | { type: "summaryProgress"; progress: SummaryProgress }
   | { type: "summarized" }
@@ -137,7 +139,7 @@ function afterTranscript(meeting: Meeting, effects: MeetingEffect[]): Step {
 
 const finalPassFailed = (meeting: Meeting, reason: FinalPassFailure): Step =>
   afterTranscript({ ...meeting, finalPassFailed: reason }, [
-    notify({ kind: "finalPassFailed", reason }),
+    notify({ kind: "finalPassFailed", reason, audio: "whole" }),
   ]);
 
 function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleConfig): Step {
@@ -443,7 +445,7 @@ export function step(
         case "deleteAudio":
           return audioDeleted(meeting);
         case "audioDeleteFailed":
-          return audioKept(meeting, event.reason);
+          return audioKept(meeting, event.reason, event.audio);
         case "audioFound":
           return deleteAudioUnlessKeptForRetry(meeting);
         default:
@@ -460,7 +462,7 @@ export function step(
         case "deleteAudio":
           return audioDeleted(meeting);
         case "audioDeleteFailed":
-          return audioKept(meeting, event.reason);
+          return audioKept(meeting, event.reason, event.audio);
         case "audioFound":
           return deleteAudioUnlessKeptForRetry(meeting);
         case "captureStarted":
@@ -482,9 +484,9 @@ const audioDeleted = (meeting: Meeting): Step =>
       }
     : { meeting, effects: [] };
 
-const audioKept = (meeting: Meeting, reason: FinalPassFailure): Step => ({
+const audioKept = (meeting: Meeting, reason: FinalPassFailure, audio: KeptAudio): Step => ({
   meeting: { ...meeting, finalPassFailed: reason },
-  effects: [notify({ kind: "finalPassFailed", reason })],
+  effects: [notify({ kind: "finalPassFailed", reason, audio })],
 });
 
 const deleteAudioUnlessKeptForRetry = (meeting: Meeting): Step =>

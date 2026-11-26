@@ -11,7 +11,12 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import type { TranscriptVersion } from "../shared/api.ts";
-import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
+import type {
+  HistoryEntry,
+  HistoryRetention,
+  HistoryState,
+  HistoryStatus,
+} from "../shared/history.ts";
 import type { DayKey } from "../shared/insights.ts";
 import { a11y } from "./a11y.ts";
 import { Button } from "./Button.tsx";
@@ -150,6 +155,12 @@ const copiedLabels: Record<TranscriptVersion, string> = {
   raw: "Copied raw transcript",
 };
 
+/** The statuses whose text may not be in the app, and what their row says. */
+const missedLabels: Partial<Record<HistoryStatus, string>> = {
+  notInserted: "Not inserted",
+  unconfirmed: "Not confirmed",
+};
+
 const Row = memo(function Row({
   entry,
   copied,
@@ -170,7 +181,8 @@ const Row = memo(function Row({
     if (clickedButton || keepSelection) return;
     onCopy(entry.id, "text");
   };
-  const missed = entry.status === "notInserted";
+  const missedLabel = missedLabels[entry.status];
+  const missed = missedLabel !== undefined;
   // A missed row confirms its copy on the labelled button the user just pressed.
   const copiedHere = missed && copied === "text";
   return (
@@ -185,7 +197,7 @@ const Row = memo(function Row({
           <div {...stylex.props(styles.recovery)}>
             <span {...stylex.props(styles.notInserted)}>
               <CircleAlertIcon size={12} strokeWidth={2.25} aria-hidden />
-              Not inserted
+              {missedLabel}
             </span>
             <Button
               variant="secondary"

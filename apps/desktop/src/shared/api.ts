@@ -147,11 +147,16 @@ export type AccountDeletion =
   | { kind: "failed"; message: string };
 
 export type InsertMethod = "accessibility" | "paste" | "none";
+/**
+ * Why nothing was inserted. `unconfirmed` is the one reason that does not say the text stayed out
+ * of the app: the helper's write got no answer in time, and the app can still apply it.
+ */
 export type InsertFailure =
   | "focusChanged"
   | "noFocusedField"
   | "secureInput"
   | "selectionChanged"
+  | "unconfirmed"
   | "failed";
 
 type Inserted = { kind: "inserted"; method: Exclude<InsertMethod, "none"> };

@@ -29,7 +29,9 @@ public enum AccessibilityRoute: String, Codable, Sendable { case direct, late }
 /// write the re-read still did not show, no focused element to write to, a refused write, a
 /// target app not named as holding key focus, or test mode forcing it.
 public enum PasteRoute: String, Codable, Sendable { case html, pasteOnlyApp, unchanged, noElement, writeFailed, notKeyFocus, forced }
-public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, selectionChanged, failed }
+/// Why nothing was inserted. `unconfirmed` is the one reason that does not say the text stayed
+/// out: the accessibility write ran out its messaging timeout, and the app can still apply it.
+public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, selectionChanged, unconfirmed, failed }
 public enum SelectionVia: String, Codable, Sendable { case accessibility, copy }
 public enum SelectionFailure: String, Codable, Sendable { case noSelection, secureInput, noFocusedField, keysHeld, failed }
 public enum Modifier: String, Codable, Sendable { case control, option, shift, command }

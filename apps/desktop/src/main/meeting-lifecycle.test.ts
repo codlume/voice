@@ -413,7 +413,7 @@ describe("meeting lifecycle", () => {
       [{ type: "drained", words: 4000 }, 30 * MIN],
       [{ type: "finalizeFailed", reason: "speakerModels" }, 31 * MIN],
     ]);
-    const notice = { kind: "finalPassFailed", reason: "speakerModels" } as const;
+    const notice = { kind: "finalPassFailed", reason: "speakerModels", audio: "whole" } as const;
     expect(effects).toContainEqual({ type: "notify", notice });
     expect(noticeText(notice)).toContain("Download it in Set up Meetings, then try again.");
     expect(noticeText({ ...notice, reason: "other" })).not.toContain("Speaker detection");
@@ -451,9 +451,14 @@ describe("meeting lifecycle", () => {
       expect(deleted.effects).toEqual([{ type: "deleteAudio", keptFor: meeting!.finalPassFailed }]);
 
       const reason = meeting!.finalPassFailed!;
-      const kept = step(deleted.meeting, { type: "audioDeleteFailed", reason }, T0, config);
-      expect(kept.meeting).toEqual(meeting);
-      expect(notices(kept.effects)).toEqual(["finalPassFailed"]);
+      for (const audio of ["whole", "partlyDeleted"] as const) {
+        const failed = { type: "audioDeleteFailed", reason, audio } as const;
+        const kept = step(deleted.meeting, failed, T0, config);
+        expect(kept.meeting).toEqual(meeting);
+        expect(kept.effects).toEqual([
+          { type: "notify", notice: { kind: "finalPassFailed", reason, audio } },
+        ]);
+      }
     }
     const fine = meetingAt({ kind: "ready" });
     expect(step(fine, { type: "retryFinalPass" }, T0, config).effects).toEqual([]);

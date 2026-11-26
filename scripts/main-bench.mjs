@@ -543,7 +543,7 @@ async function measureHistory(build, { history, now }) {
     const save = async (id) => {
       store.remember({ id, raw: SAID, text: SAID, status: "pending" }, Date.now());
       await store.settled();
-      store.settle(id, true);
+      store.settle(id, "inserted");
       await store.settled();
     };
     for (let index = 0; index < 5; index += 1) await save(`warm-${index}`);
