@@ -7,7 +7,7 @@ import os
 
 @Suite(.serialized)
 struct CaptureIdleTests {
-    @Test @MainActor func idleWarmupKeepsMainFreeWhileThePermissionProbeRuns() async {
+    @Test @MainActor func idleWarmupKeepsMainFreeWhileThePermissionProbeRuns() async throws {
         let (probeRuns, probeRan) = AsyncStream<Void>.makeStream()
         let releaseProbe = DispatchSemaphore(value: 0)
         defer { releaseProbe.signal() }
@@ -32,7 +32,14 @@ struct CaptureIdleTests {
         capture.prepareIdleMic()
         events.withLock { $0.append("warmup returned") }
         releaseProbe.signal()
-        for await _ in probeRuns { break }
+        // The bound only stops a probe that never runs from hanging the run; a loaded run takes under 2 s.
+        let probeRanInTime = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { for await _ in probeRuns { return true }; return false }
+            group.addTask { try? await Task.sleep(for: .seconds(30)); return false }
+            defer { group.cancelAll() }
+            return await group.next() ?? false
+        }
+        try #require(probeRanInTime, "the permission probe never ran within 30 s")
         #expect(events.withLock { $0 } == ["warmup returned", "probe done"])
         #expect(!onMain.withLock { $0 })
 
