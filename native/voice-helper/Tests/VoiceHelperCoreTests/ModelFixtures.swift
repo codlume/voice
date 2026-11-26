@@ -90,6 +90,10 @@ final class StubHub: URLProtocol, @unchecked Sendable {
         var redirect: URL?
         var resume: Data?
         var truncate: Int?
+        var answers = true
+
+        /// A hub that takes the request and never sends anything back.
+        static let silent = Reply(answers: false)
 
         static func resume(_ full: Data, truncateAt: Int? = nil, end: End = .finish) -> Reply {
             Reply(end: end, resume: full, truncate: truncateAt)
@@ -153,7 +157,7 @@ final class StubHub: URLProtocol, @unchecked Sendable {
             state.scripts[path] = queue
             return next
         }
-        guard let client, let url = request.url else { return }
+        guard reply.answers, let client, let url = request.url else { return }
         let offset = request.value(forHTTPHeaderField: "Range").flatMap { Int($0.dropFirst("bytes=".count).dropLast()) } ?? 0
         if let full = reply.resume {
             let served = full.suffix(from: offset).prefix(reply.truncate ?? .max)

@@ -119,11 +119,9 @@ final class Helper {
         case .permissionsRequest(let kind):
             permissions.request(kind)
         case .asrPrepare(let download):
-            transcriber.prepare(download: download)
-            if transcriber.sessionState != .missing { voiceDetection.prepare() }
+            if transcriber.prepare(download: download) { voiceDetection.prepare() }
         case .asrRemove:
-            transcriber.remove()
-            if transcriber.sessionState == .missing { voiceDetection.remove() }
+            if transcriber.remove() { voiceDetection.remove() }
         case .testAudioFile(let path):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             capture.testAudioPath = path

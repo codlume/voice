@@ -159,6 +159,8 @@ public struct ModelFetcher: Sendable {
                     lock.withLock {
                         self.continuation = continuation
                         self.task = task
+                        // A cancel that came before the task existed had nothing to stop.
+                        if failure == .cancelled { task.cancel() }
                     }
                     task.resume()
                 }
