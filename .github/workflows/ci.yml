@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - chore/ci-statechart-smokes
 
 permissions:
   contents: read
