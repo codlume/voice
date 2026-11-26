@@ -10,6 +10,7 @@ import {
   meetingToggle,
   recordedMs,
   type AudioLoss,
+  type KeptAudio,
   type Marker,
   type MarkerKind,
   type Meeting,
@@ -118,22 +119,6 @@ type Watchdog = { watch: Watch; timer: NodeJS.Timeout | null };
 
 type Applied = "unchanged" | "changed" | "failed";
 
-function failureOf(effect: MeetingEffect): MeetingEvent | null {
-  switch (effect.type) {
-    case "startCapture":
-      return { type: "captureFailed", leg: effect.leg, message: FAILED_START };
-    case "drain":
-      return { type: "stalled", watch: "drain" };
-    case "finalize":
-    case "applyFinalPass":
-      return { type: "finalizeFailed", reason: "other" };
-    case "deleteAudio":
-      return effect.keptFor && { type: "audioDeleteFailed", reason: effect.keptFor };
-    default:
-      return null;
-  }
-}
-
 export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorder {
   const { store, log } = deps;
   const now = deps.now ?? Date.now;
@@ -222,9 +207,31 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       return true;
     } catch (error) {
       log(`meetings: ${effect.type} failed (${String(error)})`);
-      const failed = failureOf(effect);
+      const failed = await failureOf(meeting, effect);
       if (failed) background(effect.type, dispatch(id, failed));
       return false;
+    }
+  }
+
+  async function failureOf(
+    meeting: Meeting | null,
+    effect: MeetingEffect,
+  ): Promise<MeetingEvent | null> {
+    switch (effect.type) {
+      case "startCapture":
+        return { type: "captureFailed", leg: effect.leg, message: FAILED_START };
+      case "drain":
+        return { type: "stalled", watch: "drain" };
+      case "finalize":
+      case "applyFinalPass":
+        return { type: "finalizeFailed", reason: "other" };
+      case "deleteAudio": {
+        if (!effect.keptFor || !meeting) return null;
+        const audio = await keptAudio(meeting);
+        return { type: "audioDeleteFailed", reason: effect.keptFor, audio };
+      }
+      default:
+        return null;
     }
   }
 
@@ -437,25 +444,39 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   /**
    * A Delete audio that fails part way can remove one source's audio and keep the other's. A final
    * pass over what is left would replace that source's live lines with nothing, so the kept audio
-   * is incomplete when a source has live lines since the audio began but no audio on disk.
+   * is partly deleted when a source has live lines since the audio began but no audio on disk.
    */
-  async function audioIncomplete(id: MeetingId): Promise<boolean> {
-    await queue;
-    const meeting = store.get(id);
-    if (!meeting?.finalPassFailed) return false;
+  async function keptAudio(meeting: Meeting): Promise<KeptAudio> {
     const missing = new Set<MeetingSource>();
     for (const name of PCM_FILES) {
-      const size = await stat(NodePath.join(folder(id), name)).then(
+      const size = await stat(NodePath.join(folder(meeting.id), name)).then(
         (file) => file.size,
         () => 0,
       );
       if (size === 0) missing.add(name === "mic.pcm" ? "mic" : "system");
     }
-    if (missing.size === 0) return false;
+    if (missing.size === 0) return "whole";
     const fromMs = await audioBase(meeting);
-    return (await store.transcript(id)).some(
+    const lost = (await store.transcript(meeting.id)).some(
       (entry) => entry.kind === "segment" && entry.startMs >= fromMs && missing.has(entry.source),
     );
+    return lost ? "partlyDeleted" : "whole";
+  }
+
+  async function audioIncomplete(id: MeetingId): Promise<boolean> {
+    await queue;
+    const meeting = store.get(id);
+    return !!meeting?.finalPassFailed && (await keptAudio(meeting)) === "partlyDeleted";
+  }
+
+  /** A notice does not outlive the app, so each launch raises it again from what is on disk. */
+  async function raiseFinalPassNotices(meetings: readonly Meeting[]) {
+    for (const meeting of meetings) {
+      const reason = meeting.finalPassFailed;
+      if (!reason) continue;
+      const audio = await keptAudio(meeting);
+      deps.onNotice(meeting.id, { kind: "finalPassFailed", reason, audio });
+    }
   }
 
   async function audioBase(meeting: Meeting): Promise<number> {
@@ -484,10 +505,12 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return reach;
   }
 
+  /** Every removal ends before a failure is reported, so what is on disk then is what was left. */
   async function deleteAudio(id: MeetingId) {
-    await Promise.all(
+    const removals = await Promise.allSettled(
       AUDIO_FILES.map((name) => rm(NodePath.join(folder(id), name), { force: true })),
     );
+    for (const removal of removals) if (removal.status === "rejected") throw removal.reason;
     await rm(NodePath.join(folder(id), "audio.json"), { force: true });
   }
 
@@ -767,6 +790,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     recover: () =>
       oneAtATime(async () => {
         await store.loaded();
+        background("final pass notices", raiseFinalPassNotices(store.state().meetings));
         for (const { meeting, lastWriteAt } of await store.unfinished()) {
           const hasAudio = ((await audioLength(meeting.id)) ?? 0) > 0;
           await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt, hasAudio });
