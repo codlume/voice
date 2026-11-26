@@ -1,6 +1,6 @@
 # History
 
-Home lists every dictation that produced a transcript, newest first, grouped under Today, Yesterday, and older dates. A transcript that never reached its target stays in the list, marked "Not inserted", so the user can copy it. By default the history lives in memory and a quit clears it. In Settings > Data and Privacy the user can keep it for 24 hours, 30 days, or forever instead, saved on this Mac, and clear it. The menu bar's `Copy last transcript` copies the newest entry's text.
+Home lists every dictation that produced a transcript, newest first, grouped under Today, Yesterday, and older dates. A transcript that never reached its target stays in the list, marked "Not inserted", so the user can copy it. One whose insertion Voice could not confirm is marked "Not confirmed". By default the history lives in memory and a quit clears it. In Settings > Data and Privacy the user can keep it for 24 hours, 30 days, or forever instead, saved on this Mac, and clear it. The menu bar's `Copy last transcript` copies the newest entry's text.
 
 ## Sub-features
 
@@ -8,6 +8,7 @@ Home lists every dictation that produced a transcript, newest first, grouped und
 - `home-try-it-line`: once the history has an entry and setup is done, `Try it` shrinks to one line under the headline with the hold-key hint, and the history moves up under it.
 - `history-row`: after a session, a row appears under `Today` with the local time and the inserted text, line breaks kept.
 - `history-not-inserted`: a session that ended `notInserted` keeps its row, marked with a "Not inserted" badge and a labelled `Copy` button that shows without hover.
+- `history-not-confirmed`: a session whose write the app did not answer in time keeps its row with `status` `unconfirmed`, marked "Not confirmed" instead of "Not inserted", with the same labelled `Copy` button. The text may or may not be in the target app.
 - `history-copy`: clicking a row copies its text and briefly shows "Copied". The row's `Copy` button does the same from the keyboard.
 - `history-copy-raw`: `Copy raw transcript` appears only when the raw transcript differs from the inserted text, copies the raw transcript, and briefly shows "Copied raw transcript".
 - `history-delete`: `Delete` removes the row at once. With a saved history the file loses the entry first; if that fails the row stays, an error shows, and `Delete` again retries. A deleted session stays deleted when its cleanup lands a moment later.

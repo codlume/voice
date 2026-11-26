@@ -211,7 +211,7 @@ describe("restart requests", () => {
   });
 
   test("refuse a plain restart only when the newest transcript would be lost", () => {
-    for (const status of ["pending", "notInserted"] as const) {
+    for (const status of ["pending", "notInserted", "unconfirmed"] as const) {
       expect(
         restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "memory")),
       ).toBe("Your last transcript is not saved anywhere. Copy it, then restart.");

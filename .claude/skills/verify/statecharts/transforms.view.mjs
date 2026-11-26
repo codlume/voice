@@ -10,6 +10,7 @@ const outcomeLabel = (v) => {
   if (v.outcome === "replaced") return "Replaced";
   if (v.outcome === "cancelled") return "Cancelled. Text unchanged";
   if (v.outcome === "notReplaced") return "Not replaced. Result is in Voice";
+  if (v.outcome === "notConfirmed") return "Not confirmed. Check the text";
   return "Refused or failed. Text unchanged";
 };
 
@@ -59,6 +60,8 @@ const label = (action, from, to) => {
         : "the rewrite fails, is unusable, or is too long";
     case "HelperWriteLands":
       return "the write lands";
+    case "HelperWriteUnconfirmed":
+      return "the app does not answer the write in time";
     case "HelperWriteRefused":
     case "WriteTimesOut":
       return "the write is refused or times out";

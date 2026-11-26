@@ -149,7 +149,7 @@ describe("update controls", () => {
       "Voice will close and reopen with the downloaded version.",
     );
 
-    for (const status of ["notInserted", "pending"] as const) {
+    for (const status of ["notInserted", "unconfirmed", "pending"] as const) {
       expect(choices(restartPrompt(history(latest(status), "memory")))).toEqual([
         "Copy transcript and restart -> copyTranscriptAndRestart",
       ]);
