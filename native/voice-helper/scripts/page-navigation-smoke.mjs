@@ -57,7 +57,7 @@ try {
       },
     });
     assert(capture.transcript.text.trim() !== "", "capture returned an empty transcript");
-    helper.send({ type: "insert", id, text, html: null, keepOnClipboard: false });
+    helper.send({ type: "insert", id, text, html: null });
     const result = await helper.waitFor(
       (event) => event.type === "insert.result" && event.id === id,
       { label: "insert.result" },
