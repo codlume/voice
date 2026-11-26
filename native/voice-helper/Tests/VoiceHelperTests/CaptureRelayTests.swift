@@ -41,8 +41,11 @@ struct CaptureRelayTests {
         #expect(abs(releaseRelayMs - (stopReceivedAt.uptimeMs - releasedAt)) < 0.001)
     }
 
-    @Test(arguments: [Double?.none, DispatchTime.now().uptimeMs + 60_000])
-    @MainActor func reportsNoRelayWithoutAPressThatStartedTheSession(hotkeyUptimeMs: Double?) async throws {
+    // No press at all, and a press a minute after the start. The press time is read when the test
+    // runs, since tests can start long after they are listed.
+    @Test(arguments: [Double?.none, 60_000])
+    @MainActor func reportsNoRelayWithoutAPressThatStartedTheSession(pressAfterMs: Double?) async throws {
+        let hotkeyUptimeMs = pressAfterMs.map { DispatchTime.now().uptimeMs + $0 }
         let lines = EmittedLines()
         let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
