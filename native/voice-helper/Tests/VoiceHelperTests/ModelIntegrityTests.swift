@@ -88,7 +88,8 @@ struct ModelIntegrityTests {
         }
     }
 
-    @Test @MainActor func cancellingAStalledDownloadLeavesTheSpeechModelNotInstalled() async throws {
+    // The time limit only catches a download that never reaches the hub. A loaded run waits far less.
+    @Test(.timeLimit(.minutes(1))) @MainActor func cancellingAStalledDownloadLeavesTheSpeechModelNotInstalled() async throws {
         let lines = EmittedLines()
         let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-asr-\(UUID().uuidString)")
@@ -96,8 +97,7 @@ struct ModelIntegrityTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let transcriber = Transcriber(modelsDir: dir, output: output, downloads: StalledDownloads.configuration())
         transcriber.prepare(download: true)
-        let deadline = ContinuousClock.now + .seconds(5)
-        while !StalledDownloads.started, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        while !StalledDownloads.started { try await Task.sleep(for: .milliseconds(20)) }
         #expect(transcriber.sessionState == .downloading)
 
         #expect(transcriber.remove(), "the speech model is going, so what came with it goes too")
