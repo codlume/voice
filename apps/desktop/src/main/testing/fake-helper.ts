@@ -4,7 +4,17 @@ import { createServer } from "node:net";
 import { unlinkSync } from "node:fs";
 
 type Action = "down" | "up" | "cancel" | "exit" | "stall";
+type PermissionState = "granted" | "denied" | "notDetermined";
+type Permissions = {
+  microphone: PermissionState;
+  accessibility: PermissionState;
+  systemAudio: PermissionState | "unavailable";
+};
 type Config = {
+  /** What `permissions.check` answers. A `permissions` line on the control socket replaces it. */
+  permissions?: Partial<Permissions>;
+  /** Fails every `capture.start` the way the real helper does when TCC refuses the mic. */
+  captureFailure?: { reason: "permission" | "device" | "busy" | "unknown"; message: string };
   transcript?: string;
   startMs?: number;
   transcriptMs?: number;
@@ -32,6 +42,12 @@ let recording: { since: number; levels: NodeJS.Timeout } | null = null;
 let target: unknown = null;
 let captured: unknown = null;
 const transcribing = new Map<string, NodeJS.Timeout>();
+const permissions: Permissions = {
+  microphone: "granted",
+  accessibility: "granted",
+  systemAudio: "notDetermined",
+  ...config.permissions,
+};
 
 const installedApps = [
   {
@@ -74,17 +90,24 @@ function handle(command: Record<string, unknown>) {
       emit({ type: "log", level: "info", message: `hotkey configured: ${String(command.key)}` });
       return;
     case "permissions.check":
-      emit({
-        type: "permissions",
-        microphone: "granted",
-        accessibility: "granted",
-        systemAudio: "notDetermined",
-      });
+      emit({ type: "permissions", ...permissions });
       return;
+    // Stands in for the user answering the system prompt with Allow.
+    case "permissions.request": {
+      const kind = command.kind as keyof Permissions;
+      if (permissions[kind] === "notDetermined") permissions[kind] = "granted";
+      emit({ type: "permissions", ...permissions });
+      return;
+    }
     case "asr.prepare":
       emit({ type: "asr.status", state: "ready" });
       return;
     case "capture.start":
+      if (config.captureFailure) {
+        const failure = config.captureFailure;
+        setTimeout(() => emit({ type: "capture.failed", id, ...failure }), config.startMs ?? 30);
+        return;
+      }
       captured = target;
       target = null;
       setTimeout(() => {
@@ -178,8 +201,11 @@ if (config.control) {
     createInterface({ input: socket }).on("line", (line) => {
       const trimmed = line.trim();
       if (trimmed === "") return;
-      if (trimmed.startsWith("{")) emit(JSON.parse(trimmed));
-      else act(trimmed as Action);
+      if (trimmed.startsWith("{")) {
+        const { type, ...fields } = JSON.parse(trimmed);
+        if (type === "permissions") Object.assign(permissions, fields);
+        emit(type === "permissions" ? { type, ...permissions } : { type, ...fields });
+      } else act(trimmed as Action);
     });
   });
   server.unref();
