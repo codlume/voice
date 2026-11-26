@@ -226,12 +226,25 @@ test("stop accepts an exited owner before its parent reaps it", { timeout: 3000 
 });
 
 test("dictate --app parses a bundle id with an optional host, and the defaults stay", () => {
-  assert.deepEqual(parseDictateFlags([]), { end: "audio", mode: "hold", app: null });
+  assert.deepEqual(parseDictateFlags([]), {
+    end: "audio",
+    mode: "hold",
+    app: null,
+    asrDelayMs: null,
+  });
   assert.deepEqual(parseDictateFlags(["--end=escape", "--key=toggle"]), {
     end: "escape",
     mode: "toggle",
     app: null,
+    asrDelayMs: null,
   });
+  assert.deepEqual(parseDictateFlags(["--end=escape-processing", "--asr-delay=8000"]), {
+    end: "escape-processing",
+    mode: "hold",
+    app: null,
+    asrDelayMs: 8000,
+  });
+  assert.throws(() => parseDictateFlags(["--asr-delay=soon"]), /--asr-delay must be/);
   assert.deepEqual(parseDictateFlags(["--app=com.apple.MobileSMS"]).app, {
     bundleId: "com.apple.MobileSMS",
     host: null,

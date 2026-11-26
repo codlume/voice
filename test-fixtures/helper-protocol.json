@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 21,
+  "protocolVersion": 22,
   "selectionReadMaxMs": 4400,
   "insertMaxMs": 6150,
   "languages": [
@@ -37,10 +37,14 @@
     },
     {
       "version": 21,
-      "compatible": true
+      "compatible": false
     },
     {
       "version": 22,
+      "compatible": true
+    },
+    {
+      "version": 23,
       "compatible": false
     }
   ],
@@ -175,6 +179,14 @@
       "name": "capture.cancel",
       "wire": {
         "type": "capture.cancel",
+        "id": "s1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "capture.detach",
+      "wire": {
+        "type": "capture.detach",
         "id": "s1"
       },
       "required": ["type", "id"]
@@ -332,6 +344,14 @@
         "target": null
       },
       "required": ["type", "target"]
+    },
+    {
+      "name": "test.asrDelay",
+      "wire": {
+        "type": "test.asrDelay",
+        "ms": 5000
+      },
+      "required": ["type", "ms"]
     },
     {
       "name": "apps.list",
@@ -641,11 +661,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 21
+        "version": 22
       },
       "parsed": {
         "type": "ready",
-        "version": 21
+        "version": 22
       },
       "required": ["type", "version"]
     },

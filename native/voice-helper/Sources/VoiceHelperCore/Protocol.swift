@@ -133,6 +133,8 @@ public enum HelperCommand: Equatable, Sendable {
                       hotkeyUptimeMs: Double?)
     case captureStop(id: String, hotkeyUptimeMs: Double?)
     case captureCancel(id: String)
+    /// Main stopped waiting: free capture for the next session but still emit this session's transcript.
+    case captureDetach(id: String)
     case microphoneTestStart(id: String, microphone: Microphone?)
     case microphoneTestStop(id: String)
     /// keepOnClipboard leaves a pasted transcript on the clipboard instead of restoring the user's contents.
@@ -147,6 +149,8 @@ public enum HelperCommand: Equatable, Sendable {
     case testAudioFile(path: String?)
     /// The next capture reports this target instead of the frontmost app; nil clears a pending one.
     case testTarget(TranscriptTarget?)
+    /// Test mode only: the next dictation waits this long before its final transcription.
+    case testAsrDelay(ms: Double)
     case appsList
     case iconsRender(id: String, paths: [String])
     /// Records one leg into `dir`, appending to the meeting's `mic.pcm` and `system.pcm`, and
@@ -199,7 +203,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 21
+public let helperProtocolVersion = 22
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -267,7 +271,7 @@ private enum Key: String, CodingKey {
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs, asrState
     case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure, meeting, segments
-    case speaker, atMs, keepOnClipboard
+    case speaker, atMs, keepOnClipboard, ms
 }
 
 extension HelperCommand: Decodable {
@@ -297,6 +301,7 @@ extension HelperCommand: Decodable {
             self = .captureStop(id: try c.decode(String.self, forKey: .id),
                                 hotkeyUptimeMs: try c.decodeIfPresent(Double.self, forKey: .hotkeyUptimeMs))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))
+        case "capture.detach": self = .captureDetach(id: try c.decode(String.self, forKey: .id))
         case "microphone.test.start":
             self = .microphoneTestStart(id: try c.decode(String.self, forKey: .id),
                                         microphone: try c.decode(Microphone?.self, forKey: .microphone))
@@ -315,6 +320,7 @@ extension HelperCommand: Decodable {
         case "asr.remove": self = .asrRemove
         case "test.audioFile": self = .testAudioFile(path: try c.decodeIfPresent(String.self, forKey: .path))
         case "test.target": self = .testTarget(try c.decode(TranscriptTarget?.self, forKey: .target))
+        case "test.asrDelay": self = .testAsrDelay(ms: try c.decode(Double.self, forKey: .ms))
         case "apps.list": self = .appsList
         case "icons.render":
             self = .iconsRender(id: try c.decode(String.self, forKey: .id),

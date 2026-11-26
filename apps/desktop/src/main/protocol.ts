@@ -15,7 +15,7 @@ import type { Target } from "../shared/style.ts";
 import type { HelperShortcut, Shortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 21;
+export const HELPER_PROTOCOL_VERSION = 22;
 
 export type HelperCommand =
   | {
@@ -42,6 +42,8 @@ export type HelperCommand =
     }
   | { type: "capture.stop"; id: string; hotkeyUptimeMs?: number | undefined }
   | { type: "capture.cancel"; id: string }
+  // Main stopped waiting: the helper lets go of the session but still sends its transcript.
+  | { type: "capture.detach"; id: string }
   | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
   | { type: "microphone.test.stop"; id: string }
   | { type: "insert"; id: string; text: string; html: string | null; keepOnClipboard: boolean }
@@ -52,6 +54,8 @@ export type HelperCommand =
   | { type: "asr.prepare"; download: boolean }
   | { type: "asr.remove" }
   | { type: "test.target"; target: Target | null }
+  // Test mode only: the next dictation waits this long before its final transcription.
+  | { type: "test.asrDelay"; ms: number }
   | { type: "apps.list" }
   | { type: "icons.render"; id: string; paths: string[] }
   // Records one leg into `dir`, appending to its mic.pcm and system.pcm, and transcribes them as

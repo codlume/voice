@@ -102,6 +102,8 @@ final class Helper {
             capture.stop(id: id, receivedAt: receivedAt, hotkeyUptimeMs: hotkeyUptimeMs)
         case .captureCancel(let id):
             capture.cancel(id: id)
+        case .captureDetach(let id):
+            capture.detach(id: id)
         case .microphoneTestStart(let id, let microphone):
             capture.startTest(id: id, microphone: microphone)
         case .microphoneTestStop(let id):
@@ -128,6 +130,9 @@ final class Helper {
         case .testTarget(let target):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             testTarget = target
+        case .testAsrDelay(let ms):
+            guard testMode else { return output.log(.error, "test hooks disabled") }
+            capture.testAsrDelayMs = ms
         case .appsList:
             installedApps.list()
         case .iconsRender(let id, let paths):

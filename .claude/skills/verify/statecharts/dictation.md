@@ -49,7 +49,8 @@ stateDiagram-v2
   s3 --> s11: you let go or the mic changes or 10 min pass
   s4 --> s6: the mic fails or takes 3 s or the mic delivers audio [you held under 250 ms]
   s4 --> s11: the mic delivers audio [you held 250 ms or more]
-  s11 --> s6: the helper crashes or transcription fails or takes too long or Voice hears nothing
+  s11 --> s0: you press Escape
+  s11 --> s6: the helper crashes or transcription fails or Voice hears nothing or transcription takes too long
   s11 --> s12: Voice hears words [cleanup on]
   s11 --> s13: Voice hears words [cleanup off]
   s12 --> s13: cleanup returns text, or fails and the raw text goes in
@@ -78,7 +79,7 @@ stateDiagram-v2
   class s13 blue
 ```
 
-The Flow Bar's `data-view` is `idle` while the mic starts, `listening` in Listening, and `processing` while Voice transcribes, cleans up, or inserts. After 30 s of transcribing, or 60 s while the speech model loads, it reads "Still transcribing". Inserted or Pasted shows `inserted`, and "Pasted" after a paste. Every other result shows `message`. After a focus change, Not inserted reads "Not inserted. Focus changed" with Copy to clipboard off, or "Focus changed. Copied to clipboard" once the copy worked. Not confirmed reads "Not confirmed. Check the app" with Copy to clipboard off, or "Not confirmed. Check before pasting" with it on. The last result reads "Too short. Hold to talk", "Nothing heard", or an error such as "Voice helper stopped".
+The Flow Bar's `data-view` is `idle` while the mic starts, `listening` in Listening, and `processing` while Voice transcribes, cleans up, or inserts. After 30 s of transcribing, or 60 s while the speech model loads, it reads "Still transcribing". Escape in Transcribing, "Still transcribing" included, discards the session as it does in Listening. Inserted or Pasted shows `inserted`, and "Pasted" after a paste. Every other result shows `message`. After a focus change, Not inserted reads "Not inserted. Focus changed" with Copy to clipboard off, or "Focus changed. Copied to clipboard" once the copy worked. Not confirmed reads "Not confirmed. Check the app" with Copy to clipboard off, or "Not confirmed. Check before pasting" with it on. The last result reads "Too short. Hold to talk", "Nothing heard", or an error such as "Voice helper stopped".
 
 ## Rules
 
@@ -86,7 +87,7 @@ The Flow Bar's `data-view` is `idle` while the mic starts, `listening` in Listen
 - `ListeningMeansRecording` holds. The Flow Bar shows listening only while the microphone records.
 - `InsertedMeansInApp` holds. The Flow Bar and history say inserted only after the helper reports that the text reached the app.
 - `NotInsertedMeansNotInApp` holds. The Flow Bar and history say not inserted only when the text is not in the app. The helper starts no write later than 4 s after it received the insert, and main waits 6.5 s before it says not inserted. A write that the app does not answer in time says Not confirmed instead.
-- `TranscriptKept` holds. A final transcript with words always ends up in the app, on the clipboard, or in history. A failed cleanup inserts the raw text. A failed insert, a helper crash, or a cleanup that returns nothing keeps the transcript in history as `notInserted`. A write the app does not answer in time keeps it as `unconfirmed`.
+- `TranscriptKept` holds. A final transcript with words always ends up in the app, on the clipboard, or in history. A failed cleanup inserts the raw text. A failed insert, a helper crash, or a cleanup that returns nothing keeps the transcript in history as `notInserted`. A write the app does not answer in time keeps it as `unconfirmed`. A transcript that arrives after Voice stopped waiting goes into history as `notInserted`, as [Giving up on a transcription](#giving-up-on-a-transcription) says.
 
 ## The `MicOnlyWhileYouAsk` break
 
@@ -126,12 +127,24 @@ The accessibility write has a 0.3 s timeout. When it runs out and nothing shows 
 
 To check it, run `swift test --package-path native/voice-helper --filter "AccessibilityWriteTests|ProtocolTests"` and `pnpm --filter @voice/desktop exec vp test run src/main/dictation.test.ts src/renderer/pillView.test.ts src/renderer/History.test.tsx`.
 
+## Giving up on a transcription
+
+0. Idle
+1. you press the key: Mic starting
+2. the mic delivers audio: Listening
+3. you let go: Transcribing
+4. transcription takes too long: Too short, Nothing heard, or an error
+
+The first `timedOut` in Transcribing marks the transcription overdue, and the Flow Bar reads "Still transcribing". The second ends the session `failed` with "Transcription did not finish" and sends `capture.detach`, not `capture.cancel`, so the helper keeps transcribing. Main is free at once, and a new press starts a new session. When the late transcript arrives, main saves it to history as `notInserted`, inserts nothing, and leaves the current session alone. A late transcript with no words or a late `transcript.failed` leaves no entry. A helper crash before it arrives loses it. The model holds this in `lateTranscript`, which a new session does not reset.
+
+To check it, run `pnpm --filter @voice/desktop exec vp test run src/main/session.test.ts src/main/dictation.test.ts`, and drive it live with `vv dictate short.wav --key=toggle --asr-delay=75000` as [the Dictation feature map](../features/dictation.md#driving-it-with-voice-verify) says.
+
 ## What the model leaves out
 
 - Hold and toggle as separate modes. When the helper ends a toggle capture on its own, through a mic change, the 10 minute cap, or a crash, a tap you meant as stop does nothing while Voice processes and starts a new session once the result shows.
 - The speech model missing, failed, or downloading. A press then ends at once with a message and opens no mic.
-- Delays between main and the helper. Each command and each event is one step, except an insert. A transcript that arrives after main gave up goes into history as `notInserted`, which the model cannot reach.
-- "Still transcribing". The model folds it into Transcribing, and Voice gives up at least 30 s later.
+- Delays between main and the helper. Each command and each event is one step, except an insert and a transcription main gave up on. So the model never has a transcript in flight when you press Escape in Transcribing. In the code, a transcript the helper sent before `capture.cancel` reached it arrives after main went idle, and main keeps it in history as `notInserted`.
+- "Still transcribing". The model folds it into Transcribing. Escape works the same in both, and Voice gives up at least 30 s later.
 - The clipboard copy after a failed insert. The code waits up to 2 s for it in a phase that shows `processing`. The model makes it part of the failure step.
 - Whether the app really took the text. The model trusts the helper's report, and a paste counts once Cmd+V is posted. An accessibility write that the app does not answer in time shows Not confirmed. The model decides at that answer whether the text is in the app, though the app can apply it later.
 - Time. The model takes from the insert deadline that main gives up only after the helper can no longer write.
@@ -141,7 +154,7 @@ To check it, run `swift test --package-path native/voice-helper --filter "Access
 
 ## What the chart hides
 
-The chart hides "you press the key" while the Flow Bar shows a result. It starts a new session the same way as from Idle. The chart also draws no arrow for a release after the helper already stopped capture, or for a late insert that fails, because neither changes what the Flow Bar shows.
+The chart hides "you press the key" while the Flow Bar shows a result. It starts a new session the same way as from Idle. The chart also draws no arrow for a release after the helper already stopped capture, a late insert that fails, a late transcript that goes into history, or a helper crash while Idle or showing a result, because none of them changes what the Flow Bar shows.
 
 ## Regenerate
 

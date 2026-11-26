@@ -109,6 +109,7 @@ private func commandCases() -> [String: HelperCommand] {
         "capture.start.muted": .captureStart(id: "s1", language: .en, outputVolumeScale: 0, microphone: nil, detectHost: true, hotkeyUptimeMs: nil),
         "capture.stop": .captureStop(id: "s1", hotkeyUptimeMs: 2345.5),
         "capture.cancel": .captureCancel(id: "s1"),
+        "capture.detach": .captureDetach(id: "s1"),
         "microphone.test.start": .microphoneTestStart(id: "t1", microphone: nil),
         "microphone.test.start.pinned": .microphoneTestStart(id: "t1", microphone: microphone),
         "microphone.test.stop": .microphoneTestStop(id: "t1"),
@@ -126,6 +127,7 @@ private func commandCases() -> [String: HelperCommand] {
         "test.target": .testTarget(TranscriptTarget(bundleId: "com.apple.safari", host: "mail.example.com")),
         "test.target.app": .testTarget(TranscriptTarget(bundleId: "com.apple.textedit", host: nil)),
         "test.target.clear": .testTarget(nil),
+        "test.asrDelay": .testAsrDelay(ms: 5000),
         "apps.list": .appsList,
         "icons.render": .iconsRender(id: "icons-1", paths: ["/Applications/Synthetic.app"]),
         "icons.render.empty": .iconsRender(id: "icons-1", paths: []),
@@ -233,6 +235,7 @@ private func commandType(_ command: HelperCommand) -> String {
     case .captureStart: "capture.start"
     case .captureStop: "capture.stop"
     case .captureCancel: "capture.cancel"
+    case .captureDetach: "capture.detach"
     case .microphoneTestStart: "microphone.test.start"
     case .microphoneTestStop: "microphone.test.stop"
     case .insert: "insert"
@@ -244,6 +247,7 @@ private func commandType(_ command: HelperCommand) -> String {
     case .asrRemove: "asr.remove"
     case .testAudioFile: "test.audioFile"
     case .testTarget: "test.target"
+    case .testAsrDelay: "test.asrDelay"
     case .appsList: "apps.list"
     case .iconsRender: "icons.render"
     case .meetingStart: "meeting.start"
