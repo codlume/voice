@@ -19,12 +19,14 @@ import {
   type FolderId,
   type FolderKind,
   type Meeting,
+  type MeetingAudio,
   type MeetingId,
   type MeetingSearchHit,
   type MeetingsChange,
   type MeetingsSettings,
   type MeetingsSettingsPatch,
   type MeetingsState,
+  type MeetingSource,
   type MeetingStatus,
   type Span,
   type Speaker,
@@ -165,11 +167,52 @@ export function createMeetingsStore(options: {
       if (found === null) return;
       const meeting = parseMeeting(found.meeting);
       if (meeting === null || meeting.id !== id) throw new LeftAlone("meeting.json is malformed");
-      meetings.set(id, meeting);
+      meetings.set(
+        id,
+        meeting.audio === null
+          ? await withLegacyAudio(meeting)
+          : { ...meeting, audio: meeting.audio },
+      );
     } catch (error) {
       if (!(error instanceof LeftAlone)) throw error;
       log(`meetings: ${id} left alone, ${error.message}`);
     }
+  }
+
+  /**
+   * A meeting saved before `audio` existed tells it by its status and files, read once at load.
+   * A finished meeting kept audio only for Try again after a failed final pass. If a source has
+   * live lines but no audio, a Delete audio already removed part of it, so the rest is owed a
+   * delete and is never transcribed again.
+   */
+  async function withLegacyAudio(meeting: ParsedMeeting): Promise<Meeting> {
+    const { kind } = meeting.status;
+    const kept =
+      (kind !== "ready" && kind !== "summarizing") ||
+      (meeting.finalPassFailed !== null && !(await partlyDeleted(meeting.id).catch(() => true)));
+    return kept
+      ? { ...meeting, audio: { kind: "present" } }
+      : { ...meeting, finalPassFailed: null, audio: { kind: "deleting" } };
+  }
+
+  async function partlyDeleted(id: MeetingId): Promise<boolean> {
+    const size = (name: string) =>
+      stat(NodePath.join(meetingDir(id), name)).then(
+        (file) => file.size,
+        () => 0,
+      );
+    const missing = new Set<MeetingSource>();
+    if ((await size("mic.pcm")) === 0) missing.add("mic");
+    if ((await size("system.pcm")) === 0) missing.add("system");
+    if (missing.size !== 1) return missing.size === 2;
+    const saved = await readFile(NodePath.join(meetingDir(id), "audio.json"), "utf8").then(
+      (text) => (JSON.parse(text) as { baseMs?: unknown }).baseMs,
+      () => 0,
+    );
+    const fromMs = typeof saved === "number" && Number.isFinite(saved) ? saved : 0;
+    return (await readTranscript(id)).some(
+      (entry) => entry.kind === "segment" && entry.startMs >= fromMs && missing.has(entry.source),
+    );
   }
 
   async function load() {
@@ -550,7 +593,18 @@ function parseSummary(raw: unknown): SummaryState | null {
   return null;
 }
 
-function parseMeeting(raw: unknown): Meeting | null {
+const audioKinds: readonly MeetingAudio["kind"][] = ["present", "deleting", "gone"];
+
+function parseAudio(raw: unknown): MeetingAudio | null {
+  if (!isRecord(raw)) return null;
+  const kind = audioKinds.find((known) => known === raw.kind);
+  return kind ? { kind } : null;
+}
+
+/** `audio` is null in a meeting saved before the field existed. */
+type ParsedMeeting = Omit<Meeting, "audio"> & { audio: MeetingAudio | null };
+
+function parseMeeting(raw: unknown): ParsedMeeting | null {
   if (!isRecord(raw)) return null;
   const id = parseMeetingId(raw.id);
   const status = parseStatus(raw.status);
@@ -579,6 +633,7 @@ function parseMeeting(raw: unknown): Meeting | null {
     summary,
     speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
     finalPassFailed,
+    audio: parseAudio(raw.audio),
     transcriptRevision: raw.transcriptRevision as number,
   };
 }

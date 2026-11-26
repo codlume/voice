@@ -27,6 +27,11 @@ catalog:
 overrides:
   vite: "catalog:"
 
+# Unrefs the StyleX dev-server timer that kept every vitest run open for 10 s. StyleX 0.19.2
+# ships the same fix (https://github.com/meta/stylex/pull/1846), so delete this when bumping.
+patchedDependencies:
+  "@stylexjs/unplugin@0.19.1": patches/@stylexjs__unplugin@0.19.1.patch
+
 peerDependencyRules:
   allowAny:
     - vite
