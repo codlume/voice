@@ -37,6 +37,7 @@ private final class Harness {
     var dictating = false
     var capturingDictation = false
     var decodes = 0
+    var dictationChecks = 0
     var meetings: Meetings!
 
     init(system: Bool = true, speed: Double = 16, micHearsTheSpeakers: Bool = false,
@@ -58,7 +59,10 @@ private final class Harness {
             },
             newDetector: newDetector,
             finalPass: MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, newDetector: { nil }, isDictating: { false }),
-            isDictating: { [unowned self] in dictating }, isCapturingDictation: { [unowned self] in capturingDictation })
+            isDictating: { [unowned self] in
+                dictationChecks += 1
+                return dictating
+            }, isCapturingDictation: { [unowned self] in capturingDictation })
     }
 
     var dir: URL { root.appendingPathComponent("m1") }
@@ -95,6 +99,17 @@ private final class Harness {
             try await Task.sleep(for: .milliseconds(20))
         }
         throw ProtocolError("no meeting.drained")
+    }
+
+    /// The transcription loop asks about dictation once per pass, so two more checks mean at
+    /// least one whole pass saw the state this call started in.
+    func waitForTwoDictationChecks() async throws {
+        let seen = dictationChecks
+        let deadline = ContinuousClock.now + .seconds(10)
+        while dictationChecks < seen + 2 {
+            guard ContinuousClock.now < deadline else { throw ProtocolError("the meeting loop stopped checking for dictation") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     func frames(_ name: String) -> Int {
@@ -189,7 +204,7 @@ struct MeetingsTests {
         h.start()
         try await h.waitForFixtures(count: 2)
         h.meetings.stop(id: "m1")
-        try await Task.sleep(for: .milliseconds(500))
+        try await h.waitForTwoDictationChecks()
         #expect(h.decodes == 0, "no meeting decode starts while a dictation runs")
         #expect(h.events("meeting.drained").isEmpty)
         let mic = try PcmFile.read(at: h.dir.appendingPathComponent("mic.pcm"), offset: 0, count: 7 * 16_000)
@@ -208,7 +223,7 @@ struct MeetingsTests {
         h.start()
         try await h.waitForFixtures(count: 2)
         h.meetings.stop(id: "m1")
-        try await Task.sleep(for: .milliseconds(500))
+        try await h.waitForTwoDictationChecks()
         #expect(h.decodes == 0, "the dictation's decode keeps the speech model")
         let mic = try PcmFile.read(at: h.dir.appendingPathComponent("mic.pcm"), offset: 0, count: 7 * 16_000)
         #expect(mic.contains { $0 != 0 }, "after the key is released, the user speaks to the meeting again")
