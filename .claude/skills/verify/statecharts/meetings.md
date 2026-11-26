@@ -121,7 +121,7 @@ stateDiagram-v2
 - `ReadyPresentOnlyForRetry` holds. A finished meeting keeps `present` audio only after a failed final pass, for Try again.
 - `FilesOnlyWhenPresent` holds. Audio files are on disk only while the audio is `present` or `deleting`, or while a delete runs.
 - `RecoveryIdempotent` holds. Recovery run twice ends where recovery run once ends. A recovery whose delete fails or is cut off ends there on the next launch.
-- `NoDeadlock` holds. Every state has a way out, or is a finished or removed meeting.
+- No state is a dead end. Every state has a way out, or is a finished or removed meeting. TLC's deadlock check proves it, so it has no rule in `meetings.cfg`.
 
 ## The `AudioDeletedOnlyAfterFinal` break
 
