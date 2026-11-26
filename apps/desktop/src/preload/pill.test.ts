@@ -35,6 +35,7 @@ describe("pill preload", () => {
     const { api } = await load();
     expect(exposures.map(({ name }) => name)).toEqual(["voice"]);
     expect(Object.keys(api).toSorted()).toEqual([
+      "allowPermission",
       "diagnosticsStartedAtLaunch",
       "getPillSnapshot",
       "onLevel",
