@@ -225,8 +225,12 @@ jobs:
             printf 'notes<<%s\n%s\n%s\n' "${delimiter}" "${notes}" "${delimiter}"
           } >> "${GITHUB_OUTPUT}"
 
+  # A push skips nightly-due and a schedule skips release-please. An if: without a status
+  # function also requires every job further up the chain to succeed, so each job below plan
+  # states !cancelled() and checks the job it needs.
   build:
     needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -301,7 +305,7 @@ jobs:
 
   publish:
     needs: [plan, build]
-    if: needs.build.outputs.skip != 'true'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -345,7 +349,9 @@ jobs:
   # A rebuilt older Stable still gets its DMG, though publish leaves the feed alone.
   release:
     needs: [plan, publish]
-    if: needs.plan.outputs.channel == 'stable' || needs.publish.outputs.result != 'skipped-older'
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' &&
+      (needs.plan.outputs.channel == 'stable' || needs.publish.outputs.result != 'skipped-older') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

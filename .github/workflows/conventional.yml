@@ -1,5 +1,7 @@
 # Copied from hadrysm/fleet's reusable conventional.yml. An org repo can't call
 # that private workflow, so this copy runs on pull_request with its inputs inlined.
+# The title and branch rules live in scripts/pr-name-check.sh, where a test pins
+# the names bots such as release-please give their PRs.
 name: conventional
 
 on:
@@ -14,43 +16,18 @@ jobs:
     if: github.event.pull_request
     runs-on: ubuntu-latest
     steps:
-      - name: PR title is semantic
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-          TYPES: feat|fix|chore|refactor|docs|test|perf|build|ci|style|revert
-        run: |
-          re="^(${TYPES})(\([^()[:space:]][^()]*\))?!?: [^[:space:]].*$"
-          ticket='^\[?[A-Z][A-Z0-9]*-[0-9]+'
-          if [[ "$TITLE" =~ $ticket ]]; then
-            echo "::error::PR title starts with a ticket key: $TITLE"; exit 1
-          fi
-          if ! [[ "$TITLE" =~ $re ]]; then
-            echo "::error::PR title is not semantic (type(scope)!: description, type one of ${TYPES}): $TITLE"; exit 1
-          fi
-          scope=$(sed -nE 's/^[a-z]+\(([^)]*)\).*/\1/p' <<<"$TITLE")
-          desc=${TITLE#*: }
-          if [[ "$scope" =~ $ticket || "$desc" =~ $ticket ]]; then
-            echo "::error::PR title carries a ticket key: $TITLE"; exit 1
-          fi
-          echo "ok: $TITLE"
-
-      - name: Branch name is semantic
-        env:
-          BRANCH: ${{ github.head_ref }}
-          TYPES: feat|fix|chore|refactor|docs|test|perf|build|ci|style|revert
-          BOTS: dependabot|renovate
-        run: |
-          if [[ "$BRANCH" =~ ^(${BOTS})/ ]]; then echo "ok: bot branch $BRANCH"; exit 0; fi
-          if ! [[ "$BRANCH" =~ ^(${TYPES})/[a-z0-9._-]+$ ]]; then
-            echo "::error::branch is not semantic (type/short-topic, e.g. feat/price-filters): $BRANCH"; exit 1
-          fi
-          echo "ok: $BRANCH"
-
+      # The default ref is the PR merged into its base, so a branch opened before a change
+      # to the name check still runs the current one.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: PR title and branch are semantic
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BRANCH: ${{ github.head_ref }}
+        run: bash scripts/pr-name-check.sh
 
       - uses: actions/setup-node@v4
         with:
