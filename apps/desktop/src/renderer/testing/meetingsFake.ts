@@ -80,6 +80,7 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
       summary: { kind: "none" },
       speakers: [],
       finalPassFailed: null,
+      audio: { kind: "present" },
       transcriptRevision: 0,
     };
     set({ meetings: [meeting, ...state.meetings] });
@@ -186,8 +187,8 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
     deleteMeetingAudio: async (id) =>
       step(
         id,
-        (meeting) => meeting.finalPassFailed !== null,
-        (meeting) => ({ ...meeting, finalPassFailed: null }),
+        (meeting) => meeting.finalPassFailed !== null || meeting.audio.kind === "deleting",
+        (meeting) => ({ ...meeting, finalPassFailed: null, audio: { kind: "gone" } }),
       ),
     onMeetingTranscript: (listener) => {
       lineListeners.add(listener);

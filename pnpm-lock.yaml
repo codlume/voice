@@ -40,6 +40,9 @@ catalogs:
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
 
+patchedDependencies:
+  '@stylexjs/unplugin@0.19.1': 134e3367d75cff4bb342db722a466565c861f43490f7db8d853414c46e0d2557
+
 importers:
 
   .:
@@ -144,7 +147,7 @@ importers:
         version: 0.19.1
       '@stylexjs/unplugin':
         specifier: 'catalog:'
-        version: 0.19.1(unplugin@2.3.11)
+        version: 0.19.1(patch_hash=134e3367d75cff4bb342db722a466565c861f43490f7db8d853414c46e0d2557)(unplugin@2.3.11)
       '@types/node':
         specifier: 'catalog:'
         version: 24.12.4
@@ -226,7 +229,7 @@ importers:
     devDependencies:
       '@stylexjs/unplugin':
         specifier: 'catalog:'
-        version: 0.19.1(unplugin@2.3.11)
+        version: 0.19.1(patch_hash=134e3367d75cff4bb342db722a466565c861f43490f7db8d853414c46e0d2557)(unplugin@2.3.11)
       '@types/node':
         specifier: 'catalog:'
         version: 24.12.4
@@ -7739,7 +7742,7 @@ snapshots:
       invariant: 2.2.4
       styleq: 0.2.1
 
-  '@stylexjs/unplugin@0.19.1(unplugin@2.3.11)':
+  '@stylexjs/unplugin@0.19.1(patch_hash=134e3367d75cff4bb342db722a466565c861f43490f7db8d853414c46e0d2557)(unplugin@2.3.11)':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-syntax-flow': 7.29.7(@babel/core@7.29.7)

@@ -84,6 +84,7 @@ function fixtureMeeting(
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: null,
+    audio: { kind: "gone" },
     transcriptRevision: 0,
     ...patch,
   };
