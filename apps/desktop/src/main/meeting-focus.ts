@@ -138,7 +138,7 @@ export function raise(
     id,
     kind: notice.kind,
     text,
-    actions: noticeActions[notice.kind] ?? [],
+    actions: noticeActions(notice),
     dismissable: notice.kind !== "finalPassFailed",
   };
   return {
@@ -149,10 +149,16 @@ export function raise(
   };
 }
 
-const noticeActions: Partial<Record<MeetingNotice["kind"], readonly MeetingNoticeAction[]>> = {
-  finalPassFailed: ["retryFinalPass", "deleteAudio"],
-  summaryReady: ["viewSummary"],
-};
+function noticeActions(notice: MeetingNotice): readonly MeetingNoticeAction[] {
+  switch (notice.kind) {
+    case "finalPassFailed":
+      return notice.audio === "whole" ? ["retryFinalPass", "deleteAudio"] : ["deleteAudio"];
+    case "summaryReady":
+      return ["viewSummary"];
+    default:
+      return [];
+  }
+}
 
 export const dismiss = (focus: MeetingFocus): MeetingFocus =>
   focus.raised ? dismissBanner(focus, focus.raised.key) : focus;

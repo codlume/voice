@@ -38,6 +38,10 @@ const notInsertedText: Record<InsertFailure, { copyOff: string; copyOn: string }
     copyOff: "Not inserted. Text changed",
     copyOn: "Text changed. Copied to clipboard",
   },
+  unconfirmed: {
+    copyOff: "Not confirmed. Check the app",
+    copyOn: "Not confirmed. Check before pasting",
+  },
   failed: {
     copyOff: "Not inserted. Copy it from Voice",
     copyOn: "Not inserted. Copied to clipboard",
@@ -66,6 +70,7 @@ const transformNotInsertedText: Record<InsertFailure, string> = {
   noFocusedField: "Can't write here. Result is in Voice",
   secureInput: "Secure field. Result is in Voice",
   selectionChanged: "Text changed. Result is in Voice",
+  unconfirmed: "Not confirmed. Check the text",
   failed: "Not replaced. Result is in Voice",
 };
 

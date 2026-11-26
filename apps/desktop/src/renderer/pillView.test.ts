@@ -57,6 +57,7 @@ describe("pillView", () => {
     [kept("secureInput", false), "Not inserted. Secure field"],
     [kept("selectionChanged", false), "Not inserted. Text changed"],
     [kept("failed", false), "Not inserted. Copy it from Voice"],
+    [kept("unconfirmed", false), "Not confirmed. Check the app"],
     [
       { kind: "failed", message: "Set up the speech model in Voice first" },
       "Set up the speech model in Voice first",
@@ -71,6 +72,7 @@ describe("pillView", () => {
     [kept("secureInput", true), "Secure field. Copied to clipboard"],
     [kept("selectionChanged", true), "Text changed. Copied to clipboard"],
     [kept("failed", true), "Not inserted. Copied to clipboard"],
+    [kept("unconfirmed", true), "Not confirmed. Check before pasting"],
   ])("once copied, %j reads %s", (outcome, text) => {
     expect(done(outcome)).toEqual({ kind: "message", text });
   });
@@ -106,6 +108,7 @@ describe("pillView for transforms", () => {
     [{ kind: "notInserted", reason: "secureInput" }, "Secure field. Result is in Voice"],
     [{ kind: "notInserted", reason: "selectionChanged" }, "Text changed. Result is in Voice"],
     [{ kind: "notInserted", reason: "failed" }, "Not replaced. Result is in Voice"],
+    [{ kind: "notInserted", reason: "unconfirmed" }, "Not confirmed. Check the text"],
     [{ kind: "noSelection" }, "Select text first"],
     [{ kind: "secureInput" }, "Can't read a secure field"],
     [{ kind: "noFocusedField" }, "Click into the text first"],

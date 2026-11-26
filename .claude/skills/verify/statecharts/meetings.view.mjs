@@ -6,11 +6,13 @@ const ready = (v) => {
       : "Ready, final pass failed, audio kept";
   }
   if (!v.final) {
-    return v.audio === "kept"
-      ? "Ready, audio without a final transcript left on disk"
+    if (v.audio === "kept") return "Ready, audio without a final transcript left on disk";
+    return v.audio === "empty"
+      ? "Ready, live transcript only, empty audio files left on disk"
       : "Ready, live transcript only, audio deleted";
   }
-  return v.audio === "kept" ? "Ready, audio left on disk" : "Ready, audio deleted";
+  if (v.audio === "kept") return "Ready, audio left on disk";
+  return v.audio === "empty" ? "Ready, empty audio files left on disk" : "Ready, audio deleted";
 };
 
 const deleting = (v) =>
@@ -28,6 +30,7 @@ const labels = {
   confirming: "Started by mistake?",
   finalizing: "Final pass",
   deletingKeptAudio: "Deleting the kept audio",
+  clearingLeftover: "Ready, Resume deleting the audio left on disk",
   gone: "Removed",
 };
 
@@ -44,7 +47,7 @@ export const group = (v) => {
   if ([...finishing, "deletingAudio", "deletingKeptAudio"].includes(v.status)) {
     return "Finishing";
   }
-  return v.status === "ready" ? "Done" : "No meeting";
+  return ["ready", "clearingLeftover"].includes(v.status) ? "Done" : "No meeting";
 };
 
 export const colors = { Capture: "orange", Finishing: "blue", Done: "teal", "No meeting": "tan" };
@@ -69,11 +72,12 @@ export function step(action, from, to) {
     case "AudioStops":
       return "you press Pause, or the audio stops";
     case "YouResume":
+    case "YouResumeLeftover":
       return "you press Resume";
     case "LeftoverDeleted":
-      return "the audio left on disk is deleted";
+      return "the audio left on disk is deleted, so the resume begins";
     case "LeftoverStays":
-      return "the audio left on disk cannot be deleted, so the resume fails";
+      return "the audio left on disk cannot be deleted, so Voice refuses the resume";
     case "ResumeFails":
     case "YouPauseWhileResuming":
       return from.status === "reopening"
@@ -110,7 +114,11 @@ export function step(action, from, to) {
     case "VoiceRestarts":
       if (to.status === "gone")
         return "the start fails, you press Stop, or Voice closes before any audio";
-      if (["ready", "deletingAudio", "deletingKeptAudio", "reopening"].includes(from.status))
+      if (
+        ["ready", "deletingAudio", "deletingKeptAudio", "clearingLeftover", "reopening"].includes(
+          from.status,
+        )
+      )
         return restart;
       if (["paused", "resuming"].includes(from.status)) return `you press Stop, or ${restart}`;
       if (from.status === "recording") return stopOrLimit;
