@@ -192,6 +192,17 @@ HelperWriteRefused ==
     /\ UNCHANGED <<on, cur, text, writeText, helperRead, copyRun, clip,
                    restorePending, escaped, kept>>
 
+\* The accessibility write ran out its 0.3 s timeout and nothing shows it landed, so the helper
+\* answers none unconfirmed. The app may apply the queued write or drop it. The write touches
+\* no clipboard.
+HelperWriteUnconfirmed ==
+    /\ helperWrite # 0
+    /\ helperWrite' = 0
+    /\ text' \in {text, writeText}
+    /\ End("notConfirmed")
+    /\ UNCHANGED <<on, cur, writeText, helperRead, copyRun, clip, restorePending, escaped,
+                   kept>>
+
 \* The 6.5 s insert watchdog. The helper's write deadline passed before it, so the helper
 \* can no longer write. A refusal it still sends reaches a run that is over, and main drops it.
 WriteTimesOut ==
@@ -231,6 +242,7 @@ Next ==
     \/ RewriteFails
     \/ HelperWriteLands
     \/ HelperWriteRefused
+    \/ HelperWriteUnconfirmed
     \/ WriteTimesOut
     \/ HelperRestoresClipboard
     \/ PillHides
@@ -241,6 +253,7 @@ Spec == Init /\ [][Next]_vars
 OnlyFinishedRewrite == text \in {"original", "finished"}
 
 \* A pill that says the text was left alone (cancelled, refused, failed, not replaced) is true.
+\* "Not confirmed" makes no claim.
 FailureLeavesText ==
     outcome \in {"cancelled", "unchanged", "notReplaced"} => text = "original"
 

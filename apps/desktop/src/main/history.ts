@@ -10,6 +10,7 @@ import {
   type HistoryRetention,
   type HistoryState,
   type HistoryStatus,
+  type SettledStatus,
   type Transcript,
 } from "../shared/history.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
@@ -17,7 +18,7 @@ import type { Log } from "./diagnostics-scrub.ts";
 
 export type History = {
   remember(transcript: Transcript, at: number): void;
-  settle(id: string, inserted: boolean): void;
+  settle(id: string, status: SettledStatus): void;
   entries(): readonly HistoryEntry[];
   state(): HistoryState;
   loaded(): Promise<void>;
@@ -312,10 +313,9 @@ export function createHistory(options: {
       entries = entries.with(index, { ...existing, raw, text, status });
       publishSoon();
     },
-    settle(id, inserted) {
+    settle(id, status) {
       const index = entries.findIndex((entry) => entry.id === id && entry.status === "pending");
       if (index < 0) return;
-      const status: HistoryStatus = inserted ? "inserted" : "notInserted";
       change(entries.with(index, { ...entries[index]!, status }));
     },
     entries: () => pruned(entries),
@@ -395,7 +395,7 @@ const VERSION = 1;
 const newestFirst = (a: HistoryEntry, b: HistoryEntry) => b.at - a.at;
 const isText = (value: unknown): value is string => typeof value === "string";
 const isStatus = (value: unknown): value is HistoryStatus =>
-  value === "pending" || value === "inserted" || value === "notInserted";
+  value === "pending" || value === "inserted" || value === "notInserted" || value === "unconfirmed";
 const isSavedRetention = (value: unknown): value is SavedRetention =>
   value !== "memory" && historyRetentions.some((retention) => retention === value);
 const statusAfterRestart = (status: HistoryStatus): HistoryStatus =>

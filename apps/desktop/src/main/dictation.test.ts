@@ -42,7 +42,12 @@ import {
 } from "./dictation.ts";
 import { whenIdle } from "./activity.ts";
 import { createHistory } from "./history.ts";
-import { decodeTarget, type HelperCommand, type HelperEvent } from "./protocol.ts";
+import {
+  decodeTarget,
+  parseHelperEvent,
+  type HelperCommand,
+  type HelperEvent,
+} from "./protocol.ts";
 import {
   ASR_MISSING_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
@@ -306,6 +311,14 @@ async function dictate(h: ReturnType<typeof harness>, text: string, to: Target |
   h.dictation.onHelperEvent(transcriptEvent(id, text, to));
   await flush();
   return id;
+}
+
+function unconfirmed(id: string) {
+  const event = parseHelperEvent(
+    JSON.stringify({ type: "insert.result", id, method: "none", reason: "unconfirmed" }),
+  );
+  if (event === null) throw new Error("the helper's answer did not parse");
+  return event;
 }
 
 function release(h: ReturnType<typeof harness>, holdMs: number) {
@@ -1877,6 +1890,34 @@ describe("createDictation", () => {
       });
       expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "inserted" } });
       expect(h.copies).toEqual([]);
+    });
+  });
+
+  describe("an accessibility write the app never answered", () => {
+    test("ends not confirmed, and history says so instead of not inserted", async () => {
+      const h = harness({ cleanupEnabled: false });
+      const id = await dictate(h, "keep me");
+      h.dictation.onHelperEvent(unconfirmed(id));
+      await flush();
+      expect(h.store.state.session).toMatchObject({
+        phase: "done",
+        outcome: { kind: "notInserted", reason: "unconfirmed", copied: false, source: "helper" },
+      });
+      expect(h.copies).toEqual([]);
+      expect(h.latest()).toMatchObject({ raw: "keep me", text: "keep me", status: "unconfirmed" });
+    });
+
+    test("copies the text when Copy to clipboard is on", async () => {
+      const h = harness({ copyToClipboard: true, cleanupEnabled: false });
+      const id = await dictate(h, "keep me");
+      h.dictation.onHelperEvent(unconfirmed(id));
+      await flush();
+      expect(h.store.state.session).toMatchObject({
+        phase: "done",
+        outcome: { kind: "notInserted", reason: "unconfirmed", copied: true, source: "helper" },
+      });
+      expect(h.copies).toEqual([{ text: "keep me", html: null }]);
+      expect(h.latest()).toMatchObject({ raw: "keep me", text: "keep me", status: "unconfirmed" });
     });
   });
 

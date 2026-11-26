@@ -63,7 +63,7 @@ public enum AXWritePlan: Equatable, Sendable {
     /// from a silent no-op.
     case reread
     /// The app never answered and nothing shows the write landed. It can still land, so a paste
-    /// now could insert the text twice.
+    /// now could insert the text twice, and the insert is answered as `unconfirmed`, not `failed`.
     case unknown
 
     /// `after` is called only when it can change the plan.

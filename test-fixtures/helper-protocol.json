@@ -1126,6 +1126,22 @@
       "required": ["type", "id", "method"]
     },
     {
+      "name": "insert.result.unconfirmed",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": "unconfirmed"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": "unconfirmed"
+      },
+      "required": ["type", "id", "method"]
+    },
+    {
       "name": "insert.result.paste",
       "wire": {
         "type": "insert.result",

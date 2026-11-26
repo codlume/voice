@@ -32,8 +32,15 @@ const missed: HistoryEntry = {
   text: "Call the dentist.",
   status: "notInserted",
 };
+const unconfirmed: HistoryEntry = {
+  id: "unconfirmed",
+  at: now - 180_000,
+  raw: "Order more coffee.",
+  text: "Order more coffee.",
+  status: "unconfirmed",
+};
 const history: HistoryState = {
-  entries: [cleaned, missed],
+  entries: [cleaned, missed, unconfirmed],
   retention: "forever",
   saveFailed: false,
 };
@@ -112,6 +119,27 @@ describe("History", () => {
     expect(copies.map((b) => b.textContent)).toEqual(["Copy"]);
     await click(copies[0]!);
     expect(api.copyHistoryEntry).toHaveBeenCalledWith("missed", "text");
+    expect(copies[0]!.textContent).toBe("Copied");
+  });
+
+  test("marks a transcript whose insertion was not confirmed, and never as not inserted", async () => {
+    await render(<History history={history} today={today} />);
+    const rows = [...host.querySelectorAll("li")].map((li) => li.textContent ?? "");
+    const coffee = rows.find((text) => text.includes("coffee"));
+    expect(coffee).toContain("Not confirmed");
+    expect(coffee).not.toContain("Not inserted");
+    expect(rows.find((text) => text.includes("dentist"))).not.toContain("Not confirmed");
+    expect(rows.find((text) => text.includes("Anna"))).not.toContain("Not confirmed");
+  });
+
+  test("a transcript whose insertion was not confirmed keeps one labelled Copy in view", async () => {
+    await render(<History history={history} today={today} />);
+    const copies = [...row("coffee")!.querySelectorAll("button")].filter((b) =>
+      b.getAttribute("aria-label")?.startsWith("Copy dictation"),
+    );
+    expect(copies.map((b) => b.textContent)).toEqual(["Copy"]);
+    await click(copies[0]!);
+    expect(api.copyHistoryEntry).toHaveBeenCalledWith("unconfirmed", "text");
     expect(copies[0]!.textContent).toBe("Copied");
   });
 

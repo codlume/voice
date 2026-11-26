@@ -118,6 +118,12 @@ describe("parseHelperEvent", () => {
         reason: "selectionChanged",
       },
       {
+        type: "insert.result",
+        id: "a",
+        method: "none",
+        reason: "unconfirmed",
+      },
+      {
         type: "permissions",
         microphone: "granted",
         accessibility: "denied",
