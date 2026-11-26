@@ -60,7 +60,7 @@ export type Speaker = { id: SpeakerId; label: string; name: string | null };
  * removed and stays until every file is gone, so a delete that fails or is cut off by a quit is
  * finished later, and audio that started going is never transcribed or recorded onto again.
  */
-export type MeetingAudio = "present" | "deleting" | "gone";
+export type MeetingAudio = { kind: "present" } | { kind: "deleting" } | { kind: "gone" };
 
 /** What `meeting.json` holds. The transcript lives in its own append-only file. */
 export type Meeting = {

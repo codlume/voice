@@ -311,7 +311,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         // next launch finds `deleting`, removes nothing, and saves `gone`.
         if (!starts.has(id)) {
           await store.upsert(id, (latest) => ({
-            meeting: latest?.audio === "deleting" ? { ...latest, audio: "gone" } : latest,
+            meeting:
+              latest?.audio.kind === "deleting" ? { ...latest, audio: { kind: "gone" } } : latest,
             mustPersist: false,
           }));
         }
@@ -454,7 +455,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   function raiseFinalPassNotices(meetings: readonly Meeting[]) {
     for (const meeting of meetings) {
       const reason = meeting.finalPassFailed;
-      if (reason && meeting.audio === "present") {
+      if (reason && meeting.audio.kind === "present") {
         deps.onNotice(meeting.id, { kind: "finalPassFailed", reason });
       }
     }
@@ -500,10 +501,10 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
    */
   async function finishDelete(id: MeetingId): Promise<boolean> {
     await queue;
-    if (store.get(id)?.audio !== "deleting") return true;
+    if (store.get(id)?.audio.kind !== "deleting") return true;
     await dispatch(id, { type: "deleteAudio" });
     await queue;
-    return store.get(id)?.audio !== "deleting";
+    return store.get(id)?.audio.kind !== "deleting";
   }
 
   function arm(id: MeetingId, watch: Watch) {
@@ -767,7 +768,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt, hasAudio });
         }
         for (const { id, audio } of store.state().meetings) {
-          if (audio === "deleting" || (audio === "gone" && (await hasAudioFiles(id)))) {
+          if (audio.kind === "deleting" || (audio.kind === "gone" && (await hasAudioFiles(id)))) {
             await dispatch(id, { type: "audioFound" });
           }
         }

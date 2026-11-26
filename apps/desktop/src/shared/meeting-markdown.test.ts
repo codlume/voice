@@ -23,7 +23,7 @@ const meeting: Meeting = {
   },
   speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: "Ana" }],
   finalPassFailed: null,
-  audio: "present",
+  audio: { kind: "present" },
   transcriptRevision: 0,
 };
 

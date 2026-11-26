@@ -56,7 +56,7 @@ const notices = (effects: MeetingEffect[]) =>
 function meetingAt(status: MeetingStatus, overrides: Partial<Meeting> = {}): Meeting {
   const finished = status.kind === "ready" || status.kind === "summarizing";
   return {
-    audio: finished && !overrides.finalPassFailed ? "gone" : "present",
+    audio: { kind: finished && !overrides.finalPassFailed ? "gone" : "present" },
     id: ID,
     title: null,
     createdAt: T0,
@@ -234,7 +234,7 @@ describe("meeting lifecycle", () => {
     for (const event of ended) {
       const next = step(meetingAt(resuming), event, T0 + 30 * MIN, config);
       expect(next.meeting?.status, event.type).toEqual({ kind: "ready" });
-      expect(next.meeting?.audio, event.type).toBe("deleting");
+      expect(next.meeting?.audio.kind, event.type).toBe("deleting");
       expect(next.effects.slice(0, 2), event.type).toEqual([
         { type: "stopCapture" },
         { type: "deleteAudio" },
@@ -451,7 +451,11 @@ describe("meeting lifecycle", () => {
       expect(kinds(done.effects)).toContain("deleteAudio");
 
       const deleted = step(meeting, { type: "deleteAudio" }, T0 + 40 * MIN, config);
-      expect(deleted.meeting).toEqual({ ...meeting, finalPassFailed: null, audio: "deleting" });
+      expect(deleted.meeting).toEqual({
+        ...meeting,
+        finalPassFailed: null,
+        audio: { kind: "deleting" },
+      });
       expect(deleted.effects).toEqual([{ type: "deleteAudio" }]);
 
       const stuck = step(deleted.meeting, { type: "audioDeleteFailed" }, T0, config);
@@ -681,7 +685,10 @@ describe("meeting lifecycle", () => {
       const meeting = meetingAt(status);
       expect(step(meeting, { type: "audioFound" }, T0 + 30 * MIN, config), status.kind).toEqual(
         transcribed
-          ? { meeting: { ...meeting, audio: "deleting" }, effects: [{ type: "deleteAudio" }] }
+          ? {
+              meeting: { ...meeting, audio: { kind: "deleting" } },
+              effects: [{ type: "deleteAudio" }],
+            }
           : { meeting, effects: [] },
       );
       const kept = meetingAt(status, { finalPassFailed: "other" });

@@ -146,12 +146,12 @@ const finalPassFailed = (meeting: Meeting, reason: FinalPassFailure): Step =>
  * owed waits for it, because the new leg would add to what is left of the old audio.
  */
 function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleConfig): Step {
-  if (meeting.audio === "deleting") return { meeting, effects: [] };
+  if (meeting.audio.kind === "deleting") return { meeting, effects: [] };
   if (recordedMs(meeting, 0) >= maxLengthMs[config.maxLength]) {
     return { meeting, effects: [notify({ kind: "atMaxLength" })] };
   }
   return {
-    meeting: { ...withStatus(meeting, { kind: "starting", from }), audio: "present" },
+    meeting: { ...withStatus(meeting, { kind: "starting", from }), audio: { kind: "present" } },
     effects: [watch("start"), { type: "startCapture", leg: meeting.spans.length }],
   };
 }
@@ -211,7 +211,7 @@ export function step(
         summary: { kind: "none" },
         speakers: [],
         finalPassFailed: null,
-        audio: "present",
+        audio: { kind: "present" },
         transcriptRevision: 0,
       },
       effects: [watch("start"), { type: "startCapture", leg: 0 }],
@@ -406,9 +406,10 @@ export function step(
         case "finalPass":
           return { meeting, effects: [{ type: "applyFinalPass", segments: event.segments }] };
         case "finalized":
-          return afterTranscript({ ...meeting, finalPassFailed: null, audio: "deleting" }, [
-            { type: "deleteAudio" },
-          ]);
+          return afterTranscript(
+            { ...meeting, finalPassFailed: null, audio: { kind: "deleting" } },
+            [{ type: "deleteAudio" }],
+          );
         case "stalled":
           return event.watch === "finalPass" ? finalPassFailed(meeting, "other") : same;
         case "finalizeFailed":
@@ -456,7 +457,7 @@ export function step(
         case "generateSummary":
           return summarizing(meeting);
         case "retryFinalPass":
-          return meeting.finalPassFailed && meeting.audio === "present"
+          return meeting.finalPassFailed && meeting.audio.kind === "present"
             ? finalizing(meeting)
             : same;
         default:
@@ -468,15 +469,15 @@ export function step(
 /** A delete already owed keeps the same meeting, so a retry writes nothing before it removes. */
 const deleting = (meeting: Meeting): Step => ({
   meeting:
-    meeting.audio === "deleting" && meeting.finalPassFailed === null
+    meeting.audio.kind === "deleting" && meeting.finalPassFailed === null
       ? meeting
-      : { ...meeting, finalPassFailed: null, audio: "deleting" },
+      : { ...meeting, finalPassFailed: null, audio: { kind: "deleting" } },
   effects: [{ type: "deleteAudio" }],
 });
 
 /** A finished meeting keeps its audio only for Try again after a failed final pass. */
 const dropAudio = (meeting: Meeting): Step =>
-  meeting.finalPassFailed && meeting.audio === "present"
+  meeting.finalPassFailed && meeting.audio.kind === "present"
     ? { meeting, effects: [] }
     : deleting(meeting);
 
@@ -486,7 +487,7 @@ const dropAudio = (meeting: Meeting): Step =>
  * delete says so.
  */
 function finishedAudio(meeting: Meeting, event: MeetingEvent): Step | null {
-  const owed = meeting.audio === "deleting";
+  const owed = meeting.audio.kind === "deleting";
   switch (event.type) {
     case "deleteAudio":
       return owed || meeting.finalPassFailed ? deleting(meeting) : null;

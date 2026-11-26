@@ -191,8 +191,8 @@ export function createMeetingsStore(options: {
       (kind !== "ready" && kind !== "summarizing") ||
       (meeting.finalPassFailed !== null && !(await partlyDeleted(meeting.id).catch(() => true)));
     return kept
-      ? { ...meeting, audio: "present" }
-      : { ...meeting, finalPassFailed: null, audio: "deleting" };
+      ? { ...meeting, audio: { kind: "present" } }
+      : { ...meeting, finalPassFailed: null, audio: { kind: "deleting" } };
   }
 
   async function partlyDeleted(id: MeetingId): Promise<boolean> {
@@ -593,7 +593,13 @@ function parseSummary(raw: unknown): SummaryState | null {
   return null;
 }
 
-const meetingAudios: readonly MeetingAudio[] = ["present", "deleting", "gone"];
+const audioKinds: readonly MeetingAudio["kind"][] = ["present", "deleting", "gone"];
+
+function parseAudio(raw: unknown): MeetingAudio | null {
+  if (!isRecord(raw)) return null;
+  const kind = audioKinds.find((known) => known === raw.kind);
+  return kind ? { kind } : null;
+}
 
 /** `audio` is null in a meeting saved before the field existed. */
 type ParsedMeeting = Omit<Meeting, "audio"> & { audio: MeetingAudio | null };
@@ -627,7 +633,7 @@ function parseMeeting(raw: unknown): ParsedMeeting | null {
     summary,
     speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
     finalPassFailed,
-    audio: meetingAudios.find((audio) => audio === raw.audio) ?? null,
+    audio: parseAudio(raw.audio),
     transcriptRevision: raw.transcriptRevision as number,
   };
 }

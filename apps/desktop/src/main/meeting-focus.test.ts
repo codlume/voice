@@ -30,7 +30,7 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: null,
-    audio: "present",
+    audio: { kind: "present" },
     transcriptRevision: 0,
     ...patch,
   };
@@ -284,7 +284,7 @@ describe("notices on the Meetings page", () => {
       },
     ]);
 
-    const owed = { ...done, finalPassFailed: null, audio: "deleting" } as const;
+    const owed = { ...done, finalPassFailed: null, audio: { kind: "deleting" } } as const;
     const stuck = raise(follow(kept, [owed]), done.id, { kind: "audioDeleteFailed" }, 1);
     expect(meetingBanners(stuck)).toMatchObject([
       {
@@ -294,7 +294,7 @@ describe("notices on the Meetings page", () => {
       },
     ]);
     expect(texts(follow(stuck, [owed]))).toHaveLength(1);
-    expect(texts(follow(stuck, [{ ...owed, audio: "gone" }]))).toEqual([]);
+    expect(texts(follow(stuck, [{ ...owed, audio: { kind: "gone" } }]))).toEqual([]);
   });
 
   test("a failed start has no meeting; it stays until one records", () => {

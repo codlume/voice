@@ -52,7 +52,7 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: null,
-    audio: "gone",
+    audio: { kind: "gone" },
     transcriptRevision: 0,
     ...overrides,
   };
@@ -639,10 +639,10 @@ describe("meetings store", () => {
     await legacy(D, {}, ["mic.pcm", "system.pcm"], [said, heard]);
 
     const { store } = await relaunch();
-    expect(store.get(A)).toMatchObject({ audio: "present" });
-    expect(store.get(B)).toMatchObject({ audio: "present", finalPassFailed: "other" });
-    expect(store.get(C)).toMatchObject({ audio: "deleting", finalPassFailed: null });
-    expect(store.get(D)).toMatchObject({ audio: "deleting", finalPassFailed: null });
+    expect(store.get(A)).toMatchObject({ audio: { kind: "present" } });
+    expect(store.get(B)).toMatchObject({ audio: { kind: "present" }, finalPassFailed: "other" });
+    expect(store.get(C)).toMatchObject({ audio: { kind: "deleting" }, finalPassFailed: null });
+    expect(store.get(D)).toMatchObject({ audio: { kind: "deleting" }, finalPassFailed: null });
   });
 
   test("ignores directories and lines that are not meetings", async () => {

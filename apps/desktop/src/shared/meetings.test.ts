@@ -41,7 +41,7 @@ const meeting = (id: MeetingId, createdAt: number, overrides: Partial<Meeting> =
   summary: { kind: "none" },
   speakers: [],
   finalPassFailed: null,
-  audio: "present",
+  audio: { kind: "present" },
   transcriptRevision: 0,
   ...overrides,
 });

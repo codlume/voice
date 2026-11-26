@@ -101,7 +101,7 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
     case "finalPassFailed":
       return meeting.finalPassFailed !== null;
     case "audioDeleteFailed":
-      return meeting.audio === "deleting";
+      return meeting.audio.kind === "deleting";
     case "summaryFailed":
       return meeting.summary.kind === "failed" && meeting.status.kind !== "summarizing";
     case "summaryReady":
