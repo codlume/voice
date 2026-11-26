@@ -921,18 +921,52 @@ describe("meeting recorder", () => {
     const startsBefore = h.sentTypes().filter((type) => type === "meeting.start").length;
 
     disk.nextAudioDelete = "throws";
-    await h.recorder.resume(id);
+    expect(await h.recorder.resume(id)).toEqual({
+      kind: "refused",
+      message: "Voice could not clear this meeting's old audio. Try again.",
+    });
     await h.settle();
     expect(h.sentTypes().filter((type) => type === "meeting.start")).toHaveLength(startsBefore);
     expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
-    expect(h.noticed.at(-1)).toEqual({
-      kind: "resumeFailed",
-      message: "Voice could not clear this meeting's old audio. Try again.",
-    });
+    expect(h.notices).not.toContain("resumeFailed");
 
     expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
     await h.settle();
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 90_000 });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+  });
+
+  test("a resume while the summary is written also starts new files after a failed audio delete", async () => {
+    const { promise: running, resolve: started } = Promise.withResolvers<void>();
+    const h = harness({
+      summarizer: {
+        summarizeMeeting: async (_id, { signal }) => {
+          started();
+          await new Promise((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason)),
+          );
+          return { ok: true };
+        },
+        generateTitle: async () => ({ ok: true, title: null }),
+      },
+    });
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    h.advance(6 * 60_000);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    disk.nextAudioDelete = "throws";
+    h.emit({ type: "meeting.finalized", id, segments: FINAL_PASS });
+    await running;
+    expect(h.store.get(id)).toMatchObject({
+      status: { kind: "summarizing" },
+      finalPassFailed: null,
+    });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+
+    expect(await h.recorder.resume(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 6 * 60_000 });
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
   });
 
@@ -1824,6 +1858,33 @@ describe("meeting recorder", () => {
     });
     expect(summarized).toEqual([id]);
     for (const name of AUDIO) expect(existsSync(NodePath.join(dir, id, name)), name).toBe(false);
+  });
+
+  test("a relaunch after Voice quit while a resume cleared leftover audio does not transcribe that audio", async () => {
+    const first = harness();
+    const id = await first.start();
+    await first.segment(id, "mic", 0, TEN_WORDS);
+    await first.recorder.stop(id);
+    await first.drained(id);
+    disk.nextAudioDelete = "throws";
+    await first.finalized(id, FINAL_PASS);
+    expect(first.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
+    expect(existsSync(NodePath.join(first.folder(id), "mic.pcm"))).toBe(true);
+    const transcript = await first.store.transcript(id);
+
+    disk.nextAudioDelete = "hangs";
+    void first.recorder.resume(id);
+    await vi.waitFor(() => expect(disk.nextAudioDelete).toBe("works"));
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "ready" });
+    expect(await h.store.transcript(id)).toEqual(transcript);
+    for (const type of ["meeting.start", "meeting.transcribe", "meeting.finalize"])
+      expect(h.sentTypes()).not.toContain(type);
+    for (const name of AUDIO)
+      expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
   });
 
   test("live lines that arrive after the meeting finished are not appended", async () => {
