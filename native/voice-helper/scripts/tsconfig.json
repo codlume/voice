@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node"],
+    "noImplicitAny": false
+  },
+  // The bench scripts are not type-clean yet. The smokes are, and typing them against the
+  // helper protocol catches a command change that leaves a smoke sending a bad command.
+  "include": ["helper.mjs", "smoke.mjs", "*-smoke.mjs"]
+}

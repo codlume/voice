@@ -7,6 +7,12 @@ import { fileURLToPath } from "node:url";
 
 import { fixturesDir } from "../../../scripts/fixtures.mjs";
 
+/**
+ * `test.audioFile` is a test-only command, so the app's protocol leaves it out.
+ * @typedef {import("../../../apps/desktop/src/main/protocol.ts").HelperCommand
+ *   | { type: "test.audioFile"; path: string | null }} Command
+ */
+
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
 
 export function helperBinary(name = "voice-helper") {
@@ -131,6 +137,7 @@ export class Helper {
     });
   }
 
+  /** @param {Command} command */
   send(command) {
     if (this.#trace) console.error(`>> ${JSON.stringify(command)}`);
     this.child.stdin.write(`${JSON.stringify(command)}\n`);
@@ -183,6 +190,11 @@ export class Helper {
   }
 }
 
+/**
+ * @template T
+ * @param {ConstructorParameters<typeof Helper>[0]} options
+ * @param {(helper: Helper) => Promise<T>} body
+ */
 export async function withHelper(options, body) {
   const { HELPER_PROTOCOL_VERSION } = await import("../../../apps/desktop/src/main/protocol.ts");
   const helper = new Helper(options);
@@ -198,6 +210,7 @@ export async function withHelper(options, body) {
   }
 }
 
+/** @param {Helper} helper */
 export async function prepareAsr(helper, { download = false } = {}) {
   const startedAt = performance.now();
   helper.send({ type: "asr.prepare", download });
@@ -212,6 +225,7 @@ export async function prepareAsr(helper, { download = false } = {}) {
 const detectorSettled = (event) =>
   event.type === "log" && /^voice detector (ready|unavailable)/.test(event.message);
 
+/** @param {Helper} helper */
 export async function prepareVoiceDetector(helper) {
   const log =
     helper.events.find(detectorSettled) ??
@@ -219,6 +233,7 @@ export async function prepareVoiceDetector(helper) {
   assert(log.message === "voice detector ready", log.message);
 }
 
+/** @param {Helper} helper */
 export async function prepareSpeakerModels(helper) {
   helper.send({ type: "meeting.models.download" });
   const status = await helper.waitFor(
@@ -232,9 +247,10 @@ export async function prepareSpeakerModels(helper) {
 }
 
 export async function dictateFixture(
-  helper,
+  /** @type {Helper} */ helper,
   name,
   id,
+  /** @type {import("../../../apps/desktop/src/shared/dictation-language.ts").DictationLanguage} */
   language = "en",
   /** @type {{ onStarted?: () => unknown }} */ { onStarted } = {},
 ) {

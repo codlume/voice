@@ -23,7 +23,8 @@ assert(
 );
 refuseIfVoiceIsRunning();
 
-const transformId = "polish";
+const transformId =
+  /** @type {import("../../../apps/desktop/src/shared/transforms.ts").TransformId} */ ("polish");
 const oneKeycode = 18;
 const rightArrowKeycode = 124;
 const paragraph = `Synthetic paragraph ${randomUUID()}: Ada met Grace on Thursday, 2024-05-02, at https://example.test/voice and said 42 words.`;
@@ -146,6 +147,7 @@ try {
       key: "fn",
       toggleKey: null,
       transforms: [{ id: transformId, keycode: oneKeycode, modifiers: ["option"] }],
+      meeting: null,
     });
     await app.open(paragraph);
 

@@ -6,7 +6,7 @@ ensureFixtures();
 await withHelper({}, async (helper) => {
   await prepareAsr(helper);
   const results = [];
-  for (const language of ["en", "auto", "ru", "en"]) {
+  for (const language of /** @type {const} */ (["en", "auto", "ru", "en"])) {
     const { transcript } = await dictateFixture(
       helper,
       "language-trigger.wav",
