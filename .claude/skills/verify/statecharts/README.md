@@ -14,7 +14,15 @@ Use a chart to pick what to verify. A change that touches a flow's states should
 
 ## Keep the charts true
 
-Each flow has four files: `<flow>.tla` and `<flow>.cfg` are the model, `<flow>.view.mjs` labels it in the user's words, and `<flow>.md` embeds the chart. After a change to a flow's code, update its model, then run this from the repository root. It needs the pstack `statechart` skill and [mise](https://mise.jdx.dev) on `PATH`. The first run installs TLC and Java.
+Each flow has four files: `<flow>.tla` and `<flow>.cfg` are the model, `<flow>.view.mjs` labels it in the user's words, and `<flow>.md` embeds the chart. Each rule in `<flow>.cfg` has one bullet in `<flow>.md` that starts with ``- `Rule` holds`` or ``- `Rule` breaks``.
+
+CI runs `statecharts.mjs`, which runs TLC once for each rule and fails when TLC's result differs from the rule's bullet, when a rule has no bullet, or when a model deadlocks. After a change to a flow's code, update its model and its rule bullets, then run the same check from the repository root. It needs Java 11 or later, or `JAVA` set to a java binary. The first run downloads TLC.
+
+```sh
+node .claude/skills/verify/scripts/statecharts.mjs
+```
+
+A model change can also change the chart. To redraw it, run this from the repository root. It needs the pstack `statechart` skill and [mise](https://mise.jdx.dev) on `PATH`.
 
 ````sh
 statechart=$(ls -d ~/.claude/plugins/cache/pstack-claude/pstack/*/skills/statechart/scripts/statechart | sort -V | tail -1)

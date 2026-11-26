@@ -59,6 +59,14 @@ const scaledBy = (scale) => (before) => ({
   volume: Math.round(before.volume * scale),
 });
 
+/**
+ * @param {string} mode
+ * @param {{
+ *   outputVolumeScale?: number | null;
+ *   initiallyMuted?: boolean;
+ *   during: (before: ReturnType<typeof audioState>) => ReturnType<typeof audioState>;
+ * }} options
+ */
 async function session(mode, { outputVolumeScale = 0, initiallyMuted = false, during: expected }) {
   setMuted(initiallyMuted);
   const before = audioState();

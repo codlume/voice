@@ -3,7 +3,9 @@ import { execFileSync } from "node:child_process";
 import { assert, helperBinary, refuseIfVoiceIsRunning, withHelper } from "./helper.mjs";
 
 refuseIfVoiceIsRunning();
-const key = process.argv[2] ?? "fn";
+const key = /** @type {import("../../../apps/desktop/src/shared/api.ts").Hotkey} */ (
+  process.argv[2] ?? "fn"
+);
 const mode = process.argv[3] ?? "hold";
 assert(mode === "hold" || mode === "toggle", `mode is ${mode}, expected hold or toggle`);
 const expected = mode === "toggle" ? ["toggle"] : ["down", "up"];
@@ -17,9 +19,15 @@ await withHelper({}, async (helper) => {
   );
   if (mode === "toggle") {
     const holdKey = key === "fn" ? "rightOption" : "fn";
-    helper.send({ type: "hotkey.configure", key: holdKey, toggleKey: key, transforms: [] });
+    helper.send({
+      type: "hotkey.configure",
+      key: holdKey,
+      toggleKey: key,
+      transforms: [],
+      meeting: null,
+    });
   } else if (key !== "fn") {
-    helper.send({ type: "hotkey.configure", key, toggleKey: null, transforms: [] });
+    helper.send({ type: "hotkey.configure", key, toggleKey: null, transforms: [], meeting: null });
   }
   const before = helper.events.length;
   execFileSync(helperBinary("fnpost"), [key], { stdio: "inherit" });
