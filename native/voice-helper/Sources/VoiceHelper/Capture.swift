@@ -673,6 +673,7 @@ final class MicSource {
 }
 
 final class FileSource {
+    private static let interval = 0.1
     private let samples: [Float]
     private let framesPerTick: Int
     private let sink: (AudioChunk) -> Void
@@ -695,7 +696,7 @@ final class FileSource {
     func start(at time: DispatchTime = .now()) {
         startedAt = time
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now(), repeating: 0.1)
+        timer.schedule(deadline: .now(), repeating: Self.interval)
         timer.setEventHandler { [weak self] in self?.tick() }
         self.timer = timer
         timer.resume()
@@ -712,10 +713,16 @@ final class FileSource {
             onEnd()
             return
         }
-        let end = min(offset + framesPerTick, samples.count)
-        let capturedAt = startedAt + .nanoseconds(Int(Double(offset) / asrSampleRate * 1e9))
-        sink(AudioChunk(samples: Array(samples[offset..<end]), capturedAt: capturedAt))
-        offset = end
+        // A busy main thread merges missed fires into one. Like the mic's buffer after a stall,
+        // that fire hands over every chunk due by now, so the audio arrives late but never slower.
+        let elapsed = Double(Int64(DispatchTime.now().uptimeNanoseconds) - Int64(startedAt.uptimeNanoseconds)) / 1e9
+        let due = min(samples.count, (max(0, Int(elapsed / Self.interval)) + 1) * framesPerTick)
+        repeat {
+            let end = min(offset + framesPerTick, samples.count)
+            let capturedAt = startedAt + .nanoseconds(Int(Double(offset) / asrSampleRate * 1e9))
+            sink(AudioChunk(samples: Array(samples[offset..<end]), capturedAt: capturedAt))
+            offset = end
+        } while offset < due && timer != nil
     }
 }
 

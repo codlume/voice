@@ -17,7 +17,7 @@ struct CaptureSourceTests {
     @Test(arguments: zip([CaptureSource.disabled, .fixture("/nonexistent/voice-test.wav")], [CaptureFailure.device, .unknown]))
     @MainActor func unavailableTestAudioNeverProbesMicrophone(source: CaptureSource, reason: CaptureFailure) async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
         let probe = XCTestExpectation(description: "test capture must not query microphone permission")

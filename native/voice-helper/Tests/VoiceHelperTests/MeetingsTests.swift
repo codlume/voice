@@ -41,7 +41,7 @@ private final class Harness {
 
     init(system: Bool = true, speed: Double = 16, micHearsTheSpeakers: Bool = false,
          newDetector: @escaping MeetingTranscription.NewDetector = { nil }) throws {
-        output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        output = lines.output()
         devices = AudioInputDevices(output: output)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let mic = root.appendingPathComponent("mic.wav")
@@ -257,7 +257,7 @@ struct MeetingsTests {
 
     @Test func testModeWithoutAFixtureRefusesToRecord() throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
         let finalPass = MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, newDetector: { nil }, isDictating: { false })

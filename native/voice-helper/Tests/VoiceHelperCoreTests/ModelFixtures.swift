@@ -77,7 +77,9 @@ final class StubHub: URLProtocol, @unchecked Sendable {
     struct Reply: Sendable {
         enum End: Sendable {
             case finish
-            case fail(URLError.Code)
+            /// URLSession drops data its delegate has not seen when a load fails. Naming the file
+            /// the fetch writes to holds the failure until every byte served is in it.
+            case fail(URLError.Code, onceStoredIn: URL? = nil)
             case hang
         }
 
@@ -145,8 +147,8 @@ final class StubHub: URLProtocol, @unchecked Sendable {
             return next
         }
         guard let client, let url = request.url else { return }
+        let offset = request.value(forHTTPHeaderField: "Range").flatMap { Int($0.dropFirst("bytes=".count).dropLast()) } ?? 0
         if let full = reply.resume {
-            let offset = request.value(forHTTPHeaderField: "Range").flatMap { Int($0.dropFirst("bytes=".count).dropLast()) } ?? 0
             let served = full.suffix(from: offset).prefix(reply.truncate ?? .max)
             reply.status = offset > 0 ? 206 : 200
             reply.headers = offset > 0 ? ["Content-Range": "bytes \(offset)-\(full.count - 1)/\(full.count)"] : ["Content-Length": "\(full.count)"]
@@ -165,7 +167,9 @@ final class StubHub: URLProtocol, @unchecked Sendable {
         }
         switch reply.end {
         case .finish: steps.append { client.urlProtocolDidFinishLoading(self) }
-        case .fail(let code): steps.append { client.urlProtocol(self, didFailWithError: URLError(code)) }
+        case .fail(let code, let file):
+            let stored = (reply.status == 206 ? offset : 0) + reply.chunks.reduce(0) { $0 + $1.count }
+            steps.append { [self] in whenStored(stored, in: file) { client.urlProtocol(self, didFailWithError: URLError(code)) } }
         case .hang: break
         }
         for (index, step) in steps.enumerated() {
@@ -174,6 +178,15 @@ final class StubHub: URLProtocol, @unchecked Sendable {
                 if !stopped.withLock({ $0 }) { step() }
             }
         }
+    }
+
+    private func whenStored(_ bytes: Int, in file: URL?, _ step: @escaping () -> Void) {
+        if stopped.withLock({ $0 }) { return }
+        var status = stat()
+        if let file, lstat(file.path, &status) != 0 || status.st_size < bytes {
+            return Self.delivery.asyncAfter(deadline: .now() + .milliseconds(1)) { [self] in whenStored(bytes, in: file, step) }
+        }
+        step()
     }
 
     private static let delivery = DispatchQueue(label: "StubHub.delivery")

@@ -39,6 +39,23 @@ extension MeetingSource {
         return HeardAudio(samples: samples, runs: VoiceActivity.confirmed(runs, by: heard.probabilities), detector: heard.next)
     }
 
+    /// How much of this source from `offset` the live transcript takes as its next window, or nil
+    /// while the audio there may still change. `available` frames are on disk; `ended` means the
+    /// files stop growing. It reads and scans seconds of audio, so it never runs on main.
+    public func liveWindow(in dir: URL, offset: Int, available: Int, ended: Bool) async throws -> Int? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        let raw = try PcmFile.read(at: file(in: dir), offset: offset, count: min(available, MeetingChunker.windowSamples))
+        return MeetingChunker.cut(raw, final: ended && available <= raw.count)
+    }
+
+    /// How much of this source from `offset` the final pass takes as its next window, or nil at
+    /// the end of the file. It never runs on main, for the same reason as `liveWindow`.
+    public func finalWindow(in dir: URL, offset: Int) async throws -> Int? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        let samples = try PcmFile.read(at: file(in: dir), offset: offset, count: MeetingChunker.finalWindowSamples)
+        return samples.isEmpty ? nil : MeetingChunker.finalCut(samples)
+    }
+
     func heard(in dir: URL, offset: Int, count: Int) async throws -> [Float] {
         dispatchPrecondition(condition: .notOnQueue(.main))
         return switch self {

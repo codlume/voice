@@ -37,7 +37,7 @@ struct ModelIntegrityTests {
 
     @Test @MainActor func anEmptyModelsDirIsMissing() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-asr-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -51,7 +51,7 @@ struct ModelIntegrityTests {
 
     @Test @MainActor func aDamagedCacheFailsWithTheMessageWithoutDownloading() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-asr-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let folder = dir.appendingPathComponent(ModelManifest.parakeetV3.folderName)
@@ -73,7 +73,7 @@ struct ModelIntegrityTests {
 
     @Test @MainActor func aDictationThatWaitsOnAFailedLoadGetsTheMessage() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-asr-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         try writeSparse(ModelManifest.parakeetV3, in: dir)
@@ -90,7 +90,7 @@ struct ModelIntegrityTests {
 
     @Test @MainActor func cancellingAStalledDownloadLeavesTheSpeechModelNotInstalled() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-asr-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -176,7 +176,7 @@ struct ModelIntegrityTests {
     @Test(.enabled(if: ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 15)) @MainActor
     func aDiarizerDownloadGoesThroughTheCache() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-diarizer-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }

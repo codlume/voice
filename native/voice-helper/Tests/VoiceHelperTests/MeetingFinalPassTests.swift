@@ -30,10 +30,12 @@ private func throughTheSpeakers(_ played: [Float], lagMs: Double) -> [Float] {
     }
 }
 
-private func write(_ samples: [Float], _ source: MeetingSource, in dir: URL) throws {
+/// Builds `samples` and writes them off main. Every test in the process shares main, and a debug
+/// build takes a while to synthesize seconds of audio.
+private func write(_ samples: @autoclosure @Sendable () -> [Float], _ source: MeetingSource, in dir: URL) async throws {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let writer = try PcmWriter(url: source.file(in: dir))
-    try writer.append(samples)
+    try writer.append(samples())
     try writer.close()
 }
 
@@ -59,11 +61,19 @@ private func soundWords(in samples: [Float]) -> [TimedWord] {
     return words
 }
 
-private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, systemPause: Double = 0.9) throws {
+/// The other side talking, and the mic hearing it through the speakers 80 ms late until 8.3 s,
+/// then 300 ms late. Built once, on first use by `write`.
+private let lagMove: (theirs: [Float], mic: [Float]) = {
+    let theirs = talk(9) + silence(0.7) + talk(6)
+    let moveAt = Int(8.3 * 16_000)
+    return (theirs, Array(throughTheSpeakers(theirs, lagMs: 80).prefix(moveAt)) + throughTheSpeakers(theirs, lagMs: 300).dropFirst(moveAt))
+}()
+
+private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, systemPause: Double = 0.9) async throws {
     let theirs = silence(3) + tone(2, 0.1) + silence(systemPause) + tone(1.5, 0.1) + silence(0.5)
     let echo = micHearsTheSpeakers ? theirs.map { $0 / 4 } : silence(8)
-    try write(zip(tone(2, 0.3, hz: 660) + silence(6), echo).map(+), .mic, in: dir)
-    try write(theirs, .system, in: dir)
+    try await write(zip(tone(2, 0.3, hz: 660) + silence(6), echo).map(+), .mic, in: dir)
+    try await write(theirs, .system, in: dir)
 }
 
 @MainActor
@@ -75,7 +85,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         diarize: @escaping MeetingFinalPass.Diarize, dictating: @escaping () -> Bool = { false },
         fail: Bool = false, decoded: @escaping (Int) -> Void = { _ in }
     ) -> MeetingFinalPass {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         return MeetingFinalPass(output: output, decode: { samples, _ in
             decoded(samples.count)
             if fail { throw TranscribeError(reason: .asrUnavailable, message: "speech model is not downloaded") }
@@ -94,7 +104,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func numbersTheVoicesTheDiarizerFindsInMeetingTime() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir)
+        try await writeMeeting(in: dir)
         var diarized: [String] = []
         let run = pass(diarize: { url in
             diarized.append(url.lastPathComponent)
@@ -111,8 +121,8 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func theOtherSideHeardThroughTheSpeakersIsNotTranscribedAsTheUser() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir, micHearsTheSpeakers: true)
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        try await writeMeeting(in: dir, micHearsTheSpeakers: true)
+        let output = lines.output()
         await MeetingFinalPass(output: output, decode: { samples, _ in soundWords(in: samples) }, diarize: { _ in nil }, newDetector: { nil }, isDictating: { false })
             .run(id: "m1", dir: dir, baseMs: 0, language: .en)
         let mic = try await finalized().filter { $0["source"] as? String == "mic" }
@@ -121,7 +131,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
     }
 
     private func micLines(newDetector: @escaping MeetingTranscription.NewDetector) async throws -> [String] {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         await MeetingFinalPass(output: output, decode: { samples, _ in soundWords(in: samples) }, diarize: { _ in nil },
                                newDetector: newDetector, isDictating: { false })
             .run(id: "m1", dir: dir, baseMs: 0, language: .en)
@@ -129,25 +139,25 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
             .map { "\($0["text"] as? String ?? "?")@\(Int($0["startMs"] as? Double ?? -1))" }
     }
 
-    private let voiceThenKnock = tone(2, 0.3, hz: 660) + silence(2) + tone(0.3, 0.3, hz: 660) + silence(1.7)
+    private nonisolated static let voiceThenKnock = tone(2, 0.3, hz: 660) + silence(2) + tone(0.3, 0.3, hz: 660) + silence(1.7)
 
     @Test func aSoundTheVoiceDetectorHearsNoVoiceInIsNotTranscribedAsTheUser() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(voiceThenKnock, .mic, in: dir)
+        try await write(Self.voiceThenKnock, .mic, in: dir)
         let mic = try await micLines(newDetector: { ScriptedDetector(voiced: [0..<32_000]) })
         #expect(mic == ["loud@0"])
     }
 
     @Test func withoutAVoiceDetectorEverySoundOnTheMicIsStillTranscribed() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(voiceThenKnock, .mic, in: dir)
+        try await write(Self.voiceThenKnock, .mic, in: dir)
         let mic = try await micLines(newDetector: { nil })
         #expect(mic == ["loud@0", "loud@4000"])
     }
 
     @Test func theVoiceDetectorHearsTheMicInOrderFromOneWindowToTheNext() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(tone(2, 0.3, hz: 660) + silence(119) + tone(0.3, 0.3, hz: 660) + silence(1), .mic, in: dir)
+        try await write(tone(2, 0.3, hz: 660) + silence(119) + tone(0.3, 0.3, hz: 660) + silence(1), .mic, in: dir)
         let detector = ScriptedDetector(voiced: [0..<32_000, 961_600..<966_400])
         let mic = try await micLines(newDetector: { detector })
         #expect(mic == ["loud@0"])
@@ -155,12 +165,12 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func aDictationThatStartsWhileTheGateRunsHoldsTheDecode() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir, micHearsTheSpeakers: true)
+        try await writeMeeting(in: dir, micHearsTheSpeakers: true)
         var dictating = false
         var looks = 0
         var decodes = 0
         var decodedWhileDictating = 0
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let finalPass = MeetingFinalPass(output: output, decode: { samples, _ in
             decodes += 1
             if dictating { decodedWhileDictating += 1 }
@@ -180,7 +190,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func withoutDiarizationTheSystemSideStaysOneVoice() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir)
+        try await writeMeeting(in: dir)
         await pass(diarize: { _ in nil }).run(id: "m1", dir: dir, baseMs: 0, language: .en)
         let segments = try await finalized()
         #expect(segments.filter { $0["source"] as? String == "system" }.count == 2)
@@ -189,7 +199,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func aDecodeThatFailsReportsTheFailureAndNoTranscript() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir)
+        try await writeMeeting(in: dir)
         await pass(diarize: { _ in [] }, fail: true).run(id: "m1", dir: dir, baseMs: 0, language: .en)
         let failed = try await lines.wait(for: "meeting.finalizeFailed")
         #expect(failed.last?["reason"] as? String == "transcript")
@@ -199,7 +209,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func speakersThatCouldNotBeToldApartFailThePassInsteadOfMergingIntoOneVoice() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir)
+        try await writeMeeting(in: dir)
         await pass(diarize: { _ in throw MeetingFinalizeError(reason: .speakerModels, message: "speaker detection is not downloaded") })
             .run(id: "m1", dir: dir, baseMs: 0, language: .en)
         let failed = try await lines.wait(for: "meeting.finalizeFailed")
@@ -209,7 +219,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func eachRunOfSpeechIsDecodedOnItsOwnAndTheSilenceBetweenNeverReachesTheModel() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir, systemPause: 3)
+        try await writeMeeting(in: dir, systemPause: 3)
         var decoded: [Int] = []
         await pass(diarize: { _ in nil }, decoded: { decoded.append($0) }).run(id: "m1", dir: dir, baseMs: 0, language: .en)
         _ = try await finalized()
@@ -219,7 +229,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func dictationHoldsEveryDecodeAndTheDiarizer() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try writeMeeting(in: dir)
+        try await writeMeeting(in: dir)
         var dictating = true
         var decodes = 0
         var diarizations = 0
@@ -240,16 +250,11 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 @Suite struct MeetingPartialTests {
     @Test func theOtherSideHeardThroughTheSpeakersShowsNoPartialAsTheUser() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let theirs = (0..<3 * 16_000).map { 0.1 * sin(Float($0) * 2 * .pi * 440 / 16_000) }
-        for (name, samples) in [("system.pcm", theirs), ("mic.pcm", theirs.map { $0 / 4 })] {
-            let writer = try PcmWriter(url: dir.appendingPathComponent(name))
-            try writer.append(samples)
-            try writer.close()
-        }
+        try await write(tone(3, 0.1), .system, in: dir)
+        try await write(tone(3, 0.1).map { $0 / 4 }, .mic, in: dir)
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words", in: samples) },
                                        newDetector: { nil }, isDictating: { false }, idle: .milliseconds(5))
         defer { job.cancel() }
@@ -263,7 +268,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func unfinishedSpeechShowsAsAPartialThatTheSegmentClears() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -291,12 +296,11 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func theUsersVoiceOverTheOtherSideShowsAsAPartialUpToTheNewestAudio() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let theirs = talk(7)
-        try write(theirs, .system, in: dir)
-        try write(zip(throughTheSpeakers(theirs, lagMs: 80), silence(1) + tone(6, 0.3, hz: 660)).map(+), .mic, in: dir)
+        try await write(talk(7), .system, in: dir)
+        try await write(zip(throughTheSpeakers(talk(7), lagMs: 80), silence(1) + tone(6, 0.3, hz: 660)).map(+), .mic, in: dir)
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("\(samples.count / 16) ms", in: samples) },
                                        newDetector: { nil }, isDictating: { false }, idle: .milliseconds(5))
         defer { job.cancel() }
@@ -309,7 +313,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
 
     @Test func aLegOnNewFilesAfterTheAudioWasDeletedShowsItsUnfinishedSpeech() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words \(samples.count / 16_000)", in: samples) },
@@ -317,16 +321,16 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         defer { job.cancel() }
         let partials = { lines.snapshot().filter { $0["type"] as? String == "meeting.partial" }.compactMap { $0["text"] as? String } }
 
-        try write(tone(10, 0.3), .mic, in: dir)
+        try await write(tone(10, 0.3), .mic, in: dir)
         job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
         job.record([.mic])
         try await until { partials().contains("words 10") }
-        try write(silence(1), .mic, in: dir)
+        try await write(silence(1), .mic, in: dir)
         job.drain()
         _ = try await lines.wait(for: "meeting.drained")
 
         try FileManager.default.removeItem(at: MeetingSource.mic.file(in: dir))
-        try write(tone(3, 0.3), .mic, in: dir)
+        try await write(tone(3, 0.3), .mic, in: dir)
         job.update(dir: dir, baseMs: 60_000, fromMs: MeetingCursor(mic: 60_000, system: 60_000), language: .en)
         job.record([.mic])
         try? await until { partials().contains("words 3") }
@@ -360,7 +364,7 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
         newDetector: @escaping MeetingTranscription.NewDetector = { nil }, isDictating: @escaping () -> Bool = { false },
         decoded: @escaping () throws -> Void = {}
     ) -> MeetingTranscription {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in
             try decoded()
             return spokenWords("words", in: samples)
@@ -378,12 +382,12 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
             .map { "\(Int($0["startMs"] as? Double ?? -1))-\(Int($0["endMs"] as? Double ?? -1))" }
     }
 
-    private let voiceThenKnock = tone(2, 0.3, hz: 660) + silence(2) + tone(0.3, 0.3, hz: 660) + silence(1.5)
+    private nonisolated static let voiceThenKnock = tone(2, 0.3, hz: 660) + silence(2) + tone(0.3, 0.3, hz: 660) + silence(1.5)
     private let hearsTheVoice = ScriptedDetector(voiced: [0..<32_000])
 
     @Test func aSoundTheVoiceDetectorHearsNoVoiceInShowsAsNoSegment() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(voiceThenKnock, .mic, in: dir)
+        try await write(Self.voiceThenKnock, .mic, in: dir)
         let job = job(newDetector: { hearsTheVoice })
         defer { job.cancel() }
         job.drain()
@@ -393,7 +397,7 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func withoutAVoiceDetectorEverySoundOnTheMicStillShows() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(voiceThenKnock, .mic, in: dir)
+        try await write(Self.voiceThenKnock, .mic, in: dir)
         let job = job()
         defer { job.cancel() }
         job.drain()
@@ -403,7 +407,7 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func aSoundTheVoiceDetectorHearsNoVoiceInShowsAsNoPartial() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(silence(0.3) + tone(0.3, 0.3, hz: 660) + silence(0.5), .mic, in: dir)
+        try await write(silence(0.3) + tone(0.3, 0.3, hz: 660) + silence(0.5), .mic, in: dir)
         let hearsNoVoice = ScriptedDetector(voiced: [])
         let job = job(newDetector: { hearsNoVoice })
         defer { job.cancel() }
@@ -432,7 +436,7 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func aWindowDecodedAgainAfterAFailureIsHeardByTheSameVoiceDetector() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(voiceThenKnock, .mic, in: dir)
+        try await write(Self.voiceThenKnock, .mic, in: dir)
         var decodes = 0
         let job = job(newDetector: { hearsTheVoice }, decoded: {
             decodes += 1
@@ -449,14 +453,14 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func aLegOnNewFilesIsHeardByANewVoiceDetector() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(voiceThenKnock, .mic, in: dir)
+        try await write(Self.voiceThenKnock, .mic, in: dir)
         let job = job(newDetector: { hearsTheVoice })
         defer { job.cancel() }
         job.drain()
         _ = try await lines.wait(for: "meeting.drained")
 
         try FileManager.default.removeItem(at: MeetingSource.mic.file(in: dir))
-        try write(voiceThenKnock, .mic, in: dir)
+        try await write(Self.voiceThenKnock, .mic, in: dir)
         job.update(dir: dir, baseMs: 60_000, fromMs: MeetingCursor(mic: 60_000, system: 60_000), language: .en)
         job.drain()
         try await until { lines.snapshot().filter { $0["type"] as? String == "meeting.drained" }.count == 2 }
@@ -466,9 +470,8 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
     @Test(arguments: [0, 1600, 12_800])
     func theEchoShowsAsNeitherPartialNorSegmentWhileSystemAudioLagsTheMic(lagFrames: Int) async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        let theirs = tone(3, 0.1)
-        try write(Array(theirs.prefix(theirs.count - lagFrames)), .system, in: dir)
-        try write(theirs.map { $0 / 4 } + silence(1), .mic, in: dir)
+        try await write(Array(tone(3, 0.1).dropLast(lagFrames)), .system, in: dir)
+        try await write(tone(3, 0.1).map { $0 / 4 } + silence(1), .mic, in: dir)
         let job = job()
         defer { job.cancel() }
         job.record([.mic, .system])
@@ -479,12 +482,9 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func anEchoWhoseLagJustMovedShowsAsNeitherPartialNorSegment() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        let theirs = talk(9) + silence(0.7) + talk(6)
-        let moveAt = Int(8.3 * 16_000)
-        let mic = Array(throughTheSpeakers(theirs, lagMs: 80).prefix(moveAt)) + throughTheSpeakers(theirs, lagMs: 300).dropFirst(moveAt)
         let live = Int(9.9 * 16_000)
-        try write(Array(theirs.prefix(live)), .system, in: dir)
-        try write(Array(mic.prefix(live)), .mic, in: dir)
+        try await write(Array(lagMove.theirs.prefix(live)), .system, in: dir)
+        try await write(Array(lagMove.mic.prefix(live)), .mic, in: dir)
         var looks = 0
         let job = job(isDictating: {
             looks += 1
@@ -496,8 +496,8 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
         let seen = looks
         try await until { looks >= seen + 4 }
 
-        try write(Array(theirs.dropFirst(live)), .system, in: dir)
-        try write(Array(mic.dropFirst(live)), .mic, in: dir)
+        try await write(Array(lagMove.theirs.dropFirst(live)), .system, in: dir)
+        try await write(Array(lagMove.mic.dropFirst(live)), .mic, in: dir)
         job.drain()
         _ = try await lines.wait(for: "meeting.drained")
         #expect(micSegments() == [], "the user said nothing")
@@ -506,11 +506,8 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func anEchoWhoseLagJustMovedWaitsForTheMicWhenSystemAudioIsAhead() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        let theirs = talk(9) + silence(0.7) + talk(6)
-        let moveAt = Int(8.3 * 16_000)
-        let mic = Array(throughTheSpeakers(theirs, lagMs: 80).prefix(moveAt)) + throughTheSpeakers(theirs, lagMs: 300).dropFirst(moveAt)
-        try write(theirs, .system, in: dir)
-        try write(Array(mic.prefix(Int(9.9 * 16_000))), .mic, in: dir)
+        try await write(lagMove.theirs, .system, in: dir)
+        try await write(Array(lagMove.mic.prefix(Int(9.9 * 16_000))), .mic, in: dir)
         var looks = 0
         let job = job(isDictating: {
             looks += 1
@@ -526,12 +523,9 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func anEchoGatedBeforeTheLagMoveShowedWaitsWhenTheLegEndsMeanwhile() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        let theirs = talk(9) + silence(0.7) + talk(6)
-        let moveAt = Int(8.3 * 16_000)
-        let mic = Array(throughTheSpeakers(theirs, lagMs: 80).prefix(moveAt)) + throughTheSpeakers(theirs, lagMs: 300).dropFirst(moveAt)
         let live = Int(9.9 * 16_000)
-        try write(Array(theirs.prefix(live)), .system, in: dir)
-        try write(Array(mic.prefix(live)), .mic, in: dir)
+        try await write(Array(lagMove.theirs.prefix(live)), .system, in: dir)
+        try await write(Array(lagMove.mic.prefix(live)), .mic, in: dir)
         let pause = PausingDetector()
         let job = job(newDetector: { pause })
         defer { job.cancel() }
@@ -540,8 +534,8 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
         pause.arm()
         try await until { pause.paused }
 
-        try write(Array(theirs.dropFirst(live)), .system, in: dir)
-        try write(Array(mic.dropFirst(live)), .mic, in: dir)
+        try await write(Array(lagMove.theirs.dropFirst(live)), .system, in: dir)
+        try await write(Array(lagMove.mic.dropFirst(live)), .mic, in: dir)
         job.drain()
         pause.release()
         _ = try await lines.wait(for: "meeting.drained")
@@ -551,9 +545,8 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func anAnswerRightAfterTheOtherSideShowsWithoutWaiting() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        let theirs = talk(2.8) + silence(1.6)
-        try write(theirs, .system, in: dir)
-        try write(zip(throughTheSpeakers(theirs, lagMs: 80), silence(3) + tone(0.7, 0.3, hz: 660) + silence(0.7)).map(+), .mic, in: dir)
+        try await write(talk(2.8) + silence(1.6), .system, in: dir)
+        try await write(zip(throughTheSpeakers(talk(2.8) + silence(1.6), lagMs: 80), silence(3) + tone(0.7, 0.3, hz: 660) + silence(0.7)).map(+), .mic, in: dir)
         var looks = 0
         let job = job(isDictating: {
             looks += 1
@@ -569,8 +562,8 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
 
     @Test func aLegWithoutSystemAudioAfterOneWithItKeepsTranscribingTheMic() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(silence(3), .system, in: dir)
-        try write(tone(4, 0.3) + silence(1), .mic, in: dir)
+        try await write(silence(3), .system, in: dir)
+        try await write(tone(4, 0.3) + silence(1), .mic, in: dir)
         let job = job()
         defer { job.cancel() }
         job.record([.mic])
@@ -581,8 +574,8 @@ private final class PausingDetector: VoiceDetector, @unchecked Sendable {
     @Test(arguments: ["window", "partial"])
     func aDictationThatStartsWhileTheGateRunsHoldsTheDecode(shown: String) async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
-        try write(tone(3, 0.1), .system, in: dir)
-        try write(tone(3, 0.3, hz: 660) + (shown == "window" ? silence(1) : []), .mic, in: dir)
+        try await write(tone(3, 0.1), .system, in: dir)
+        try await write(tone(3, 0.3, hz: 660) + (shown == "window" ? silence(1) : []), .mic, in: dir)
         var dictating = false
         var looks = 0
         var decodes = 0

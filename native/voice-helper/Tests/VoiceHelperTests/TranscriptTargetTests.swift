@@ -15,7 +15,7 @@ private final class SilentCapture {
     let insertion: Insertion
 
     init() throws {
-        output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        output = lines.output()
         dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("capture.caf")

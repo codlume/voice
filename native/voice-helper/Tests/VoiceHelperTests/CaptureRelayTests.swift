@@ -7,7 +7,7 @@ import VoiceHelperCore
 struct CaptureRelayTests {
     @Test @MainActor func countsStartFromThePressAndReportsBothHopsThroughMain() async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -44,7 +44,7 @@ struct CaptureRelayTests {
     @Test(arguments: [Double?.none, DispatchTime.now().uptimeMs + 60_000])
     @MainActor func reportsNoRelayWithoutAPressThatStartedTheSession(hotkeyUptimeMs: Double?) async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }

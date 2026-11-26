@@ -24,7 +24,7 @@ struct VoiceDetectionTests {
     @Test func aModelNobodyPreparedGivesNoDetectorAndTouchesNothing() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let detection = VoiceDetection(modelsDir: dir, output: Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor))
+        let detection = VoiceDetection(modelsDir: dir, output: lines.output())
         #expect(await detection.detector() == nil)
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
     }
@@ -35,7 +35,7 @@ struct VoiceDetectionTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let squatter = try #require(ModelManifest.voiceDetector.files.first?.path.split(separator: "/").first.map(String.init))
         try Data("x".utf8).write(to: folder.appendingPathComponent(squatter))
-        let detection = VoiceDetection(modelsDir: dir, output: Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor))
+        let detection = VoiceDetection(modelsDir: dir, output: lines.output())
         detection.prepare()
         let message = try await logged("voice detector unavailable")
         #expect(message.contains("The voice detector cannot be used while"), Comment(rawValue: message))

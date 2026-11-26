@@ -54,7 +54,7 @@ private struct Harness {
     let devices: AudioInputDevices
 
     init(segments: [(seconds: Double, silent: Bool)]) throws {
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("capture.caf")

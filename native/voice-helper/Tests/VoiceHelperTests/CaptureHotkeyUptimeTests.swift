@@ -8,7 +8,7 @@ struct CaptureHotkeyUptimeTests {
     @Test(arguments: [-1e300, -1])
     @MainActor func aHotkeyUptimeNoPressCouldProduceStartsASessionWithoutARelay(hotkeyUptimeMs: Double) async throws {
         let lines = EmittedLines()
-        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let output = lines.output()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }

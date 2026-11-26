@@ -3,9 +3,10 @@ import Foundation
 import Testing
 import VoiceHelperCore
 import os
+@testable import VoiceHelper
 
 final class EmittedLines: @unchecked Sendable {
-    let pipe = Pipe()
+    private let pipe = Pipe()
     private let lock = NSLock()
     private var buffer = Data()
     private var lines: [[String: Any]] = []
@@ -15,6 +16,12 @@ final class EmittedLines: @unchecked Sendable {
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.consume(handle.availableData)
         }
+    }
+
+    /// The output to give the component under test. It keeps these lines, and so the pipe,
+    /// open: a component can emit after its test has returned, and all tests share one process.
+    func output() -> Output {
+        Output(fd: pipe.fileHandleForWriting.fileDescriptor, owner: self)
     }
 
     private func consume(_ data: Data) {
