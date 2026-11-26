@@ -57,6 +57,7 @@ try {
       },
     });
     assert(capture.transcript.text.trim() !== "", "capture returned an empty transcript");
+    // @ts-expect-error replay of #393 with the type check bypassed
     helper.send({ type: "insert", id, text, html: null });
     const result = await helper.waitFor(
       (event) => event.type === "insert.result" && event.id === id,
