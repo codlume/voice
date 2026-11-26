@@ -3,10 +3,14 @@ import Testing
 import VoiceHelperCore
 @testable import VoiceHelper
 
+private final class RemovedWhileDownloading: StalledDownloads, @unchecked Sendable {}
+private final class PreparedWhileBeingRemoved: StalledDownloads, @unchecked Sendable {}
+
 @MainActor
 struct VoiceDetectionTests {
     let lines = EmittedLines()
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-detector-\(UUID().uuidString)")
+    private var folder: URL { dir.appendingPathComponent(ModelManifest.voiceDetector.folderName) }
 
     private func logs() -> [String] {
         lines.snapshot().filter { $0["type"] as? String == "log" }.compactMap { $0["message"] as? String }
@@ -17,6 +21,14 @@ struct VoiceDetectionTests {
         while true {
             if let message = logs().first(where: { $0.hasPrefix(prefix) }) { return message }
             guard ContinuousClock.now < deadline else { throw ProtocolError("no log starting \(prefix): \(logs())") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func eventually(_ what: String, _ seen: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(20)
+        while !seen() {
+            guard ContinuousClock.now < deadline else { throw ProtocolError("never saw \(what): \(logs())") }
             try await Task.sleep(for: .milliseconds(20))
         }
     }
@@ -44,6 +56,43 @@ struct VoiceDetectionTests {
 
         detection.remove()
         #expect(!FileManager.default.fileExists(atPath: folder.path), "it goes when the speech model goes")
+    }
+
+    @Test func removingTheDetectorWhileItDownloadsStopsTheDownloadAndLeavesNoFolder() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let detection = VoiceDetection(modelsDir: dir, output: lines.output(), downloads: RemovedWhileDownloading.configuration())
+        detection.prepare()
+        try await eventually("the download start") { RemovedWhileDownloading.requests == (started: 1, open: 1) }
+        #expect(FileManager.default.fileExists(atPath: folder.path))
+
+        detection.remove()
+
+        try await eventually("the download end") { RemovedWhileDownloading.requests == (started: 1, open: 0) }
+        try await eventually("the folder go") { !FileManager.default.fileExists(atPath: folder.path) }
+        #expect(await detection.detector() == nil)
+        _ = try await logged("voice detector removed")
+        #expect(!logs().contains { $0.hasPrefix("voice detector unavailable") }, "a cancel is not a failure")
+    }
+
+    @Test func preparingTheDetectorWhileItIsBeingRemovedDownloadsItAfresh() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let detection = VoiceDetection(modelsDir: dir, output: lines.output(), downloads: PreparedWhileBeingRemoved.configuration())
+        detection.prepare()
+        try await eventually("the first download start") { PreparedWhileBeingRemoved.requests == (started: 1, open: 1) }
+        let leftover = folder.appendingPathComponent("left-by-the-first-download")
+        try Data("x".utf8).write(to: leftover)
+
+        detection.remove()
+        detection.prepare()
+
+        try await eventually("a second download start") { PreparedWhileBeingRemoved.requests == (started: 2, open: 1) }
+        #expect(!FileManager.default.fileExists(atPath: leftover.path), "the removal finished before the second download began")
+
+        detection.remove()
+        try await eventually("the second download end") { PreparedWhileBeingRemoved.requests == (started: 2, open: 0) }
+        try await eventually("the folder go") { !FileManager.default.fileExists(atPath: folder.path) }
     }
 }
 

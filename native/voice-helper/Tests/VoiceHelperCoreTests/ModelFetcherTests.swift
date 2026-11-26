@@ -105,6 +105,28 @@ struct ModelFetcherTests {
         #expect(!scenario.stagedExists)
     }
 
+    @Test func aFetchCancelledBeforeItStartsDoesNotWaitOnASilentHub() async throws {
+        let scenario = try Scenario()
+        defer { try? FileManager.default.removeItem(at: scenario.dir) }
+        scenario.script([.silent])
+        // A connection left open to a silent hub lasts until the session gives up on it.
+        let configuration = StubHub.configuration()
+        configuration.timeoutIntervalForRequest = 10
+        let fetcher = ModelFetcher(configuration: configuration) { _ in }
+        let (gate, open) = AsyncStream<Void>.makeStream()
+        let task = Task {
+            for await _ in gate {}
+            try await fetcher.fetch(scenario.file, of: scenario.fixture.release, to: scenario.staged)
+        }
+        task.cancel()
+        open.finish()
+        let cancelled = ContinuousClock.now
+        await scenario.expectFailure(.cancelled) { try await task.value }
+        let waited = ContinuousClock.now - cancelled
+        #expect(waited < .seconds(5), "the fetch held its connection until the session timed out")
+        #expect(!scenario.stagedExists)
+    }
+
     @Test(arguments: [
         URLError.Code.notConnectedToInternet, .timedOut, .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost,
         .networkConnectionLost, .secureConnectionFailed, .serverCertificateUntrusted, .unknown, .badServerResponse,

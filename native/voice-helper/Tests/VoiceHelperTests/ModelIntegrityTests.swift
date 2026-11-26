@@ -216,21 +216,33 @@ struct ModelIntegrityTests {
 }
 
 /// A download server that accepts every request and never answers, the way a stalled connection
-/// looks before URLSession's 60 s idle timeout.
-final class StalledDownloads: URLProtocol, @unchecked Sendable {
+/// looks before URLSession's 60 s idle timeout. A subclass counts only its own requests, so a
+/// test that declares one watches its downloads apart from those of every test beside it.
+class StalledDownloads: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var startedAny = false
+    nonisolated(unsafe) private static var counts: [ObjectIdentifier: (started: Int, open: Int)] = [:]
 
-    static var started: Bool { lock.withLock { startedAny } }
+    /// The requests this class was ever handed, and those the client has not closed yet.
+    static var requests: (started: Int, open: Int) { lock.withLock { counts[ObjectIdentifier(self), default: (0, 0)] } }
+    static var started: Bool { requests.started > 0 }
 
     static func configuration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StalledDownloads.self]
+        configuration.protocolClasses = [self]
         return configuration
+    }
+
+    private func count(_ change: (inout (started: Int, open: Int)) -> Void) {
+        Self.lock.withLock { change(&Self.counts[ObjectIdentifier(type(of: self)), default: (0, 0)]) }
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() { Self.lock.withLock { Self.startedAny = true } }
-    override func stopLoading() {}
+    override func startLoading() {
+        count {
+            $0.started += 1
+            $0.open += 1
+        }
+    }
+    override func stopLoading() { count { $0.open -= 1 } }
 }

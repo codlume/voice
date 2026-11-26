@@ -19,12 +19,12 @@ final class VoiceDetection {
     private var load = Load.absent
     private var saidHearFailed = false
 
-    init(modelsDir: URL, output: Output) {
+    init(modelsDir: URL, output: Output, downloads: URLSessionConfiguration = ModelHub.session.configuration) {
         // FluidAudio's own loader fetches the detector from an unpinned `main`. It must never
         // run: bytes reach a load only through `cache`.
         ModelHub.offlineMode = true
         cache = ModelCache(release: ModelManifest.voiceDetector, modelsDirectory: modelsDir)
-        fetcher = ModelFetcher(configuration: ModelHub.session.configuration)
+        fetcher = ModelFetcher(configuration: downloads)
         self.output = output
     }
 
