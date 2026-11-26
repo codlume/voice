@@ -1031,10 +1031,10 @@ const commands = {
   },
 
   async record() {
-    const [name] = args;
-    if (!name) fail("usage: record <name>");
+    const [name, pageName = "hub"] = args;
+    if (!name) fail("usage: record <name> [hub|pill]");
     const output = join(evidenceDir(), `${name}.mp4`);
-    const page = await connect("hub");
+    const page = await connect(pageName);
     const framesDir = mkdtempSync(join(tmpdir(), `voice-verify-${name}-`));
     const frames = [];
     page.on("Page.screencastFrame", ({ data: png, metadata, sessionId }) => {
@@ -1372,7 +1372,7 @@ const commands = {
     } catch (error) {
       fail(error.message);
     }
-    const { end, mode, app } = parsed;
+    const { end, mode, app, asrDelayMs } = parsed;
     const state = requireInstance();
     const {
       check: checkAccess,
@@ -1418,6 +1418,11 @@ const commands = {
       snapshots.skipToEnd();
 
       await wait(evaluateInMain(state.inspectPort, `globalThis.voiceTest.setTarget(${show(app)})`));
+      if (asrDelayMs !== null) {
+        await wait(
+          evaluateInMain(state.inspectPort, `globalThis.voiceTest.setAsrDelay(${asrDelayMs})`),
+        );
+      }
       begin();
       const pressedAt = performance.now();
       const listening = await wait(
@@ -1428,7 +1433,7 @@ const commands = {
       );
       const after = snapshots.items.indexOf(listening) + 1;
       const earlyEnd =
-        end === "audio"
+        end === "audio" || end === "escape-processing"
           ? await wait(
               poll(
                 () =>
@@ -1448,6 +1453,17 @@ const commands = {
       if (end === "escape") fnpost("escape");
       else finish();
       const heldMs = Math.round(performance.now() - pressedAt);
+      if (end === "escape-processing") {
+        await wait(
+          snapshots.waitFor((s) => s.session.kind === "processing", {
+            timeoutMs: 5000,
+            label: "processing",
+          }),
+        );
+        // Linger on processing as a user would, so a recording shows the state Escape leaves.
+        await wait(sleep(1000));
+        fnpost("escape");
+      }
       let finalState;
       if (end === "escape") {
         finalState = await wait(
@@ -1623,7 +1639,7 @@ const commands = {
   second-instance <code>         launch a second Voice with that URL as its argument; print its exit
   reopen                         close the Voice window, then open Voice again (second copy hands over)
   front                          bring the Voice window in front of other apps and wait until it paints
-  record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)
+  record <name> [hub|pill]       screencast the hub (or the Flow Bar) to <name>.mp4 until SIGTERM (foreground; run in background)
   wait <page> <expr> [ms]        poll a page expression until truthy
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
@@ -1631,8 +1647,9 @@ const commands = {
                                  shoot every state in sweep.mjs into <dir>/<theme>/<name>.png
   note <name> <text...>          append text evidence
   clipboard save|restore         keep every type on the clipboard in a private file, then put it back
-  dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle] [--app=<bundleId>[@host]]
+  dictate [fixture.wav] [--end=audio|escape|escape-processing|immediate] [--key=hold|toggle] [--app=<bundleId>[@host]] [--asr-delay=<ms>]
                                  --app makes the helper report that target app for the session
+                                 --asr-delay holds this session's final transcription for <ms> first
   transform [--target=electron|textedit] [--shortcut=<keycode>] [--escape]
                                  select a synthetic paragraph in the target, press Left Option+key, report the run`);
   },

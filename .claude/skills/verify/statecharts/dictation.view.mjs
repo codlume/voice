@@ -77,7 +77,11 @@ export function step(action, from) {
     case "HearsNothing":
       return "Voice hears nothing";
     case "TranscriptionFails":
-      return "transcription fails or takes too long";
+      return "transcription fails";
+    case "MainGivesUp":
+      return "transcription takes too long";
+    case "LateTranscriptArrives":
+      return "a transcript Voice stopped waiting for arrives";
     case "CleanupReturnsText":
     case "CleanupFails":
       return "cleanup returns text, or fails and the raw text goes in";
