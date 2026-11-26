@@ -53,6 +53,7 @@ test("the bridge has the methods of the app's own preloads", () => {
     "onLevel",
     "setPillClickable",
     "openNotepad",
+    "allowPermission",
   ]);
   assert.deepEqual(bridgeMethods("const other = {};"), []);
 });
