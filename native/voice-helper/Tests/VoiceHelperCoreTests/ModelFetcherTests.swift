@@ -115,10 +115,10 @@ struct ModelFetcherTests {
         let scenario = try Scenario()
         defer { try? FileManager.default.removeItem(at: scenario.dir) }
         scenario.script([.silent])
-        // A connection left open to a silent hub lasts until the session gives up on it, 60 s as
-        // in the app. The bound below sits well under that and well over CI's full-suite delay.
+        // A request that reaches this silent hub waits until the session gives up on it. A short
+        // timeout keeps that failure quick, and the hub's request log is what shows it.
         let configuration = StubHub.configuration()
-        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForRequest = 1
         let fetcher = ModelFetcher(configuration: configuration) { _ in }
         let (gate, open) = AsyncStream<Void>.makeStream()
         let task = Task {
@@ -127,10 +127,8 @@ struct ModelFetcherTests {
         }
         task.cancel()
         open.finish()
-        let cancelled = ContinuousClock.now
         await scenario.expectFailure(.cancelled) { try await task.value }
-        let waited = ContinuousClock.now - cancelled
-        #expect(waited < .seconds(30), "the fetch held its connection until the session timed out")
+        #expect(scenario.requests.isEmpty, "a fetch cancelled before it started still opened a connection to the hub")
         #expect(!scenario.stagedExists)
     }
 

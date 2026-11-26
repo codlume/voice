@@ -20,7 +20,7 @@ struct PermissionsTests {
                 readFinishedAfterTheCaller.withLock { $0 = returned }
                 return Self.answer(microphone: .granted)
             },
-            onAccessibilityGranted: {})
+            onAccessibility: { _ in })
 
         permissions.check()
         callerReturned.signal()
@@ -44,7 +44,7 @@ struct PermissionsTests {
                 if first { _ = firstMayAnswer.wait(timeout: .now() + .seconds(2)) }
                 return Self.answer(microphone: first ? .denied : .granted)
             },
-            onAccessibilityGranted: {})
+            onAccessibility: { _ in })
 
         permissions.check()
         permissions.check()

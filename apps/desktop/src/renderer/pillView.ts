@@ -19,6 +19,7 @@ export type PillView =
   | { kind: "listening" }
   | { kind: "processing"; text: "Transcribing" | "Transforming" }
   | { kind: "inserted"; method: Extract<Outcome, { kind: "inserted" }>["method"] }
+  | { kind: "allow"; permission: "microphone"; text: string }
   | { kind: "message"; text: string };
 
 const notInsertedText: Record<InsertFailure, { copyOff: string; copyOn: string }> = {
@@ -60,6 +61,12 @@ function outcomeView(outcome: Outcome): PillView {
       const text = notInsertedText[outcome.reason];
       return { kind: "message", text: outcome.copied ? text.copyOn : text.copyOff };
     }
+    case "permissionMissing":
+      return {
+        kind: "allow",
+        permission: outcome.permission,
+        text: "Microphone is off. Click to allow",
+      };
     case "failed":
       return { kind: "message", text: outcome.message };
   }

@@ -66,6 +66,14 @@ describe("pillView", () => {
     expect(done(outcome)).toEqual({ kind: "message", text });
   });
 
+  test("a refused microphone offers to allow it", () => {
+    expect(done({ kind: "permissionMissing", permission: "microphone" })).toEqual({
+      kind: "allow",
+      permission: "microphone",
+      text: "Microphone is off. Click to allow",
+    });
+  });
+
   test.each<[Outcome, string]>([
     [kept("focusChanged", true), "Focus changed. Copied to clipboard"],
     [kept("noFocusedField", true), "No text field. Copied to clipboard"],

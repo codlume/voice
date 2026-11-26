@@ -170,6 +170,14 @@ const validEntries = <S extends Schema.Top>(entry: S) =>
       encode: SchemaGetter.transform((entries) => entries),
     }),
   );
+const captureFailure = Schema.Literals(["permission", "device", "busy", "unknown"]);
+export type CaptureFailure = typeof captureFailure.Type;
+// A failed capture must still end the session, so a missing or newer reason reads as unknown.
+const captureFailureOrUnknown = captureFailure.pipe(
+  Schema.catchDecoding(() => Effect.succeedSome("unknown" as const)),
+  Schema.withDecodingDefaultType(Effect.succeed("unknown" as const)),
+);
+
 const level = Schema.Finite.pipe(
   Schema.decode({
     decode: SchemaGetter.transform(clamp({ minimum: 0, maximum: 1 })),
@@ -224,6 +232,7 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("capture.failed"),
     id: Schema.String,
+    reason: captureFailureOrUnknown,
     message: Schema.String,
   }),
   Schema.Struct({ type: Schema.Literal("capture.cancelled"), id: Schema.String }),
@@ -242,7 +251,7 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("microphone.test.failed"),
     id: Schema.String,
-    reason: Schema.Literals(["permission", "device", "busy", "unknown"]),
+    reason: captureFailure,
   }),
   Schema.Struct({
     type: Schema.Literal("transcript"),

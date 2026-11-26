@@ -169,6 +169,8 @@ export type Outcome =
   | (NotInserted & { copied: boolean; source: NotInsertedSource })
   | { kind: "empty" }
   | { kind: "tooShort" }
+  /** Capture could not start because macOS refused the microphone. The Flow Bar offers the fix. */
+  | { kind: "permissionMissing"; permission: "microphone" }
   | { kind: "failed"; message: string };
 
 export type SelectionFailure =
@@ -312,6 +314,11 @@ export const showsMeeting = (
 ): snapshot is PillSnapshot & { meeting: PillMeeting } =>
   snapshot.session.kind === "idle" && snapshot.meeting !== null;
 
+/** The looks with something to click: a meeting, or the fix for a missing permission. */
+export const pillTakesClicks = (snapshot: PillSnapshot) =>
+  showsMeeting(snapshot) ||
+  (snapshot.session.kind === "done" && snapshot.session.outcome.kind === "permissionMissing");
+
 export type RestartChoice = "restart" | "copyTranscriptAndRestart";
 /**
  * `latest` is the id of the newest history entry the user saw when they chose, so main can refuse
@@ -333,11 +340,13 @@ export type PillApi = WindowApi & {
   getPillSnapshot(): Promise<PillSnapshot>;
   onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
   /**
-   * The Flow Bar lets clicks through to the app under it. While it shows a meeting, the pointer
-   * over the capsule makes it take clicks, and leaving gives them back.
+   * The Flow Bar lets clicks through to the app under it. While it shows a meeting or a missing
+   * permission, the pointer over the capsule makes it take clicks, and leaving gives them back.
    */
   setPillClickable(clickable: boolean): Promise<void>;
   openNotepad(): Promise<void>;
+  /** Shows the system prompt, or the System Settings pane once the user has said no. */
+  allowPermission(kind: "microphone"): Promise<void>;
 };
 
 /** An app found in the standard application folders. `browser` marks the apps the helper reads a page host from. */
@@ -551,6 +560,7 @@ export const Channel = {
   dismissMeetingNotice: "voice:dismissMeetingNotice",
   openNotepad: "voice:openNotepad",
   setPillClickable: "voice:setPillClickable",
+  allowPermission: "voice:allowPermission",
   getNotepad: "voice:getNotepad",
   notepad: "voice:notepad",
   dismissMeetingPrompt: "voice:dismissMeetingPrompt",

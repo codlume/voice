@@ -17,6 +17,7 @@ beforeEach(() => {
     onLevel: () => () => {},
     setPillClickable: async () => {},
     openNotepad: async () => {},
+    allowPermission: vi.fn(async () => {}),
   } as Partial<PillApi> as PillApi;
   host = document.createElement("div");
   root = createRoot(host);
@@ -91,5 +92,19 @@ describe("the Flow Bar meeting clock", () => {
         meeting: { status: { kind: "paused" }, closedMs: 0, prompt },
       }),
     ).toBe("Recording ends in 5 min");
+  });
+});
+
+describe("Flow Bar when the microphone is refused", () => {
+  test("names the fix, and a click asks main to allow the microphone", () => {
+    const session: PillState = {
+      kind: "done",
+      outcome: { kind: "permissionMissing", permission: "microphone" },
+    };
+    expect(spoken(session)).toBe("Microphone is off. Click to allow");
+    const button = host.querySelector<HTMLButtonElement>("[role=status] button");
+    act(() => button?.click());
+    const voice = (window as { voice?: PillApi }).voice;
+    expect(voice?.allowPermission).toHaveBeenCalledWith("microphone");
   });
 });

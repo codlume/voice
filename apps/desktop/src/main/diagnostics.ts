@@ -60,6 +60,7 @@ const SESSION_LEVELS: Record<Outcome["kind"], LogLevel> = {
   empty: "warn",
   tooShort: "warn",
   notInserted: "warn",
+  permissionMissing: "warn",
   failed: "error",
 };
 

@@ -50,6 +50,7 @@ Pill ==
       [] outcome = "inserted" -> "inserted"
       [] outcome = "notInserted" -> "notInserted"
       [] outcome = "unconfirmed" -> "notConfirmed"
+      [] outcome = "micRefused" -> "allow"
       [] OTHER -> "message"
 
 \* A new session forgets the last one, including an insertion the helper may still run.
@@ -159,11 +160,19 @@ MicRecordsAfterATap ==
     /\ EndWith("tooShort")
     /\ UNCHANGED intent
 
-\* capture.failed (no permission, no device, the device changed while opening) or the 3 s
-\* start watchdog, which also sends capture.cancel.
+\* capture.failed (no device, the device changed while opening) or the 3 s start watchdog,
+\* which also sends capture.cancel.
 MicDoesNotStart ==
     /\ phase = "starting"
     /\ EndWith("failed")
+    /\ UNCHANGED intent
+
+\* capture.failed with reason permission: macOS refused the microphone. The Flow Bar offers the
+\* fix (permissionMissing) for 6 s instead of the helper's message, and main re-reads
+\* permissions so the tray shows it too.
+MicIsRefused ==
+    /\ phase = "starting"
+    /\ EndWith("micRefused")
     /\ UNCHANGED intent
 
 \* capture.stopped: the device changed or the 10 minute cap. The key may still be down.
@@ -338,6 +347,7 @@ Next ==
     \/ MicRecordsAfterYouLetGo
     \/ MicRecordsAfterATap
     \/ MicDoesNotStart
+    \/ MicIsRefused
     \/ MicStopsOnItsOwn
     \/ HearsWordsCleanupOn
     \/ HearsWordsCleanupOff

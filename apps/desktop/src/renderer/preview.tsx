@@ -111,6 +111,7 @@ const pillScenes: Record<string, PillState> = {
   }),
   secureInput: done({ kind: "notInserted", reason: "secureInput", copied: true, source: "helper" }),
   noModel: done({ kind: "failed", message: "Set up the speech model in Voice first" }),
+  micBlocked: done({ kind: "permissionMissing", permission: "microphone" }),
   longFailure: done({
     kind: "failed",
     message: "The speech model stopped unexpectedly while transcribing this recording",
@@ -610,6 +611,9 @@ function fakeVoice(
     },
     getPillSnapshot: async () => toPillSnapshot(snapshot, pillMeeting),
     setPillClickable: async () => {},
+    allowPermission: async (kind) => {
+      console.info("allowPermission", kind);
+    },
     openNotepad: async () => {
       console.info("openNotepad");
     },

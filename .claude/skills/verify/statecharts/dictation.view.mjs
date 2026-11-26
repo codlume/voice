@@ -22,6 +22,7 @@ export function state(v) {
   if (v.outcome === "inserted") return [RESULT, "Inserted or Pasted"];
   if (v.outcome === "notInserted") return [RESULT, "Not inserted"];
   if (v.outcome === "unconfirmed") return [RESULT, "Not confirmed"];
+  if (v.outcome === "micRefused") return [RESULT, "Microphone is off. Click to allow"];
   return [RESULT, "Too short, Nothing heard, or an error"];
 }
 
@@ -68,6 +69,8 @@ export function step(action, from) {
       return "the mic delivers audio [you held under 250 ms]";
     case "MicDoesNotStart":
       return "the mic fails or takes 3 s";
+    case "MicIsRefused":
+      return "macOS refuses the microphone";
     case "MicStopsOnItsOwn":
       return "the mic changes or 10 min pass";
     case "HearsWordsCleanupOn":
