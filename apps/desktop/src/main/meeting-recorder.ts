@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile, rm, stat } from "node:fs/promises";
+import { readdir, readFile, rm, stat } from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import type { Microphone } from "../shared/api.ts";
@@ -173,8 +173,12 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     await store.upsert(id, (latest) => {
       before = latest;
       stepped = step(latest, event, now(), config());
+      // A resume that ends before it records deletes only what its start made. A relaunch reads
+      // the saved `starting` without those files as the same `ready`, so that delete does not
+      // wait for meeting.json. Waiting would leave the meeting stuck in `starting`.
+      const endsResume = latest?.status.kind === "starting";
       const mustPersist = stepped.effects.some(
-        ({ type }) => type === "deleteAudio" || type === "startCapture",
+        ({ type }) => type === "startCapture" || (type === "deleteAudio" && !endsResume),
       );
       return { meeting: stepped.meeting, mustPersist };
     });
@@ -439,6 +443,15 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     );
     const found = sizes.filter((size) => size !== null);
     return found.length === 0 ? null : Math.max(...found) / PCM_BYTES_PER_MS;
+  }
+
+  /**
+   * Whether the folder holds any of the meeting's audio files. An empty file counts, and so does
+   * a lone `audio.json`, because a start that never recorded leaves both.
+   */
+  async function hasAudioFiles(id: MeetingId): Promise<boolean> {
+    const names = new Set(await readdir(folder(id)).catch(() => []));
+    return [...AUDIO_FILES, "audio.json"].some((name) => names.has(name));
   }
 
   /**
@@ -796,8 +809,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt, hasAudio });
         }
         const { meetings } = store.state();
-        const lengths = await Promise.all(meetings.map(({ id }) => audioLength(id)));
-        const withAudio = meetings.filter((_, index) => (lengths[index] ?? 0) > 0);
+        const found = await Promise.all(meetings.map(({ id }) => hasAudioFiles(id)));
+        const withAudio = meetings.filter((_, index) => found[index]);
         for (const { id } of withAudio) await dispatch(id, { type: "audioFound" });
       }),
     async settled() {

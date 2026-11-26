@@ -198,13 +198,14 @@ describe("meeting lifecycle", () => {
     for (const from of ["paused", "ready"] as const) {
       const resumed = step(meetingAt({ kind: from }), { type: "resume" }, T0 + 30 * MIN, config);
       expect(resumed.meeting?.status).toEqual({ kind: "starting", from });
+      const cleared = from === "ready" ? ["deleteAudio"] : [];
       for (const failure of [
         { type: "captureFailed", leg: 1, message: "busy" },
         { type: "stalled", watch: "start" },
       ] satisfies MeetingEvent[]) {
         const failed = step(resumed.meeting, failure, T0 + 30 * MIN, config);
         expect(failed.meeting?.status).toEqual({ kind: from });
-        expect(kinds(failed.effects)).toEqual(["stopCapture", "notify"]);
+        expect(kinds(failed.effects)).toEqual(["stopCapture", ...cleared, "notify"]);
         expect(notices(failed.effects)).toEqual(["resumeFailed"]);
         const late = step(
           failed.meeting,
@@ -213,9 +214,36 @@ describe("meeting lifecycle", () => {
           config,
         );
         expect(late.meeting?.status).toEqual({ kind: from });
-        expect(late.effects).toEqual([{ type: "stopCapture" }]);
+        expect(kinds(late.effects)).toEqual(["stopCapture", ...cleared]);
       }
     }
+  });
+
+  test("a resume of a finished meeting that ends before it records deletes the files its start made", () => {
+    const ended: MeetingEvent[] = [
+      { type: "captureFailed", leg: 1, message: "busy" },
+      { type: "stalled", watch: "start" },
+      { type: "helperExited" },
+      { type: "pause" },
+      { type: "stop" },
+    ];
+    const resuming = { kind: "starting", from: "ready" } as const;
+    for (const event of ended) {
+      const next = step(meetingAt(resuming), event, T0 + 30 * MIN, config);
+      expect(next.meeting?.status, event.type).toEqual({ kind: "ready" });
+      expect(next.effects.slice(0, 2), event.type).toEqual([
+        { type: "stopCapture" },
+        { type: "deleteAudio", keptFor: null },
+      ]);
+
+      const kept = meetingAt(resuming, { finalPassFailed: "other" });
+      const back = step(kept, event, T0 + 30 * MIN, config);
+      expect(back.meeting, event.type).toEqual({ ...kept, status: { kind: "ready" } });
+      expect(kinds(back.effects), event.type).not.toContain("deleteAudio");
+    }
+    const kept = meetingAt({ kind: "ready" }, { finalPassFailed: "other" });
+    const late = step(kept, { type: "captureStarted", leg: 1 }, T0 + 31 * MIN, config);
+    expect(late).toEqual({ meeting: kept, effects: [{ type: "stopCapture" }] });
   });
 
   test("lost capture pauses with a gap marker instead of recording again on its own", () => {

@@ -7,15 +7,16 @@ VARIABLES
                 \* and "clearingLeftover" is ready while Resume deletes the audio left on disk
     capturing,  \* the helper writes microphone and system audio to the meeting's files
     intent,     \* you pressed Start or Resume and have not stopped or paused since
-    audio,      \* the meeting's audio files: never recorded, on disk, or deleted
+    audio,      \* the meeting's audio files: never recorded, on disk but empty, on disk with audio, or deleted
     final,      \* everything recorded has a final transcript saved
     failed,     \* the final pass failed, so Try again and Delete audio are offered
     lost,       \* Voice dropped audio that had no final transcript without you asking
     tray,       \* the tray item's label
     stale,      \* the helper appended to audio that had a final transcript and no Try again
-    partial     \* a failed delete already removed part of the kept audio, say system.pcm
+    partial,    \* a failed delete already removed part of the kept audio, say system.pcm
+    stray       \* a resume that never recorded ended, and Voice left its files without trying to delete them
 
-vars == <<status, capturing, intent, audio, final, failed, lost, tray, stale, partial>>
+vars == <<status, capturing, intent, audio, final, failed, lost, tray, stale, partial, stray>>
 
 Live == {"recording", "paused"}
 Opening == {"starting", "resuming", "reopening"}
@@ -32,6 +33,7 @@ Moved(byYou) ==
     /\ lost' = (lost \/ (~byYou /\ audio = "kept" /\ ~final /\ (status' = "gone" \/ audio' # "kept")))
     /\ stale' = (stale \/ (~capturing /\ capturing' /\ final /\ ~failed /\ audio = "kept"))
     /\ partial' = (partial /\ audio' = "kept")
+    /\ stray' = (stray \/ (status = "reopening" /\ status' = "ready" /\ ~failed /\ audio' \in {"empty", "kept"}))
 
 Init ==
     /\ status = "none"
@@ -44,6 +46,7 @@ Init ==
     /\ tray = "Start meeting"
     /\ stale = FALSE
     /\ partial = FALSE
+    /\ stray = FALSE
 
 \* Tray Start meeting, the meeting shortcut, or the hub's Start meeting button.
 YouStart ==
@@ -112,13 +115,16 @@ AudioStops ==
     /\ Moved(FALSE)
 
 \* audioIncomplete refuses Resume while the audio kept for Try again is missing a part.
+\* On a finished meeting whose audio is gone, startCapture writes a new audio.json, and the helper
+\* makes mic.pcm before it opens the microphone. Both are empty of audio until the helper starts.
 YouResume ==
     /\ status \in {"paused", "ready"}
     /\ ~(failed /\ partial)
     /\ ~Leftover
     /\ status' = IF status = "paused" THEN "resuming" ELSE "reopening"
     /\ intent' = TRUE
-    /\ UNCHANGED <<capturing, audio, final, failed>>
+    /\ audio' = IF status = "ready" /\ audio = "deleted" THEN "empty" ELSE audio
+    /\ UNCHANGED <<capturing, final, failed>>
     /\ Moved(FALSE)
 
 \* Resume on such a meeting deletes that audio before it saves meeting.json as starting, so the
@@ -129,11 +135,12 @@ YouResumeLeftover ==
     /\ UNCHANGED <<capturing, intent, audio, final, failed>>
     /\ Moved(FALSE)
 
+\* The leftover audio goes, and startCapture writes the new audio.json.
 LeftoverDeleted ==
     /\ status = "clearingLeftover"
     /\ status' = "reopening"
     /\ intent' = TRUE
-    /\ audio' = "deleted"
+    /\ audio' = "empty"
     /\ UNCHANGED <<capturing, final, failed>>
     /\ Moved(FALSE)
 
@@ -144,11 +151,16 @@ LeftoverStays ==
     /\ UNCHANGED <<capturing, intent, audio, final, failed>>
     /\ Moved(FALSE)
 
+\* Where a resume that ends before it records leaves the meeting. A finished meeting has audio
+\* only while it is kept for Try again. Otherwise the deleteAudio effect removes the files the
+\* start made, and meeting.json says ready while that delete runs.
+Back(s) == IF s = "resuming" THEN "paused" ELSE IF failed THEN "ready" ELSE "deletingAudio"
+
 \* meeting.failed, the 10 s start watchdog, or a helper exit: back to where the resume began.
 ResumeFails ==
     /\ status \in {"resuming", "reopening"}
     /\ ~capturing
-    /\ status' = IF status = "resuming" THEN "paused" ELSE "ready"
+    /\ status' = Back(status)
     /\ intent' = FALSE
     /\ UNCHANGED <<capturing, audio, final, failed>>
     /\ Moved(FALSE)
@@ -156,7 +168,7 @@ ResumeFails ==
 \* Pause, or Stop while reopening, goes back to where the resume began.
 YouPauseWhileResuming ==
     /\ status \in {"resuming", "reopening"}
-    /\ status' = IF status = "resuming" THEN "paused" ELSE "ready"
+    /\ status' = Back(status)
     /\ capturing' = FALSE
     /\ intent' = FALSE
     /\ UNCHANGED <<audio, final, failed>>
@@ -228,8 +240,9 @@ FinalFails ==
     /\ UNCHANGED <<capturing, intent, audio, final>>
     /\ Moved(FALSE)
 
-\* Audio with no final transcript gets here only after you pressed Delete audio and Voice
-\* relaunched before the delete, because only Delete audio clears finalPassFailed without one.
+\* Audio with no final transcript gets here in two ways, and both deletions are yours. You pressed
+\* Delete audio and Voice relaunched before the delete, or your Pause or Stop ended a resume of a
+\* finished meeting after the helper began to record.
 AudioDeleted ==
     /\ status = "deletingAudio"
     /\ status' = "ready"
@@ -280,24 +293,26 @@ KeptAudioDeleteFails ==
     /\ failed' = TRUE
     /\ partial' \in {partial, TRUE}
     /\ tray' = TrayFor(status')
-    /\ UNCHANGED <<capturing, intent, audio, final, lost, stale>>
+    /\ UNCHANGED <<capturing, intent, audio, final, lost, stale, stray>>
 
 \* Quit or crash: the helper exits on stdin EOF and its files keep what it appended. On the next
 \* launch recover() sends "recover" with hasAudio from the files, before any start or resume. Then
-\* it sends "audioFound" to each meeting whose files hold audio. A finished meeting with no failed
-\* final pass answers with deleteAudio, so it deletes the audio again. That includes a meeting
-\* whose Delete audio saved meeting.json and then quit before the files were removed, and a
-\* meeting whose Resume quit while it deleted the audio left on disk.
+\* it sends "audioFound" to each meeting whose folder holds an audio file, an empty one included.
+\* A finished meeting with no failed final pass answers with deleteAudio, so it deletes the files
+\* again. That includes a meeting whose Delete audio saved meeting.json and then quit before the
+\* files were removed, a meeting whose Resume quit while it deleted the audio left on disk, and a
+\* resume of a finished meeting that Voice quit on before it recorded. Such a resume has empty
+\* files only when no final pass failed, because kept audio is never empty.
 Recovered(s) ==
     CASE s = "starting" /\ audio # "kept" -> "gone"
-      [] s = "reopening" /\ audio # "kept" -> "ready"
+      [] s = "reopening" /\ audio # "kept" -> "deletingAudio"
       [] s \in {"deletingAudio", "deletingKeptAudio", "clearingLeftover", "ready"} -> "deletingAudio"
       [] OTHER -> "draining"
 
 VoiceRestarts ==
     /\ \/ status \in Opening \cup Live \cup {"finishing", "draining", "confirming", "finalizing"}
        \/ status \in {"deletingAudio", "deletingKeptAudio", "clearingLeftover"}
-       \/ Leftover
+       \/ status = "ready" /\ ~failed /\ audio \in {"empty", "kept"}
     /\ status' = Recovered(status)
     /\ capturing' = FALSE
     /\ intent' = FALSE
@@ -336,10 +351,14 @@ AudioDeletedOnlyAfterFinal == audio = "deleted" => final
 \* A crash, a relaunch or a failure never throws away audio that has no final transcript.
 VoiceKeepsUnfinishedAudio == ~lost
 
-\* Once the final transcript is saved, the next launch deletes any audio still on disk.
+\* Once the final transcript is saved, the next launch deletes any audio file still on disk.
 AudioGoneOnceFinal ==
-    (status \in {"ready", "deletingAudio", "clearingLeftover"} /\ final /\ ~failed /\ audio = "kept")
+    (status \in {"ready", "deletingAudio", "clearingLeftover"} /\ final /\ ~failed /\ audio \in {"empty", "kept"})
         => ENABLED (VoiceRestarts /\ status' = "deletingAudio")
+
+\* A resume of a finished meeting that ends before it records never just leaves its files. Voice
+\* deletes them, unless they hold audio kept for Try again.
+EndedResumeDeletesItsFiles == ~stray
 
 \* A resume never appends to audio that has its final transcript and is not kept for Try again.
 NoStaleAppend == ~stale
