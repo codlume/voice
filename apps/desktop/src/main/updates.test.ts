@@ -172,6 +172,7 @@ const meeting = (status: MeetingStatus): Meeting => ({
   summary: { kind: "none" },
   speakers: [],
   finalPassFailed: null,
+  audio: "present",
   transcriptRevision: 0,
 });
 

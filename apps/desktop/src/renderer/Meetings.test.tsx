@@ -51,6 +51,7 @@ function meeting(
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: null,
+    audio: "present",
     transcriptRevision: 0,
     ...patch,
   };

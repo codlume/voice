@@ -55,6 +55,13 @@ export type SpeakerId = string & { readonly __brand: "SpeakerId" };
  */
 export type Speaker = { id: SpeakerId; label: string; name: string | null };
 
+/**
+ * Whether the meeting's audio files belong on disk. `deleting` is saved before the first file is
+ * removed and stays until every file is gone, so a delete that fails or is cut off by a quit is
+ * finished later, and audio that started going is never transcribed or recorded onto again.
+ */
+export type MeetingAudio = "present" | "deleting" | "gone";
+
 /** What `meeting.json` holds. The transcript lives in its own append-only file. */
 export type Meeting = {
   id: MeetingId;
@@ -75,6 +82,8 @@ export type Meeting = {
    * user tries again or deletes it. Null when it did not fail.
    */
   finalPassFailed: FinalPassFailure | null;
+  /** `present` while recording, and after Stop until the final pass, or a failed one's Try again. */
+  audio: MeetingAudio;
   /**
    * Counts every write to the transcript file, appends and rewrites alike. Appends reach open
    * windows as lines tagged with their revision; a meeting whose revision is ahead of the lines a
@@ -260,12 +269,6 @@ export type AudioLoss = { source: MeetingSource; reason: "permission" | "device"
 /** Why a final pass failed, as far as the user can act on it: download speaker detection, or not. */
 export type FinalPassFailure = "speakerModels" | "other";
 
-/**
- * What is left of the audio kept after a failed final pass. A Delete audio that fails part way
- * leaves it `partlyDeleted`, which cannot be transcribed again.
- */
-export type KeptAudio = "whole" | "partlyDeleted";
-
 export type MeetingNotice =
   | { kind: "startFailed"; message: string }
   | { kind: "resumeFailed"; message: string }
@@ -279,7 +282,9 @@ export type MeetingNotice =
   | { kind: "silence" }
   /** Nobody answered "Still in a meeting?", so the recording stopped. */
   | { kind: "silenceStopped" }
-  | { kind: "finalPassFailed"; reason: FinalPassFailure; audio: KeptAudio }
+  | { kind: "finalPassFailed"; reason: FinalPassFailure }
+  /** Some of the audio is still on disk after Voice set out to delete it. */
+  | { kind: "audioDeleteFailed" }
   /** `open` brings the Voice window up on the summary, without taking focus. */
   | { kind: "summaryReady"; open: boolean }
   /** `message` says why, as the meeting's summary state does. */
@@ -354,12 +359,11 @@ export function noticeText(notice: MeetingNotice): string | null {
     case "atMaxLength":
       return "This meeting is at its maximum length and cannot record more.";
     case "finalPassFailed":
-      if (notice.audio === "partlyDeleted") {
-        return "The final transcript could not be made, and part of this meeting's audio was already deleted, so it cannot be transcribed again. The live transcript is kept. Delete audio to remove the rest.";
-      }
       return notice.reason === "speakerModels"
         ? "Speaker detection is not downloaded, so the final transcript could not be made. Download it in Set up Meetings, then try again. The live transcript and the audio are kept."
         : "The final transcript could not be made. The live transcript is kept, and so is the audio until you try again or delete it.";
+    case "audioDeleteFailed":
+      return "Voice could not delete this meeting's audio. Delete audio to try again. Voice also tries again each time it opens.";
     case "summaryFailed":
       return `The summary could not be written.${notice.message ? ` ${notice.message}` : ""}`;
     case "summaryReady":

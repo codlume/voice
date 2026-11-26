@@ -30,6 +30,7 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: null,
+    audio: "present",
     transcriptRevision: 0,
     ...patch,
   };
@@ -259,7 +260,7 @@ describe("notices on the Meetings page", () => {
     const pass = raise(
       follow(noMeetingFocus, [done]),
       done.id,
-      { kind: "finalPassFailed", reason: "other", audio: "whole" },
+      { kind: "finalPassFailed", reason: "other" },
       0,
     );
     expect(meetingBanners(pass)[0]).toMatchObject({
@@ -271,11 +272,11 @@ describe("notices on the Meetings page", () => {
     expect(texts(follow(pass, []))).toEqual([]);
   });
 
-  test("a failed final pass offers Try again only while its kept audio is whole", () => {
+  test("a failed final pass offers Try again; a failed delete then offers only Delete audio", () => {
     const done = meeting(1, { kind: "ready" }, { finalPassFailed: "speakerModels" });
     const failed = { kind: "finalPassFailed", reason: "speakerModels" } as const;
-    const whole = raise(follow(noMeetingFocus, [done]), done.id, { ...failed, audio: "whole" }, 0);
-    expect(meetingBanners(whole)).toMatchObject([
+    const kept = raise(follow(noMeetingFocus, [done]), done.id, failed, 0);
+    expect(meetingBanners(kept)).toMatchObject([
       {
         text: "Speaker detection is not downloaded, so the final transcript could not be made. Download it in Set up Meetings, then try again. The live transcript and the audio are kept.",
         actions: ["retryFinalPass", "deleteAudio"],
@@ -283,15 +284,17 @@ describe("notices on the Meetings page", () => {
       },
     ]);
 
-    const partly = raise(whole, done.id, { ...failed, audio: "partlyDeleted" }, 1);
-    expect(meetingBanners(partly)).toMatchObject([
+    const owed = { ...done, finalPassFailed: null, audio: "deleting" } as const;
+    const stuck = raise(follow(kept, [owed]), done.id, { kind: "audioDeleteFailed" }, 1);
+    expect(meetingBanners(stuck)).toMatchObject([
       {
-        text: "The final transcript could not be made, and part of this meeting's audio was already deleted, so it cannot be transcribed again. The live transcript is kept. Delete audio to remove the rest.",
+        text: "Voice could not delete this meeting's audio. Delete audio to try again. Voice also tries again each time it opens.",
         actions: ["deleteAudio"],
         dismissable: false,
       },
     ]);
-    expect(texts(follow(partly, [{ ...done, finalPassFailed: null }]))).toEqual([]);
+    expect(texts(follow(stuck, [owed]))).toHaveLength(1);
+    expect(texts(follow(stuck, [{ ...owed, audio: "gone" }]))).toEqual([]);
   });
 
   test("a failed start has no meeting; it stays until one records", () => {

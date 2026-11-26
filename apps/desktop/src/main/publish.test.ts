@@ -121,6 +121,7 @@ describe("publish", () => {
       summary: { kind: "none" },
       speakers: [],
       finalPassFailed: null,
+      audio: "present",
       transcriptRevision: 0,
     };
     update({ meeting: follow(noMeetingFocus, [meeting]) });

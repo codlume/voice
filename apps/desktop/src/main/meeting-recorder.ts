@@ -10,7 +10,6 @@ import {
   meetingToggle,
   recordedMs,
   type AudioLoss,
-  type KeptAudio,
   type Marker,
   type MarkerKind,
   type Meeting,
@@ -83,7 +82,8 @@ const WATCH_MS: Record<Watch, number> = {
 };
 
 const PCM_FILES = ["mic.pcm", "system.pcm"] as const;
-const AUDIO_FILES = [...PCM_FILES, "output.ndjson"] as const;
+/** Older builds also wrote `output.ndjson`, so a delete still removes it. */
+const AUDIO_FILES = [...PCM_FILES, "output.ndjson", "audio.json"] as const;
 const PCM_BYTES_PER_MS = 32;
 
 const REFUSALS: Partial<Record<MeetingEvent["type"], string>> = {
@@ -102,18 +102,27 @@ const FAILURES: Partial<Record<MeetingEvent["type"], string>> = {
   deleteAudio: "The audio could not be deleted. Try again.",
 };
 
-/** Why a command refuses to work from a kept audio set that a failed Delete audio left part of. */
-const INCOMPLETE = {
-  retryFinalPass:
-    "Part of this meeting's audio was already deleted, so it cannot be transcribed again. Delete audio to remove the rest.",
-  resume:
-    "Part of this meeting's audio was already deleted, so it cannot be resumed yet. Delete audio to remove the rest first.",
-} as const;
-
 const FAILED_START = "Recording could not start. Check your microphone, then try again.";
 
 const takesLiveLines = (meeting: Meeting) =>
   meeting.status.kind !== "summarizing" && meeting.status.kind !== "ready";
+
+/** The event that reports an effect that threw. */
+function failureOf(effect: MeetingEffect): MeetingEvent | null {
+  switch (effect.type) {
+    case "startCapture":
+      return { type: "captureFailed", leg: effect.leg, message: FAILED_START };
+    case "drain":
+      return { type: "stalled", watch: "drain" };
+    case "finalize":
+    case "applyFinalPass":
+      return { type: "finalizeFailed", reason: "other" };
+    case "deleteAudio":
+      return { type: "audioDeleteFailed" };
+    default:
+      return null;
+  }
+}
 
 type Watchdog = { watch: Watch; timer: NodeJS.Timeout | null };
 
@@ -129,6 +138,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   const legStart = new Map<MeetingId, number>();
   const linesSaved = new Map<MeetingId, Promise<boolean>>();
   const heardWhole = new Set<MeetingId>();
+  /** Meetings with a `meeting.start` the helper has not answered, which can still make files. */
+  const starts = new Set<MeetingId>();
   let recognizing = false;
   let queue: Promise<unknown> = Promise.resolve();
   let decisions: Promise<unknown> = Promise.resolve();
@@ -211,31 +222,9 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       return true;
     } catch (error) {
       log(`meetings: ${effect.type} failed (${String(error)})`);
-      const failed = await failureOf(meeting, effect);
+      const failed = failureOf(effect);
       if (failed) background(effect.type, dispatch(id, failed));
       return false;
-    }
-  }
-
-  async function failureOf(
-    meeting: Meeting | null,
-    effect: MeetingEffect,
-  ): Promise<MeetingEvent | null> {
-    switch (effect.type) {
-      case "startCapture":
-        return { type: "captureFailed", leg: effect.leg, message: FAILED_START };
-      case "drain":
-        return { type: "stalled", watch: "drain" };
-      case "finalize":
-      case "applyFinalPass":
-        return { type: "finalizeFailed", reason: "other" };
-      case "deleteAudio": {
-        if (!effect.keptFor || !meeting) return null;
-        const audio = await keptAudio(meeting);
-        return { type: "audioDeleteFailed", reason: effect.keptFor, audio };
-      }
-      default:
-        return null;
     }
   }
 
@@ -263,7 +252,9 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           language,
           microphone,
         });
-        if (!sent) {
+        if (sent) {
+          starts.add(id);
+        } else {
           const message = "Voice is reconnecting. Try again.";
           background("start", dispatch(id, { type: "captureFailed", leg: effect.leg, message }));
         }
@@ -316,6 +307,14 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       case "deleteAudio":
         await deleteAudio(id);
         forgetLive(id);
+        // The files are gone, so a meeting.json that cannot say so is not a failed delete: the
+        // next launch finds `deleting`, removes nothing, and saves `gone`.
+        if (!starts.has(id)) {
+          await store.upsert(id, (latest) => ({
+            meeting: latest?.audio === "deleting" ? { ...latest, audio: "gone" } : latest,
+            mustPersist: false,
+          }));
+        }
         return;
       case "watch":
         arm(id, effect.watch);
@@ -445,50 +444,19 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return found.length === 0 ? null : Math.max(...found) / PCM_BYTES_PER_MS;
   }
 
-  /**
-   * Whether the folder holds any of the meeting's audio files. An empty file counts, and so does
-   * a lone `audio.json`, because a start that never recorded leaves both.
-   */
+  /** Whether any audio file is on disk. An empty file counts: a start that never recorded leaves one. */
   async function hasAudioFiles(id: MeetingId): Promise<boolean> {
     const names = new Set(await readdir(folder(id)).catch(() => []));
-    return [...AUDIO_FILES, "audio.json"].some((name) => names.has(name));
+    return AUDIO_FILES.some((name) => names.has(name));
   }
 
-  /**
-   * A Delete audio that fails part way can remove one source's audio and keep the other's. A final
-   * pass over what is left would replace that source's live lines with nothing, so the kept audio
-   * is partly deleted when a source has live lines since the audio began but no audio on disk.
-   */
-  async function keptAudio(meeting: Meeting): Promise<KeptAudio> {
-    const missing = new Set<MeetingSource>();
-    for (const name of PCM_FILES) {
-      const size = await stat(NodePath.join(folder(meeting.id), name)).then(
-        (file) => file.size,
-        () => 0,
-      );
-      if (size === 0) missing.add(name === "mic.pcm" ? "mic" : "system");
-    }
-    if (missing.size === 0) return "whole";
-    const fromMs = await audioBase(meeting);
-    const lost = (await store.transcript(meeting.id)).some(
-      (entry) => entry.kind === "segment" && entry.startMs >= fromMs && missing.has(entry.source),
-    );
-    return lost ? "partlyDeleted" : "whole";
-  }
-
-  async function audioIncomplete(id: MeetingId): Promise<boolean> {
-    await queue;
-    const meeting = store.get(id);
-    return !!meeting?.finalPassFailed && (await keptAudio(meeting)) === "partlyDeleted";
-  }
-
-  /** A notice does not outlive the app, so each launch raises it again from what is on disk. */
-  async function raiseFinalPassNotices(meetings: readonly Meeting[]) {
+  /** A notice does not outlive the app, so each launch raises it again. */
+  function raiseFinalPassNotices(meetings: readonly Meeting[]) {
     for (const meeting of meetings) {
       const reason = meeting.finalPassFailed;
-      if (!reason) continue;
-      const audio = await keptAudio(meeting);
-      deps.onNotice(meeting.id, { kind: "finalPassFailed", reason, audio });
+      if (reason && meeting.audio === "present") {
+        deps.onNotice(meeting.id, { kind: "finalPassFailed", reason });
+      }
     }
   }
 
@@ -518,35 +486,24 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return reach;
   }
 
-  /** Every removal ends before a failure is reported, so what is on disk then is what was left. */
+  /** Every removal ends before a failure is reported, so a retry starts from what is left. */
   async function deleteAudio(id: MeetingId) {
     const removals = await Promise.allSettled(
       AUDIO_FILES.map((name) => rm(NodePath.join(folder(id), name), { force: true })),
     );
     for (const removal of removals) if (removal.status === "rejected") throw removal.reason;
-    await rm(NodePath.join(folder(id), "audio.json"), { force: true });
   }
 
   /**
-   * A finished meeting keeps audio only after a failed final pass. Audio it still has otherwise is
-   * left over from a failed delete or a quit, and a resume that adds to it would transcribe that
-   * leg again, so the resume starts new files instead. The leftover must be gone before the resume
-   * is saved, because a relaunch transcribes whatever audio a resuming meeting has.
+   * A resume of a finished meeting whose delete is still owed finishes the delete first, so the
+   * new leg starts new files and a relaunch never transcribes the old audio with it.
    */
-  async function clearLeftoverAudio(id: MeetingId): Promise<boolean> {
+  async function finishDelete(id: MeetingId): Promise<boolean> {
     await queue;
-    const meeting = store.get(id);
-    const kind = meeting?.status.kind;
-    if ((kind !== "ready" && kind !== "summarizing") || meeting?.finalPassFailed !== null) {
-      return true;
-    }
-    return deleteAudio(id).then(
-      () => true,
-      (error) => {
-        log(`meetings: ${id} leftover audio could not be deleted (${String(error)})`);
-        return false;
-      },
-    );
+    if (store.get(id)?.audio !== "deleting") return true;
+    await dispatch(id, { type: "deleteAudio" });
+    await queue;
+    return store.get(id)?.audio !== "deleting";
   }
 
   function arm(id: MeetingId, watch: Watch) {
@@ -623,9 +580,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       const other = store.state().meetings.find((meeting) => meeting.id !== id && isLive(meeting));
       if (other) return { kind: "refused", message: "Stop the other meeting first." };
     }
-    if ((event.type === "retryFinalPass" || event.type === "resume") && (await audioIncomplete(id)))
-      return { kind: "refused", message: INCOMPLETE[event.type] };
-    if (event.type === "resume" && !(await clearLeftoverAudio(id))) {
+    if (event.type === "resume" && !(await finishDelete(id))) {
       const message = "Voice could not clear this meeting's old audio. Try again.";
       return { kind: "refused", message };
     }
@@ -711,6 +666,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         }
         case "meeting.started": {
           const id = event.id as MeetingId;
+          starts.delete(id);
           const meeting = store.get(id);
           if (!meeting) {
             deps.send({ type: "meeting.cancel", id });
@@ -728,6 +684,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         }
         case "meeting.failed": {
           const id = event.id as MeetingId;
+          starts.delete(id);
           const meeting = store.get(id);
           if (!meeting) return;
           log(`meetings: ${id} capture failed (${event.message})`);
@@ -794,6 +751,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       }
     },
     helperExited() {
+      starts.clear();
       setRecognizing(false);
       for (const id of watchdogs.keys()) unwatch(id);
       for (const meeting of store.state().meetings) {
@@ -803,15 +761,16 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     recover: () =>
       oneAtATime(async () => {
         await store.loaded();
-        background("final pass notices", raiseFinalPassNotices(store.state().meetings));
+        raiseFinalPassNotices(store.state().meetings);
         for (const { meeting, lastWriteAt } of await store.unfinished()) {
           const hasAudio = ((await audioLength(meeting.id)) ?? 0) > 0;
           await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt, hasAudio });
         }
-        const { meetings } = store.state();
-        const found = await Promise.all(meetings.map(({ id }) => hasAudioFiles(id)));
-        const withAudio = meetings.filter((_, index) => found[index]);
-        for (const { id } of withAudio) await dispatch(id, { type: "audioFound" });
+        for (const { id, audio } of store.state().meetings) {
+          if (audio === "deleting" || (audio === "gone" && (await hasAudioFiles(id)))) {
+            await dispatch(id, { type: "audioFound" });
+          }
+        }
       }),
     async settled() {
       while (true) {

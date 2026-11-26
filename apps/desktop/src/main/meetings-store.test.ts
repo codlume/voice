@@ -52,6 +52,7 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: null,
+    audio: "gone",
     transcriptRevision: 0,
     ...overrides,
   };
@@ -97,6 +98,28 @@ const meetingDir = (id: MeetingId) => NodePath.join(dir, id);
 const mode = async (file: string) => (await stat(file)).mode & 0o777;
 
 const snippet = (before: string, match: string, after: string) => ({ before, match, after });
+
+/** Writes a meeting as builds before the `audio` field saved it. */
+async function legacy(
+  id: MeetingId,
+  overrides: Partial<Meeting>,
+  audio: string[],
+  lines: Segment[],
+) {
+  const { audio: _audio, ...saved } = meeting(id, overrides);
+  await mkdir(meetingDir(id), { recursive: true });
+  await writeFile(
+    NodePath.join(meetingDir(id), "meeting.json"),
+    JSON.stringify({ version: 1, meeting: saved }),
+  );
+  for (const name of audio)
+    await writeFile(NodePath.join(meetingDir(id), name), Buffer.alloc(3200));
+  for (const line of lines)
+    await appendFile(
+      NodePath.join(meetingDir(id), "transcript.ndjson"),
+      `${JSON.stringify(line)}\n`,
+    );
+}
 
 describe("meetings store", () => {
   test("a meeting and its transcript survive a relaunch", async () => {
@@ -604,6 +627,22 @@ describe("meetings store", () => {
     expect(JSON.parse(await readFile(NodePath.join(dir, "folders.json"), "utf8"))).toEqual({
       version: 99,
     });
+  });
+
+  test("a meeting saved before audio was a field reads it once from its status and files", async () => {
+    const said = segment("m", "Hello");
+    const heard: Segment = { ...segment("s", "Hi there", 2000), source: "system", speakerId: null };
+    await legacy(A, { status: { kind: "paused" } }, ["mic.pcm", "system.pcm"], [said]);
+    await legacy(B, { finalPassFailed: "other" }, ["mic.pcm"], [said]);
+    await legacy(C, { finalPassFailed: "other" }, ["mic.pcm"], [said, heard]);
+    const D = "44444444-4444-4444-8444-444444444444" as MeetingId;
+    await legacy(D, {}, ["mic.pcm", "system.pcm"], [said, heard]);
+
+    const { store } = await relaunch();
+    expect(store.get(A)).toMatchObject({ audio: "present" });
+    expect(store.get(B)).toMatchObject({ audio: "present", finalPassFailed: "other" });
+    expect(store.get(C)).toMatchObject({ audio: "deleting", finalPassFailed: null });
+    expect(store.get(D)).toMatchObject({ audio: "deleting", finalPassFailed: null });
   });
 
   test("ignores directories and lines that are not meetings", async () => {

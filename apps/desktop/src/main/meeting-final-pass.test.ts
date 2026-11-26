@@ -14,6 +14,7 @@ const meeting: Meeting = {
   summary: { kind: "none" },
   speakers: [],
   finalPassFailed: null,
+  audio: "present",
   transcriptRevision: 0,
 };
 
