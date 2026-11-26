@@ -21,6 +21,7 @@ export function state(v) {
   }
   if (v.outcome === "inserted") return [RESULT, "Inserted or Pasted"];
   if (v.outcome === "notInserted") return [RESULT, "Not inserted"];
+  if (v.outcome === "unconfirmed") return [RESULT, "Not confirmed"];
   return [RESULT, "Too short, Nothing heard, or an error"];
 }
 
@@ -29,8 +30,11 @@ export function group(v) {
   if (v.phase === "transcribing" || v.phase === "cleaning" || v.phase === "inserting") {
     return "processing";
   }
-  if (v.phase === "done")
-    return v.outcome === "inserted" ? "says inserted" : "says nothing inserted";
+  if (v.phase === "done") {
+    if (v.outcome === "inserted") return "says inserted";
+    if (v.outcome === "unconfirmed") return "says not confirmed";
+    return "says nothing inserted";
+  }
   return undefined;
 }
 
@@ -39,6 +43,7 @@ export const colors = {
   processing: "blue",
   "says inserted": "teal",
   "says nothing inserted": "tan",
+  "says not confirmed": "yellow",
 };
 
 export function step(action, from) {
@@ -82,6 +87,8 @@ export function step(action, from) {
       return "the app takes the text";
     case "AppRefusesText":
       return "the app refuses the text";
+    case "AppDoesNotAnswer":
+      return "the app does not answer the write in time";
     case "InsertTimesOut":
       return "6.5 s pass with no answer";
     case "LateInsertRefused":

@@ -161,7 +161,7 @@ final class Insertion {
             finish(id, .refused(.noFocusedField), why: "element takes no text")
         case .unknown:
             if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
-            finish(id, .refused(.failed), why: "write timed out")
+            finish(id, .refused(.unconfirmed), why: "write timed out")
         case .tooLate:
             finish(id, .refused(.failed), why: "tooLate before write")
         case .paste(let route):

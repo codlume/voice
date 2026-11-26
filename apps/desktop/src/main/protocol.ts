@@ -102,7 +102,14 @@ const nullOnInvalid = <S extends Schema.Top>(schema: S) =>
     Schema.withDecodingDefaultType(Effect.succeed(null)),
   );
 const insertFailure = nullOnInvalid(
-  Schema.Literals(["focusChanged", "noFocusedField", "secureInput", "selectionChanged", "failed"]),
+  Schema.Literals([
+    "focusChanged",
+    "noFocusedField",
+    "secureInput",
+    "selectionChanged",
+    "unconfirmed",
+    "failed",
+  ]),
 );
 const accessibilityRoute = Schema.Literals(["direct", "late"]);
 const pasteRoute = Schema.Literals([

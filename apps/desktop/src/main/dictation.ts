@@ -11,6 +11,7 @@ import {
   wantsCleanup,
   type DictationLanguage,
 } from "../shared/dictation-language.ts";
+import type { SettledStatus } from "../shared/history.ts";
 import type { Output } from "../shared/rewrite.ts";
 import { classify, cleanupStyleFor } from "../shared/style.ts";
 import {
@@ -162,6 +163,13 @@ function insertDecision(outcome: Outcome) {
   if (outcome.kind !== "notInserted") return {};
   const { reason, source, copied } = outcome;
   return { reason, source, copied: String(copied) };
+}
+
+function historyStatus(outcome: Outcome): SettledStatus {
+  if (outcome.kind === "inserted") return "inserted";
+  return outcome.kind === "notInserted" && outcome.reason === "unconfirmed"
+    ? "unconfirmed"
+    : "notInserted";
 }
 
 export function createDictation(options: DictationOptions): Dictation {
@@ -444,7 +452,7 @@ export function createDictation(options: DictationOptions): Dictation {
       }),
     );
     options.onSessionDone({ outcome, finishedAt, capture });
-    options.history.settle(id, outcome.kind === "inserted");
+    options.history.settle(id, historyStatus(outcome));
   }
 
   function onHelperEvent(event: HelperEvent) {
