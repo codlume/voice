@@ -5,7 +5,7 @@
 set -euo pipefail
 
 types="feat|fix|chore|refactor|docs|test|perf|build|ci|style|revert"
-bot_branch='^(dependabot|renovate)/'
+bot_branch='^(dependabot/|renovate/|release-please--branches--)'
 ticket='^\[?[A-Z][A-Z0-9]*-[0-9]+'
 semantic_title="^(${types})(\([^()[:space:]][^()]*\))?!?: [^[:space:]].*$"
 
